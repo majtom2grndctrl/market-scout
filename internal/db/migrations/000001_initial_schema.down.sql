@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS job_posting_skills;
+DROP TABLE IF EXISTS job_posting_specializations;
+DROP TABLE IF EXISTS job_posting_roles;
+DROP TABLE IF EXISTS skills;
+DROP TABLE IF EXISTS specializations;
+DROP TABLE IF EXISTS canonical_roles;
+DROP TABLE IF EXISTS posting_snapshots;
+DROP TABLE IF EXISTS job_postings;
+DROP TABLE IF EXISTS companies;
+DROP EXTENSION IF EXISTS vector;

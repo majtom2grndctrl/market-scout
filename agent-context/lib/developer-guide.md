@@ -1,0 +1,370 @@
+# market-scout Development Guide
+
+> **Read this when:** setting up the repo, adding a feature, or onboarding. Covers dev setup, conventions, and coding standards.
+> **Key invariant:** snapshots are append-only — every fetch writes new timestamped rows; never upsert. Validate at every external API and DB boundary.
+> **Related:** [Project Overview](./project.md) · [Testing Guide](./testing-guide.md) · [Style Guide](./style-guide.md)
+
+---
+
+## Agent TL;DR
+
+- Optimize for **readability over cleverness**; prefer small, explicit changes.
+- Respect **package boundaries**: `cmd/fetcher` (entry, scheduling) → `internal/ats` (adapters, HTTP) → `internal/db` (sqlc-generated queries, pgx).
+- `posting_snapshots` is **append-only**. Every fetch writes new timestamped rows. Never upsert. This is load-bearing for trend analysis.
+- Define **Go interfaces at package boundaries** (`internal/ats/` exposes the ATS adapter interface; each ATS is a separate file).
+- Validate ATS API responses at the adapter boundary; return typed errors. No `panic` in library code.
+- Database access goes through `sqlc`-generated functions; no ad-hoc SQL strings in business logic. Raw SQL lives in `internal/db/queries/`.
+- Next.js app layer is **deferred**. See [`project.md` §Non-goals](./project.md).
+- **Deliver the impact defined in docs and tickets.** Specs define what and why; use judgment on how. When the plan doesn't survive contact with the code, adapt — but surface deviations and update the docs. See §1.
+
+---
+
+## 1) Implementation Quality
+
+Docs and tickets define the **impact** to deliver — the *what* and *why*. The recommended approach is the starting plan, not a mandate. Deliver the intended impact cleanly; use judgment when the plan doesn't survive contact with the code.
+
+### 1.1 Deliver the impact
+
+Read the spec and ticket before writing code. They tell you what outcome matters and what constraints apply. Start with the recommended approach, but treat it as a plan, not a contract.
+
+**Do:**
+- Handle the error states and edge cases that fall within the defined scope (HTTP failures, malformed JSON, rate limits, partial fetches).
+- Write tests now, while you have full context on what the code should do.
+- When the approach works as specced, deliver it without embellishment.
+
+**Don't:**
+- Add capabilities the ticket didn't ask for ("while I'm here, I'll also add Lever support...").
+- Skip work that's clearly within scope and justify it with "TODO" or version labels.
+- Invent abstractions, helpers, or config options for hypothetical future ATS integrations.
+
+### 1.2 When the plan doesn't work
+
+Sometimes the spec's approach hits a wall — an ATS API doesn't expose the field the spec assumes, schema migration conflicts, an interface doesn't compose. The response depends on scale:
+
+**Small adjustment** (same impact, minor approach change):
+1. Ask the user: explain what you found and propose the alternative.
+2. On confirmation, implement the alternative.
+3. Update the spec/docs to reflect the actual approach taken.
+
+**Significant change** (different contracts, shifted scope, new trade-offs):
+1. Stop and surface the issue to the user with enough detail to decide.
+2. Propose options with trade-offs.
+3. On resolution, update docs/specs *before* resuming implementation.
+
+The key principle: **specs are working documents — update them during implementation, never silently deviate.** After the feature ships, durable knowledge lives in architecture docs and code comments; the spec is consumed and removed. See §1.5.
+
+### 1.3 Clean, not clever
+
+Over-engineering is as costly as under-delivering. Both create surface area that has to be understood, tested, and maintained.
+
+| | Under-delivering | Over-engineering |
+|---|---|---|
+| **What** | Shipping scope with missing validation, error handling, or tests | Adding scope, abstractions, or infrastructure the ticket didn't request |
+| **Cost** | Broken states, follow-up tickets, lost context | Unnecessary complexity, harder reviews, maintenance burden |
+| **Example** | "Greenhouse fetch works but doesn't handle 429" | "Added a generic ATS plugin framework with config-driven field mapping" |
+
+### 1.4 When to file a follow-up instead
+
+Adjacent work discovered during implementation gets a follow-up ticket, not a scope expansion.
+
+- **Robustness gaps** outside the ticket's scope → file a ticket with `[Robustness]` prefix.
+- **Optimizations** with no current performance problem → file a ticket, don't add caching or batching preemptively.
+- **Abstractions** without multiple concrete consumers → three similar lines beat a premature interface. Wait until you have at least two ATS adapters before refactoring shared logic.
+
+When you defer, create a ticket with enough context for the next agent. Never leave a bare `// TODO: fix later`.
+
+### 1.5 Documentation lifecycle
+
+Specs are working documents — they align on what to build and why, then get consumed during implementation.
+
+**Where specs live:**
+
+- **Default: ticket.** Spec content lives in the parent ticket alongside orchestration guidance (child task breakdown, dependencies, sequencing). One focused space for everything about the epic. Tickets include acceptance criteria — the conditions that must hold for the work to be complete. Vague "done" conditions push ambiguity to the implementer.
+- **Escape hatch: `agent-context/plans/`.** When the spec outgrows ticket format — complex schemas needing cross-referencing, extensive tables, content multiple implementers need open simultaneously — extract to a temporary doc. The parent ticket keeps orchestration and links to the temp doc. Use judgment on when to extract.
+
+**After the feature ships:**
+
+- **Delete the spec.** Temp docs in `agent-context/plans/` are removed when the epic closes. Ticket specs close naturally with the ticket.
+- **Architecture docs** (`agent-context/lib/`) capture what's durable — design principles, package boundaries, contracts, snapshot model, schema invariants. Content an agent can't derive by opening the relevant file.
+- **Code comments** capture implementation-level "why" decisions. Rationale a reader can't derive from the code alone. See §8.
+
+**What doesn't belong in `agent-context/lib/`:**
+
+- Specs for specific features or epics (use tickets or `agent-context/plans/`)
+- Implementation plans or task breakdowns (use tickets)
+- Content that names specific functions, types, or file paths as load-bearing detail (see [Style Guide](./lib/style-guide.md))
+
+---
+
+## 2) Development Setup
+
+### Initial Setup
+
+After cloning, start the database and apply migrations:
+
+```bash
+docker compose up -d        # Postgres + pgvector
+go run ./cmd/migrate up     # Apply schema migrations
+```
+
+Generate sqlc code if any `.sql` files in `internal/db/queries/` have changed:
+
+```bash
+sqlc generate
+```
+
+The generated `.go` files in `internal/db/` are checked in — regenerate after changing schema or queries, then commit the diff.
+
+### Running the Fetcher
+
+```bash
+# Run the fetcher once (one-shot fetch across configured companies)
+go run ./cmd/fetcher
+
+# Build the binary
+go build -o bin/fetcher ./cmd/fetcher
+
+# Run with a specific ATS / company filter (flags TBD per ticket)
+go run ./cmd/fetcher --ats greenhouse --company stripe
+```
+
+The fetcher is intended to run on a cron schedule. For local development, invoke it directly; the cron wrapper is a thin shell around the same binary.
+
+### Database Access
+
+```bash
+# Open a psql shell against the dev database
+docker compose exec db psql -U market_scout -d market_scout
+
+# Tail recent snapshots
+docker compose exec db psql -U market_scout -d market_scout \
+  -c "select fetched_at, company, count(*) from posting_snapshots group by 1,2 order by 1 desc limit 20;"
+```
+
+Direct DB inspection via `psql` is the primary debugging surface — there is no admin UI.
+
+### Schema Migrations
+
+Migrations live in `internal/db/migrations/` as numbered SQL files. Apply with `go run ./cmd/migrate up`. Never edit a migration after it has run against any environment; add a new one.
+
+After a schema change, regenerate sqlc:
+
+```bash
+sqlc generate
+```
+
+### Reload Behavior
+
+Go has no hot reload. Rebuild and re-run after every change. For a tight loop:
+
+```bash
+go run ./cmd/fetcher
+```
+
+`go run` recompiles each invocation; for the fetcher's startup time this is fine.
+
+---
+
+## 3) Build System Architecture
+
+### Build Pipeline
+
+```bash
+go build ./cmd/fetcher       # Compile the fetcher binary
+go build ./...               # Compile every package (verifies the tree)
+go vet ./...                 # Static checks
+staticcheck ./...            # Stricter linter
+go test ./...                # Run the test suite
+```
+
+`sqlc generate` is a separate step — it reads `internal/db/queries/*.sql` and schema from `internal/db/migrations/` and writes typed Go query functions into `internal/db/`. Run it after editing SQL or migrations.
+
+### Output Structure
+
+```
+market-scout/
+├── cmd/
+│   ├── fetcher/             # Main fetcher entry point
+│   │   └── main.go
+│   └── migrate/             # Migration runner
+│       └── main.go
+├── internal/
+│   ├── ats/                 # ATS adapter interface + implementations
+│   │   ├── ats.go           # Adapter interface, shared types
+│   │   ├── greenhouse.go    # Greenhouse implementation
+│   │   ├── lever.go         # (future)
+│   │   └── ashby.go         # (future)
+│   └── db/
+│       ├── migrations/      # Numbered migration files (source of truth for schema)
+│       ├── queries/         # Hand-written SQL for sqlc
+│       ├── *.sql.go         # sqlc-generated query functions
+│       └── models.go        # sqlc-generated row types
+├── agent-context/
+│   ├── lib/                 # Durable architecture docs
+│   └── plans/               # Ephemeral session plans
+└── docker-compose.yml       # Postgres + pgvector
+```
+
+The Next.js app layer (`web/` or similar) will land later; see [`lib/project.md` §Non-goals](./lib/project.md).
+
+---
+
+## 4) File & Directory Organization
+
+**Rule: split by responsibility, not by line count.** A file earns a split when it serves distinct jobs. Line count alone is not a trigger.
+
+### 4.1 File size guidance
+
+- **~400–500 lines** (source, non-test): yellow flag. Consider splitting on next significant addition.
+- **~600+ lines**: split before adding more code.
+- **Test files**: exempt. Test suites are flat and linear; large is fine.
+- **sqlc-generated files**: exempt. Don't hand-edit them at all.
+
+Existing files above these thresholds are not immediate refactoring targets. Apply when adding significant new code.
+
+### 4.2 Valid seams for splitting
+
+Split along natural boundaries:
+
+1. **Responsibility** — file serves two distinct jobs. Extract each into its own file (e.g. HTTP transport vs. response parsing).
+2. **Consumer** — different importers use different subsets of exports. Each subset becomes a file.
+3. **Change frequency** — stable plumbing vs. actively-evolving logic. Separate to reduce churn.
+
+In Go, prefer **multiple files in the same package** over new packages. New packages are only justified when there's a real interface boundary (e.g. `internal/ats/` is a package because adapters share an interface; individual adapter files are not sub-packages).
+
+### 4.3 Splits to avoid
+
+- Arbitrary line-count splits with no conceptual boundary.
+- No grab-bag `util.go` / `helpers.go` files. Co-locate single-caller helpers with their caller.
+- Don't separate types from the code that uses them. Struct definitions live in the file that owns the behavior, unless the struct is a cross-package contract.
+
+### 4.4 Directory density
+
+- **Uniform directories** (all ATS adapters, all migrations): flat-and-many is fine. 20+ files OK.
+- **Mixed-concern directories**: introduce subdirectories — but in Go this means a new package, so weigh the cost. Usually it's better to split files within the package.
+
+### 4.5 When to split
+
+- **Proactively**: when adding significant new functionality to an already-large file. You have full context; the split is cheapest now.
+- **Not retroactively** just to meet a number. Only when the file actively causes pain (hard to navigate, merge conflicts, too many responsibilities).
+- **Never during a bugfix.** Don't mix structural refactoring with behavior changes in one changeset.
+
+---
+
+## 5) Go Conventions
+
+### 5.1 Readability-first
+
+- Prefer **plain Go** over clever generics or reflection. Generics are appropriate when they remove real duplication across types; otherwise pick a concrete type.
+- Prefer **descriptive names** and early returns over deeply nested logic. Guard clauses with `if err != nil { return ... }` are idiomatic — embrace them.
+- Keep functions small; extract helpers only when it reduces duplication or clarifies a step.
+- Receiver names are short (1–2 letters) and consistent across methods on the same type. Idiomatic Go style.
+
+### 5.2 Error handling
+
+- **No `panic` in library code.** `panic` is reserved for genuinely unrecoverable conditions (programmer error, corrupted invariant). API failures, missing fields, parse errors all return `error`.
+- Wrap errors with `fmt.Errorf("fetching %s postings: %w", company, err)` to preserve the chain. Use `errors.Is` / `errors.As` to inspect.
+- Define **typed errors** (`var ErrRateLimited = errors.New(...)` or a struct implementing `Error()`) when callers need to branch on failure mode. Plain string errors are fine for terminal failures.
+- Return errors at the boundary where context is richest. Don't log-and-return — pick one. The fetcher entry point is the right place to log; library code returns.
+
+### 5.3 Interfaces at boundaries
+
+- Define interfaces in the package that **consumes** them, not the package that implements them. Idiomatic Go: `cmd/fetcher` declares what it needs from an ATS adapter; `internal/ats/greenhouse.go` implements it.
+- Keep interfaces small. The ATS adapter interface should be the minimum the fetcher needs to call (e.g. `FetchPostings(ctx, company) ([]Posting, error)`).
+- Validate external responses at the adapter boundary. Decode JSON into typed structs; reject malformed payloads with a wrapped error rather than passing `map[string]any` upward.
+
+### 5.4 Structs over maps for typed data
+
+- Anything with a known shape gets a `struct`. Maps are for genuinely dynamic key sets.
+- ATS API responses → decode into structs that mirror the response, then translate into domain types (`internal/ats.Posting`) before returning. The wire shape and the domain shape are separate concerns.
+- Use struct tags (`json:"job_id"`) at the wire-shape layer only. Domain types should not carry transport tags.
+
+### 5.5 Type switches over stringly-typed branching
+
+When you have a set of related variants (e.g. fetch outcome: success, rate-limited, not-modified, error), prefer a sealed interface + type switch over a `string` discriminator field. The compiler enforces exhaustiveness at the call site, and adding a new variant surfaces every place that needs to handle it.
+
+### 5.6 Database access
+
+- All SQL goes through `sqlc`-generated query functions. No string-built queries in business logic.
+- Hand-written SQL lives in `internal/db/queries/*.sql` with `-- name: FunctionName :many` annotations.
+- `pgx` is the driver; use `pgxpool.Pool` for connection management. Pass the pool (or a `Querier`) into adapter constructors so tests can substitute a fake.
+- Snapshot writes are **append-only inserts**. There is no update path for `posting_snapshots`. If you find yourself reaching for `ON CONFLICT ... DO UPDATE`, stop and re-read the snapshot model.
+
+---
+
+## 6) Logging, Errors, and Debuggability
+
+### 6.1 Logging rules
+
+- Prefix logs with a subsystem tag: `[fetcher]`, `[greenhouse]`, `[db]`, `[migrate]`.
+- Use structured logging (`log/slog`). Key-value pairs over interpolated strings: `slog.Info("fetched postings", "company", c, "count", n)`.
+- Log actionable failures once at the boundary; avoid spamming logs in hot paths (e.g. don't log per posting during a 5,000-row insert).
+- Make the "happy path" easy to follow in code; keep failure branches explicit.
+
+### 6.2 Inspecting state
+
+- `go test -v ./...` — verbose test output, the primary first-line debugging tool.
+- `psql` against the dev database — see §2 for connection. Inspect snapshots, vector embeddings, and migration state directly.
+- `slog` output goes to stderr by default. Pipe through `jq` if you switch the handler to JSON for richer filtering.
+
+### 6.3 Where logs come from
+
+In a single-binary app, all logs surface in the terminal where you ran the fetcher. The subsystem tag tells you which package emitted the line. Filter with `grep '\[greenhouse\]'` or similar.
+
+If a fetch fails silently, check (1) the database — did snapshots actually write? (2) the exit code of the fetcher binary, (3) the structured error chain (look for the wrapped `%w` context).
+
+### 6.4 Console subsystem tags
+
+Logs are prefixed with subsystem tags to identify the source package. Common tags include `[fetcher]`, `[greenhouse]`, `[lever]`, `[ashby]`, `[db]`, `[migrate]`. Filter by tag to isolate traffic during debugging.
+
+---
+
+## 7) Code Comments
+
+### 7.1 Comments that earn their keep
+
+- **Why, not what.** Explain rationale. The code shows behavior.
+- **Non-obvious context.** Why a field is denormalized, why a query is written this way for a specific Postgres planner quirk, why an ATS adapter handles a quirky response shape. Things a reader can't derive from the code alone.
+- **Spec pointers.** Brief link to the governing doc or contract when code implements a specific spec. File path or doc name — not an inline summary.
+
+### 7.2 File headers (package doc comments)
+
+In Go, the file-level comment on the `package` declaration becomes the package's godoc. Keep it short — what the package owns, then which doc governs it.
+
+**Good:**
+```go
+// Package ats defines the adapter interface for applicant tracking systems
+// and hosts per-vendor implementations.
+// See: agent-context/lib/project.md
+package ats
+```
+
+**Too much:**
+```go
+// Package ats provides a unified abstraction over multiple ATS vendors.
+// Each adapter implements the FetchPostings method, returning a normalized
+// []Posting slice. The package handles retries, rate limiting, and response
+// validation. The adapter pattern allows new vendors to be added by ...
+```
+
+The header's job is to tell you *which doc to load*, not to summarize that doc. Behavioral descriptions and architectural context belong in the spec.
+
+### 7.3 Comments to avoid
+
+- **Restating code.** If the code is unclear, improve the code — don't narrate it.
+- **Changelog annotations.** `// Added in PR #42`, `// Refactored from old approach`. Git handles provenance.
+- **Orphan TODOs.** `// TODO: fix later` without a ticket or actionable context. File a ticket and reference it, or fix it now.
+- **Duplicating docs.** Don't restate architecture docs in comments. Two sources of truth, both eventually wrong.
+
+### 7.4 Revising on encounter
+
+When you find a misleading, stale, or code-restating comment in a file you're already changing:
+
+- Fix or remove it in the same changeset. A missing comment beats a lying one.
+- Scope to code you're touching. Don't sweep unrelated files for comment cleanup.
+
+---
+
+## 8) Testing
+
+For detailed patterns, test strategy, and commands, see [Testing Guide](./testing-guide.md).

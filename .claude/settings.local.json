@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:developers.greenhouse.io)",
+      "WebFetch(domain:hire.lever.co)",
+      "WebFetch(domain:developers.ashbyhq.com)",
+      "WebSearch",
+      "WebFetch(domain:api.lever.co)",
+      "WebFetch(domain:api.ashbyhq.com)",
+      "Bash(go mod *)",
+      "Bash(mkdir -p /Users/dhiester/Projects/Personal/market-scout/cmd/migrate /Users/dhiester/Projects/Personal/market-scout/internal/db/migrations /Users/dhiester/Projects/Personal/market-scout/internal/db/queries)",
+      "Bash(git -C /Users/dhiester/Projects/Personal/market-scout add agent-context/plans/drafts/go-fetcher-and-greenhouse-adapter/index.md)",
+      "Bash(git -C /Users/dhiester/Projects/Personal/market-scout commit -m ' *)",
+      "Bash(git -C /Users/dhiester/Projects/Personal/market-scout mv agent-context/plans/drafts/go-fetcher-and-greenhouse-adapter agent-context/plans/ready/go-fetcher-and-greenhouse-adapter)",
+      "Bash(git -C /Users/dhiester/Projects/Personal/market-scout add -A)"
+    ]
+  }
+}

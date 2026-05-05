@@ -1,0 +1,23 @@
+name: market-scout
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: market-scout-db
+    restart: unless-stopped
+    env_file:
+      - path: .env.local
+        required: true
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+    name: market-scout-pgdata
