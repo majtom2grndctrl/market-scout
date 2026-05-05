@@ -126,11 +126,10 @@ type Posting struct {
 
 The fetcher does not import the `Adapter` interface from `internal/ats` directly — it accepts a map of `string → ats.Adapter` keyed by ATS name. This keeps the dispatch table explicit and testable without requiring the fetcher to know all adapter implementations at compile time.
 
-`go.mod` already includes `pgx/v5` from db-infrastructure. Add `golang.org/x/sync` if using `errgroup`; or use a plain semaphore pattern (buffered channel + `sync.WaitGroup`) to avoid the extra dependency. Either is acceptable — pick the one that reads most clearly.
+`go.mod` already includes `pgx/v5` from db-infrastructure. No additional dependencies needed. Use a plain semaphore (buffered channel capped at 5) plus `sync.WaitGroup` from the standard library — direct expression of "bounded concurrency, collect all errors," no extra package. `errgroup` from `golang.org/x/sync` cancels the shared context on first failure, which is the opposite of the fetcher's continue-on-error semantics.
+
+Each company goroutine gets a 45s context timeout, derived from the parent context. This bounds worst-case runtime per company without setting a global wall-clock limit on the full run.
 
 ## Open questions
 
-- **`source_url` vs. `job_url`**: The plan treats `job_postings.source_url` as the stable API endpoint URL (used as the unique identity key) and `posting_snapshots.job_url` as the candidate-facing careers page URL. Confirm this is the intended split before implementing. The alternative — using `absolute_url` (careers page URL) as the source_url — would break re-fetching by API.
-- **`fetch_run_id`**: The db-infrastructure plan notes this as a deferred open question. The fetcher plan sets `fetched_at` to the per-company fetch start time as a coarse proxy. If gap detection later requires grouping all postings from one run, a fetch run table will need a migration and a fetcher change.
-- **HTTP client timeout**: No timeout is specified here. The Greenhouse API is fast for small boards but could be slow for large ones. A 30s context timeout per company is a reasonable default — confirm or adjust.
-- **`golang.org/x/sync` dependency**: The db-infrastructure plan initializes `go.mod` without this package. The fetcher can avoid it entirely with a semaphore channel; add it only if `errgroup` is chosen for the concurrency model.
+- **`fetch_run_id`**: Deferred. `fetched_at` is a coarse proxy for now. If gap detection later requires grouping all postings from one run, a fetch run table will need a migration and a fetcher change. Revisit when building trend queries.
