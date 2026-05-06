@@ -5,6 +5,11 @@ WHERE ats IS NOT NULL
 ORDER BY name;
 
 -- name: UpsertJobPosting :one
+-- DO UPDATE is a no-op self-assignment — adapters are expected to emit a stable
+-- source_id for a given source_url, so in practice this is a no-op. Used so
+-- RETURNING id fires on conflict (DO NOTHING returns no rows on conflict, and
+-- the caller needs the existing row's id to write the snapshot).
+-- Append-only semantics apply to posting_snapshots, not this table.
 INSERT INTO job_postings (company_id, source_type, source_url, source_id)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (company_id, source_url) DO UPDATE SET source_id = EXCLUDED.source_id
