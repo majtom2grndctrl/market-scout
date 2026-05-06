@@ -96,7 +96,7 @@ func (g *Greenhouse) FetchPostings(ctx context.Context, boardToken string) ([]do
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBodyBytes))
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBodyBytes)) // body read error is non-actionable; status code is the signal
 		return nil, fmt.Errorf("greenhouse: unexpected status %d for %s: %s", resp.StatusCode, boardToken, strconv.Quote(string(bytes.TrimSpace(snippet))))
 	}
 
@@ -108,7 +108,7 @@ func (g *Greenhouse) FetchPostings(ctx context.Context, boardToken string) ([]do
 		return nil, fmt.Errorf("greenhouse: reading response body for %s: %w", boardToken, err)
 	}
 	if len(body) > maxResponseBytes {
-		return nil, fmt.Errorf("greenhouse: response body for %s exceeded %d bytes", boardToken, maxResponseBytes)
+		return nil, fmt.Errorf("greenhouse: response body for %s exceeded %d bytes (got %d)", boardToken, maxResponseBytes, len(body))
 	}
 
 	var wire ghResponse
@@ -127,7 +127,7 @@ func (g *Greenhouse) FetchPostings(ctx context.Context, boardToken string) ([]do
 			return nil, fmt.Errorf("greenhouse: job at index %d for %s has missing or zero id", i, boardToken)
 		}
 
-		idStr := strconv.FormatInt(job.ID, 10)
+		idStr := strconv.FormatInt(job.ID, 10) // decimal digits only — no URL escaping needed
 		posting := domain.Posting{
 			SourceID:  idStr,
 			SourceURL: fmt.Sprintf("%s/%s/jobs/%s", g.baseURL, escapedToken, idStr),

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"sync"
@@ -40,6 +41,8 @@ type atsAdapter interface {
 // errPartialFailure signals that one or more companies failed during a run.
 var errPartialFailure = errors.New("one or more companies failed")
 
+var errInvariantViolated = errors.New("summary invariant violated: goroutine returned without recording outcome")
+
 func main() {
 	if err := run(); err != nil {
 		if !errors.Is(err, errPartialFailure) {
@@ -66,7 +69,9 @@ func run() error {
 	}
 	defer pool.Close()
 
-	if err := pool.PingContext(ctx); err != nil {
+	pingCtx, pingCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer pingCancel()
+	if err := pool.PingContext(pingCtx); err != nil {
 		return fmt.Errorf("pinging database: %w", err)
 	}
 
@@ -77,8 +82,9 @@ func run() error {
 		return fmt.Errorf("loading companies: %w", err)
 	}
 
+	httpClient := &http.Client{}
 	adapters := map[string]atsAdapter{
-		"greenhouse": ats.New(nil),
+		"greenhouse": ats.New(httpClient),
 	}
 
 	// Partition companies up front so unknown ATS values are reported once
@@ -106,6 +112,7 @@ func run() error {
 		successCount     int
 	)
 
+	// Buffered channel as semaphore: send to acquire a slot, receive to release.
 	sem := make(chan struct{}, maxConcurrentCompanies)
 
 	totalAttempted := len(supported)
@@ -137,9 +144,10 @@ func run() error {
 				return
 			}
 
-			// workCtx inherits Canceled only from parent cancellation — its own
-			// timeout surfaces as DeadlineExceeded. So Canceled here means shutdown.
-			if errors.Is(err, context.Canceled) {
+			// Heuristic: workCtx surfaces its own timeout as DeadlineExceeded; Canceled
+			// propagates from the parent ctx (shutdown signal). The parent-context check
+			// confirms the signal came from above, not from a future nested cancellation.
+			if classifyCompanyError(err, ctx.Err()) {
 				slog.Warn("[fetcher] aborted by shutdown", "company", c.Name, "error", err)
 				mu.Lock()
 				abortedCompanies = append(abortedCompanies, c.Name)
@@ -182,9 +190,13 @@ func run() error {
 		"aborted_companies", abortedCompanies,
 	)
 
-	if failureCount > 0 || invariantViolated {
-		// Sentinel lets deferred cleanup (pool.Close, signal stop) run; main()
-		// maps it to exit 1 without re-logging. Shutdown alone is exit 0.
+	// Sentinels let deferred cleanup (pool.Close, signal stop) run; main()
+	// maps them to exit 1. Shutdown alone is exit 0.
+	if invariantViolated {
+		return errInvariantViolated
+	}
+	if failureCount > 0 {
+		slog.Warn("[fetcher] exiting with partial failure", "failed", failureCount)
 		return errPartialFailure
 	}
 	return nil
@@ -211,24 +223,24 @@ func fetchCompany(ctx context.Context, pool *sql.DB, adapter atsAdapter, c db.Co
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	// Rollback is a no-op if Commit succeeded; safe to defer unconditionally.
-	defer func() { _ = tx.Rollback() }()
+	// Rollback is a no-op after Commit (returns sql.ErrTxDone); safe to defer
+	// unconditionally. Log unexpected errors — a real rollback failure means
+	// the connection may have died mid-transaction.
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			slog.Warn("[fetcher] rollback error", "company", c.Name, "error", err)
+		}
+	}()
 
 	qtx := db.New(tx)
 
 	for i, p := range postings {
-		if p.SourceURL == "" {
-			return fmt.Errorf("posting %d: empty SourceURL — adapter contract violation", i)
-		}
-		if p.SourceID == "" {
-			return fmt.Errorf("posting %d (source_url=%s): empty SourceID — adapter contract violation", i, p.SourceURL)
-		}
 		// Empty RawData is a fatal adapter contract violation: persisting
 		// the company's snapshots without it would leave the board in a
 		// partial state and break the "fetched_at represents a complete
 		// view of the board" invariant. Abort the whole transaction.
-		if len(p.RawData) == 0 {
-			return fmt.Errorf("posting %d (source_url=%s): empty RawData — adapter contract violation", i, p.SourceURL)
+		if err := validatePosting(i, p); err != nil {
+			return err
 		}
 
 		jobPostingID, err := qtx.UpsertJobPosting(workCtx, db.UpsertJobPostingParams{
@@ -263,6 +275,28 @@ func fetchCompany(ctx context.Context, pool *sql.DB, adapter atsAdapter, c db.Co
 	}
 
 	slog.Info("[fetcher] fetched postings", "company", c.Name, "count", len(postings))
+	return nil
+}
+
+// classifyCompanyError returns true if the error should count as aborted_shutdown
+// (parent context was cancelled) rather than a genuine fetch/write failure.
+func classifyCompanyError(err error, parentCtxErr error) bool {
+	return errors.Is(err, context.Canceled) && parentCtxErr != nil
+}
+
+// validatePosting returns an error if the posting violates the adapter contract
+// for required fields. These are checked at the fetcher's write boundary so
+// adapters don't silently persist corrupted state.
+func validatePosting(i int, p domain.Posting) error {
+	if p.SourceURL == "" {
+		return fmt.Errorf("posting %d: empty SourceURL — adapter contract violation", i)
+	}
+	if p.SourceID == "" {
+		return fmt.Errorf("posting %d (source_url=%s): empty SourceID — adapter contract violation", i, p.SourceURL)
+	}
+	if len(p.RawData) == 0 {
+		return fmt.Errorf("posting %d (source_url=%s): empty RawData — adapter contract violation", i, p.SourceURL)
+	}
 	return nil
 }
 

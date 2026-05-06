@@ -42,6 +42,7 @@ func TestGreenhouseAdapter_SuccessfulParse(t *testing.T) {
 	if p.SourceURL != wantSourceURL {
 		t.Errorf("SourceURL: got %q, want %q", p.SourceURL, wantSourceURL)
 	}
+	// trailing spaces are preserved verbatim from the fixture — not a typo
 	wantTitle := "Accenture Account Executive, Strategic (London, United Kingdom)  "
 	if p.Title == nil || *p.Title != wantTitle {
 		t.Errorf("Title: got %v, want pointer to %q", p.Title, wantTitle)
@@ -248,6 +249,73 @@ func TestGreenhouseAdapter_MalformedJobEntry_ReturnsError(t *testing.T) {
 	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err == nil {
 		t.Fatalf("FetchPostings: got nil error, want non-nil for malformed job entry")
+	}
+	if postings != nil {
+		t.Errorf("postings: got %v, want nil on error", postings)
+	}
+}
+
+func TestGreenhouseAdapter_ExplicitZeroID_ReturnsError(t *testing.T) {
+	// id present in the wire response but set to 0: adapter must still reject it.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"jobs": [{"id": 0, "title": "Zero ID Role"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	if err == nil {
+		t.Fatalf("FetchPostings: got nil error, want non-nil for explicit id==0")
+	}
+	if postings != nil {
+		t.Errorf("postings: got %v, want nil on error", postings)
+	}
+}
+
+func TestGreenhouseAdapter_BoardTokenURLEscaping(t *testing.T) {
+	// boardToken containing characters that require URL path escaping.
+	// url.PathEscape encodes '/' as '%2F' and ' ' as '%20'.
+	boardToken := "example/co board"
+	escapedToken := "example%2Fco%20board"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// r.URL.Path is decoded by net/http; RawPath preserves the wire encoding.
+		rawPath := r.URL.RawPath
+		if rawPath == "" {
+			rawPath = r.URL.Path
+		}
+		if !strings.Contains(rawPath, escapedToken) {
+			t.Errorf("request path %q does not contain escaped token %q", rawPath, escapedToken)
+		}
+		_, _ = w.Write([]byte(`{"jobs": [{"id": 1234, "title": "Role"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), boardToken)
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	if len(postings) != 1 {
+		t.Fatalf("got %d postings, want 1", len(postings))
+	}
+	if !strings.Contains(postings[0].SourceURL, escapedToken) {
+		t.Errorf("SourceURL %q does not contain escaped token %q", postings[0].SourceURL, escapedToken)
+	}
+}
+
+func TestGreenhouseAdapter_OversizeResponse_ReturnsError(t *testing.T) {
+	// Response body exceeds maxResponseBytes; adapter must return an error rather
+	// than attempting to parse a potentially OOM-inducing payload.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Write maxResponseBytes+1 bytes. The adapter reads up to maxResponseBytes+1
+		// to detect overflow; seeing that many bytes means the body was truncated.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(make([]byte, maxResponseBytes+1))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	if err == nil {
+		t.Fatalf("FetchPostings: got nil error, want error for oversize response")
 	}
 	if postings != nil {
 		t.Errorf("postings: got %v, want nil on error", postings)

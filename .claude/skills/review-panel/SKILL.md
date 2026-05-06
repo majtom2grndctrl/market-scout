@@ -38,7 +38,7 @@ Determine review target from first argument (same rules as `/code-review`):
 
 !`git diff --stat HEAD 2>/dev/null`
 !`git diff --stat --cached 2>/dev/null`
-!`ls context/plans/in-progress/ context/plans/done/ 2>/dev/null`
+!`ls agent-context/plans/in-progress/ agent-context/plans/done/ 2>/dev/null`
 
 ## Process
 

@@ -19,8 +19,7 @@ import (
 // adapters must error rather than emit zero values.
 //
 // Optional fields are pointers; nil means the source did not supply the value
-// (persisted as NULL, distinct from an empty string). PostedAt is always nil
-// from Greenhouse, which exposes only last-modified semantics.
+// (persisted as NULL, distinct from an empty string).
 type Posting struct {
 	SourceID       string
 	SourceURL      string

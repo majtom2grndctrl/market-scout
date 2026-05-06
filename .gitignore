@@ -105,3 +105,6 @@ Icon
 *~
 .direnv/
 .envrc.local
+
+# --- Claude Code local memory (user-specific, not repo state) ---
+.claude/projects/
