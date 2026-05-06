@@ -5,38 +5,46 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	db "github.com/majtom2grndctrl/market-scout/internal/db"
 )
 
-const migrationsSource = "file://internal/db/migrations"
-
 func main() {
+	if err := run(); err != nil {
+		slog.Error("[migrate] " + err.Error())
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		slog.Error("[migrate] DATABASE_URL is not set")
-		os.Exit(1)
+		return errors.New("DATABASE_URL is not set")
 	}
 
 	if len(os.Args) < 2 {
-		slog.Error("[migrate] missing direction argument", "usage", "migrate up|down")
-		os.Exit(1)
+		return errors.New("missing direction argument; usage: migrate up|down")
 	}
 
 	direction := os.Args[1]
 	if direction != "up" && direction != "down" {
-		slog.Error("[migrate] unknown direction", "direction", direction, "expected", "up|down")
-		os.Exit(1)
+		return fmt.Errorf("unknown direction %q; expected up|down", direction)
 	}
 
-	m, err := migrate.New(migrationsSource, dbURL)
+	src, err := iofs.New(db.MigrationsFS, "migrations")
 	if err != nil {
-		slog.Error("[migrate] failed to initialize migrator", "err", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to open embedded migrations: %w", err)
+	}
+
+	m, err := migrate.NewWithSourceInstance("iofs", src, dbURL)
+	if err != nil {
+		return fmt.Errorf("failed to initialize migrator: %w", err)
 	}
 	defer func() {
 		if srcErr, dbErr := m.Close(); srcErr != nil || dbErr != nil {
@@ -55,11 +63,11 @@ func main() {
 	if runErr != nil {
 		if errors.Is(runErr, migrate.ErrNoChange) {
 			slog.Info("[migrate] migrations up to date")
-			return
+			return nil
 		}
-		slog.Error("[migrate] migration failed", "direction", direction, "err", runErr)
-		os.Exit(1)
+		return fmt.Errorf("migration %s failed: %w", direction, runErr)
 	}
 
 	slog.Info("[migrate] migration complete", "direction", direction)
+	return nil
 }
