@@ -29,7 +29,7 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 |---|---|---|
 | Fetcher | Go binary, `cmd/fetcher` | Concurrent HTTP from ATS APIs, cron-scheduled |
 | Database | Postgres in Docker | Option to point at Supabase later |
-| DB client | `sqlc` + `pgx` | Write SQL, get generated type-safe Go. No ORM. |
+| DB client | `sqlc` + `database/sql` + `pgx/v5/stdlib` | Write SQL, get generated type-safe Go. No ORM. Standard `database/sql` target (no `sql_package` override); generated models use `sql.NullString`/`sql.NullTime`, translated to `*string`/`*time.Time` at the DB boundary. |
 | Vector search | pgvector extension | Enabled from day one. Similarity queries in raw SQL. |
 | Storage model | Append-only snapshots | Every fetch writes timestamped rows. Never upsert. Load-bearing for trend analysis. |
 | App layer | Next.js (Server Actions / API routes → Postgres direct) | No separate Go API server. `pg` or `postgres.js`. |
@@ -37,7 +37,7 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 
 ## ATS targets
 
-Greenhouse first (cleanest API). Lever and Ashby follow. Adapter interface lives in `internal/ats`; each ATS is a separate implementation.
+Greenhouse first (cleanest API). Lever and Ashby follow. Each ATS is a separate file in `internal/ats`; all adapters return `domain.Posting` from `internal/domain`.
 
 ## The database as AI agent knowledge store
 

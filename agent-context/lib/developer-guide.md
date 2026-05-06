@@ -189,8 +189,7 @@ market-scout/
 │   └── migrate/             # Migration runner
 │       └── main.go
 ├── internal/
-│   ├── ats/                 # ATS adapter interface + implementations
-│   │   ├── ats.go           # Adapter interface, shared types
+│   ├── ats/                 # ATS adapter implementations (interface lives in cmd/fetcher per §5.3)
 │   │   ├── greenhouse.go    # Greenhouse implementation
 │   │   ├── lever.go         # (future)
 │   │   └── ashby.go         # (future)
@@ -270,20 +269,30 @@ In Go, prefer **multiple files in the same package** over new packages. New pack
 ### 5.3 Interfaces at boundaries
 
 - Define interfaces in the package that **consumes** them, not the package that implements them. Idiomatic Go: `cmd/fetcher` declares what it needs from an ATS adapter; `internal/ats/greenhouse.go` implements it.
-- Keep interfaces small. The ATS adapter interface should be the minimum the fetcher needs to call (e.g. `FetchPostings(ctx, company) ([]Posting, error)`).
+- Keep interfaces small. The ATS adapter interface should be the minimum the fetcher needs to call (e.g. `FetchPostings(ctx, company) ([]domain.Posting, error)`, where `domain.Posting` lives in `internal/domain` so producers and consumers share it without depending on each other).
 - Validate external responses at the adapter boundary. Decode JSON into typed structs; reject malformed payloads with a wrapped error rather than passing `map[string]any` upward.
 
 ### 5.4 Structs over maps for typed data
 
 - Anything with a known shape gets a `struct`. Maps are for genuinely dynamic key sets.
-- ATS API responses → decode into structs that mirror the response, then translate into domain types (`internal/ats.Posting`) before returning. The wire shape and the domain shape are separate concerns.
+- ATS API responses → decode into structs that mirror the response, then translate into domain types (`internal/domain.Posting`) before returning. The wire shape and the domain shape are separate concerns.
 - Use struct tags (`json:"job_id"`) at the wire-shape layer only. Domain types should not carry transport tags.
 
 ### 5.5 Type switches over stringly-typed branching
 
 When you have a set of related variants (e.g. fetch outcome: success, rate-limited, not-modified, error), prefer a sealed interface + type switch over a `string` discriminator field. The compiler enforces exhaustiveness at the call site, and adding a new variant surfaces every place that needs to handle it.
 
-### 5.6 Database access
+### 5.6 Concurrency
+
+Concurrency exists to overlap waits — outbound HTTP, mostly. It is not a performance lever for CPU or DB throughput. Apply the minimum that meets the requirement.
+
+- **Concurrency at the unit-of-work boundary.** One company, one goroutine. Sequential within. Goroutines inside a unit of work are a smell — the bottleneck is the upstream API, not local code.
+- **Bounded fan-out.** Cap simultaneous outbound requests with a semaphore. Unbounded fan-out is rude to ATS providers and trades politeness for marginal speed.
+- **Atomicity per unit.** Each unit's writes land in a single transaction or not at all. Snapshot semantics depend on `fetched_at` representing a complete view of one board.
+- **Context-driven shutdown.** Plumb `context.Context` from `signal.NotifyContext` through every blocking call. Acquiring a worker slot is itself blocking — `select` against `ctx.Done()` so SIGTERM doesn't strand undispatched work. In-flight work finishes within its own timeout or surfaces `context.Canceled`; classify and report, don't retry.
+- **Stdlib patterns.** `sync.WaitGroup`, buffered channels as semaphores, `errgroup` when error propagation matters. Avoid hand-rolled pools or channel pipelines — they obscure intent.
+
+### 5.7 Database access
 
 - All SQL goes through `sqlc`-generated query functions. No string-built queries in business logic.
 - Hand-written SQL lives in `internal/db/queries/*.sql` with `-- name: FunctionName :many` annotations.
