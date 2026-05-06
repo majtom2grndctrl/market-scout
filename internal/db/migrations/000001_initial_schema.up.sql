@@ -1,3 +1,4 @@
+-- Enabled for pgvector similarity search; no vector columns yet. See: agent-context/lib/project.md
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE companies (
@@ -62,6 +63,7 @@ CREATE TABLE skills (
     name text NOT NULL
 );
 
+-- Classifications (roles, specializations, skills) are properties of a posting and cascade with it; snapshot rows are historical records and must not be deleted.
 CREATE TABLE job_posting_roles (
     job_posting_id bigint NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
     role_id        bigint NOT NULL REFERENCES canonical_roles(id) ON DELETE CASCADE,
