@@ -20,7 +20,7 @@ type CanonicalRole struct {
 type Company struct {
 	ID                 int64
 	Name               string
-	Ats                sql.NullString
+	Ats                string
 	BoardToken         string
 	CreatedAt          time.Time
 	EmployeeCountRange sql.NullString

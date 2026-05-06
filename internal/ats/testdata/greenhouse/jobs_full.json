@@ -1,0 +1,28 @@
+{
+  "jobs": [
+    {
+      "id": 4567890,
+      "internal_job_id": 1234567,
+      "title": "Senior Software Engineer, Platform",
+      "updated_at": "2026-04-15T10:00:00-04:00",
+      "requisition_id": "R-2026-001",
+      "location": {
+        "name": "San Francisco, CA"
+      },
+      "absolute_url": "https://boards.greenhouse.io/exampleco/jobs/4567890",
+      "metadata": [
+        {"name": "Employment Type", "value": "Full-time"}
+      ],
+      "departments": [
+        {"id": 11, "name": "Engineering", "child_ids": [], "parent_id": null},
+        {"id": 12, "name": "Platform", "child_ids": [], "parent_id": 11}
+      ],
+      "offices": [
+        {"id": 21, "name": "San Francisco HQ", "location": "San Francisco, CA"}
+      ]
+    }
+  ],
+  "meta": {
+    "total": 1
+  }
+}

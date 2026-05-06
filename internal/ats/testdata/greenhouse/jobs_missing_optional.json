@@ -1,0 +1,18 @@
+{
+  "jobs": [
+    {
+      "id": 9876543,
+      "title": "Mystery Role",
+      "updated_at": "2026-04-15T10:00:00-04:00",
+      "location": {
+        "name": ""
+      },
+      "absolute_url": "https://boards.greenhouse.io/exampleco/jobs/9876543",
+      "departments": [],
+      "offices": []
+    }
+  ],
+  "meta": {
+    "total": 1
+  }
+}
