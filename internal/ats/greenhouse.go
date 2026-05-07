@@ -1,4 +1,4 @@
-// Package ats hosts Greenhouse and future ATS adapter implementations.
+// Package ats hosts ATS adapter implementations: Greenhouse, Lever, and Ashby.
 // Adapters return domain.Posting from internal/domain.
 // The consumer-side interface (atsAdapter) lives in cmd/fetcher — concrete
 // adapters satisfy it implicitly via Go structural typing.
@@ -6,11 +6,9 @@
 package ats
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -21,14 +19,6 @@ import (
 
 const greenhousePublicBaseURL = "https://boards-api.greenhouse.io/v1/boards"
 
-// Response body size caps. The 32 MiB ceiling guards against OOM from a
-// pathological response; the 4 KiB cap on error snippets keeps wrapped error
-// strings bounded while preserving enough body to debug 4xx/5xx replies.
-const (
-	maxResponseBytes = 32 * 1024 * 1024
-	maxErrBodyBytes  = 4 * 1024
-)
-
 // Greenhouse reads from the Greenhouse public Job Board API.
 // The API requires no auth and returns all jobs for a board in a single request.
 type Greenhouse struct {
@@ -36,17 +26,17 @@ type Greenhouse struct {
 	baseURL string
 }
 
-// New returns a Greenhouse adapter. If client is nil, http.DefaultClient is used.
+// NewGreenhouse returns a Greenhouse adapter. If client is nil, http.DefaultClient is used.
 // The adapter does not set a client-level timeout; cancellation flows from the context
 // passed to FetchPostings.
-func New(client *http.Client) *Greenhouse {
-	return newWithBaseURL(client, greenhousePublicBaseURL)
+func NewGreenhouse(client *http.Client) *Greenhouse {
+	return newGreenhouseWithBaseURL(client, greenhousePublicBaseURL)
 }
 
-// newWithBaseURL constructs a Greenhouse adapter pointed at an arbitrary base URL.
+// newGreenhouseWithBaseURL constructs a Greenhouse adapter pointed at an arbitrary base URL.
 // Test-only: lets adapter tests target an httptest.Server without mutating
-// package-level state. Production callers use New.
-func newWithBaseURL(client *http.Client, baseURL string) *Greenhouse {
+// package-level state. Production callers use NewGreenhouse.
+func newGreenhouseWithBaseURL(client *http.Client, baseURL string) *Greenhouse {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -64,8 +54,7 @@ type ghResponse struct {
 // FirstPublished and UpdatedAt are captured verbatim into SourceFirstPublishedAt
 // and SourceLastModifiedAt. Neither is promoted to PostedAt: `updated_at` is
 // last-modified semantics (not posting age), and `first_published` is unreliable
-// across Greenhouse boards. The full job is preserved in RawData for
-// re-interpretation.
+// across Greenhouse boards. The full job is preserved in RawData for re-interpretation.
 type ghJob struct {
 	ID             int64  `json:"id"`
 	Title          string `json:"title"`
@@ -88,31 +77,9 @@ func (g *Greenhouse) FetchPostings(ctx context.Context, boardToken string) ([]do
 	escapedToken := url.PathEscape(boardToken)
 	fetchURL := fmt.Sprintf("%s/%s/jobs?content=true", g.baseURL, escapedToken)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("greenhouse: building request for %s: %w", boardToken, err)
-	}
-
-	resp, err := g.client.Do(req)
+	body, err := httpFetch(ctx, g.client, fetchURL)
 	if err != nil {
 		return nil, fmt.Errorf("greenhouse: fetching postings for %s: %w", boardToken, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBodyBytes)) // body read error is non-actionable; status code is the signal
-		return nil, fmt.Errorf("greenhouse: unexpected status %d for %s: %s", resp.StatusCode, boardToken, strconv.Quote(string(bytes.TrimSpace(snippet))))
-	}
-
-	// Read up to maxResponseBytes+1 so we can detect truncation by overflow:
-	// reading exactly maxResponseBytes back is a legitimate response at the cap,
-	// but maxResponseBytes+1 means the upstream had more to send.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("greenhouse: reading response body for %s: %w", boardToken, err)
-	}
-	if len(body) > maxResponseBytes {
-		return nil, fmt.Errorf("greenhouse: response body for %s exceeded %d bytes (got %d)", boardToken, maxResponseBytes, len(body))
 	}
 
 	var wire ghResponse
@@ -141,6 +108,13 @@ func (g *Greenhouse) FetchPostings(ctx context.Context, boardToken string) ([]do
 		posting.Title = ptrIfNonEmpty(job.Title)
 		posting.JobURL = ptrIfNonEmpty(job.AbsoluteURL)
 		posting.LocationText = ptrIfNonEmpty(job.Location.Name)
+		// why: LocationTexts is the multi-source array column; Greenhouse exposes
+		// a single location string. Wrap it in a slice so Greenhouse rows have
+		// parity with Lever/Ashby rows and no NULL skew. Nil when empty — never
+		// an empty slice — so absence is unambiguous.
+		if job.Location.Name != "" {
+			posting.LocationTexts = []string{job.Location.Name}
+		}
 		if len(job.Departments) > 0 {
 			posting.Department = ptrIfNonEmpty(job.Departments[0].Name)
 		}

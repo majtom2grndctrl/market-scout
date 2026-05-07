@@ -73,6 +73,7 @@ type PostingSnapshot struct {
 	RawData                json.RawMessage
 	SourceFirstPublishedAt sql.NullTime
 	SourceLastModifiedAt   sql.NullTime
+	LocationTexts          []string
 }
 
 type Skill struct {

@@ -12,7 +12,7 @@ import (
 )
 
 func TestGreenhouseAdapter_SuccessfulParse(t *testing.T) {
-	fixture := loadFixture(t, "jobs_full.json")
+	fixture := loadAdapterFixture(t, "greenhouse", "jobs_full.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got, want := r.URL.Path, "/exampleco/jobs"; got != want {
@@ -26,7 +26,7 @@ func TestGreenhouseAdapter_SuccessfulParse(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	adapter := newWithBaseURL(srv.Client(), srv.URL)
+	adapter := newGreenhouseWithBaseURL(srv.Client(), srv.URL)
 	postings, err := adapter.FetchPostings(t.Context(), "exampleco")
 	if err != nil {
 		t.Fatalf("FetchPostings: %v", err)
@@ -50,6 +50,11 @@ func TestGreenhouseAdapter_SuccessfulParse(t *testing.T) {
 	}
 	if p.LocationText == nil || *p.LocationText != "London, England" {
 		t.Errorf("LocationText: got %v, want pointer to %q", p.LocationText, "London, England")
+	}
+	// LocationTexts is a single-element array mirroring location.name — this is
+	// the multi-source parity invariant called out in the plan.
+	if len(p.LocationTexts) != 1 || p.LocationTexts[0] != "London, England" {
+		t.Errorf("LocationTexts: got %v, want [%q]", p.LocationTexts, "London, England")
 	}
 	if p.Department == nil || *p.Department != "Sales" {
 		t.Errorf("Department: got %v, want pointer to %q", p.Department, "Sales")
@@ -87,14 +92,14 @@ func TestGreenhouseAdapter_SuccessfulParse(t *testing.T) {
 }
 
 func TestGreenhouseAdapter_MissingOptionalFields(t *testing.T) {
-	fixture := loadFixture(t, "jobs_missing_optional.json")
+	fixture := loadAdapterFixture(t, "greenhouse", "jobs_missing_optional.json")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(fixture)
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err != nil {
 		t.Fatalf("FetchPostings: %v", err)
 	}
@@ -104,6 +109,11 @@ func TestGreenhouseAdapter_MissingOptionalFields(t *testing.T) {
 	p := postings[0]
 	if p.LocationText != nil {
 		t.Errorf("LocationText: got pointer to %q, want nil", *p.LocationText)
+	}
+	// nil (not empty slice) when location.name is absent — preserves the
+	// nil-vs-empty distinction documented on domain.Posting.LocationTexts.
+	if p.LocationTexts != nil {
+		t.Errorf("LocationTexts: got %v, want nil", p.LocationTexts)
 	}
 	if p.Department != nil {
 		t.Errorf("Department: got pointer to %q, want nil", *p.Department)
@@ -132,7 +142,7 @@ func TestGreenhouseAdapter_Non2xxReturnsError(t *testing.T) {
 			}))
 			t.Cleanup(srv.Close)
 
-			postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+			postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 			if err == nil {
 				t.Fatalf("FetchPostings: got nil error, want non-nil")
 			}
@@ -153,7 +163,7 @@ func TestGreenhouseAdapter_MalformedJSONReturnsError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err == nil {
 		t.Fatalf("FetchPostings: got nil error, want non-nil")
 	}
@@ -168,7 +178,7 @@ func TestGreenhouseAdapter_EmptyJobsList_ReturnsEmptySlice(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err != nil {
 		t.Fatalf("FetchPostings: %v", err)
 	}
@@ -191,7 +201,7 @@ func TestGreenhouseAdapter_CancelledContext_ReturnsError(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel before the request starts
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(ctx, "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(ctx, "exampleco")
 	if err == nil {
 		t.Fatalf("FetchPostings: got nil error, want non-nil after context cancel")
 	}
@@ -211,7 +221,7 @@ func TestGreenhouseAdapter_MultipleDepartments_UsesFirst(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err != nil {
 		t.Fatalf("FetchPostings: %v", err)
 	}
@@ -231,7 +241,7 @@ func TestGreenhouseAdapter_ZeroID_ReturnsError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err == nil {
 		t.Fatalf("FetchPostings: got nil error, want non-nil for id==0")
 	}
@@ -247,7 +257,7 @@ func TestGreenhouseAdapter_MalformedJobEntry_ReturnsError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err == nil {
 		t.Fatalf("FetchPostings: got nil error, want non-nil for malformed job entry")
 	}
@@ -263,7 +273,7 @@ func TestGreenhouseAdapter_ExplicitZeroID_ReturnsError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err == nil {
 		t.Fatalf("FetchPostings: got nil error, want non-nil for explicit id==0")
 	}
@@ -291,7 +301,7 @@ func TestGreenhouseAdapter_BoardTokenURLEscaping(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), boardToken)
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), boardToken)
 	if err != nil {
 		t.Fatalf("FetchPostings: %v", err)
 	}
@@ -352,7 +362,7 @@ func TestGreenhouseAdapter_SourceTimestamps_BothPresent(t *testing.T) {
 			}))
 			t.Cleanup(srv.Close)
 
-			postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+			postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 			if err != nil {
 				t.Fatalf("FetchPostings: %v", err)
 			}
@@ -385,7 +395,7 @@ func TestGreenhouseAdapter_SourceTimestamps_BothAbsent(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err != nil {
 		t.Fatalf("FetchPostings: %v", err)
 	}
@@ -409,7 +419,7 @@ func TestGreenhouseAdapter_SourceTimestamps_MalformedFirstPublished(t *testing.T
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err == nil {
 		t.Fatalf("FetchPostings: got nil error, want non-nil for malformed first_published")
 	}
@@ -442,7 +452,7 @@ func TestGreenhouseAdapter_SourceTimestamps_MalformedUpdatedAt(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err == nil {
 		t.Fatalf("FetchPostings: got nil error, want non-nil for malformed updated_at")
 	}
@@ -463,6 +473,9 @@ func TestGreenhouseAdapter_SourceTimestamps_MalformedUpdatedAt(t *testing.T) {
 }
 
 func TestGreenhouseAdapter_OversizeResponse_ReturnsError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 32 MiB allocation in -short mode")
+	}
 	// Response body exceeds maxResponseBytes; adapter must return an error rather
 	// than attempting to parse a potentially OOM-inducing payload.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -473,7 +486,7 @@ func TestGreenhouseAdapter_OversizeResponse_ReturnsError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
 	if err == nil {
 		t.Fatalf("FetchPostings: got nil error, want error for oversize response")
 	}

@@ -1,0 +1,12 @@
+[
+  {
+    "id": "loc-fallback-1",
+    "text": "Solo Location Role",
+    "hostedUrl": "https://jobs.lever.co/leverdemo/loc-fallback-1",
+    "createdAt": 1714521600000,
+    "workplaceType": "onsite",
+    "categories": {
+      "location": "Singapore"
+    }
+  }
+]

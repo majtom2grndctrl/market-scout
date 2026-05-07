@@ -1,0 +1,48 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "fallback-job-1",
+      "title": "Staff Engineer",
+      "department": "Engineering",
+      "team": "Platform",
+      "employmentType": "FullTime",
+      "location": "Remote - Global",
+      "secondaryLocations": [
+        {
+          "location": "Tokyo Office",
+          "address": {
+            "postalAddress": {
+              "addressLocality": "",
+              "addressRegion": "",
+              "addressCountry": ""
+            }
+          }
+        },
+        {
+          "location": "Berlin HQ",
+          "address": {
+            "postalAddress": {
+              "addressLocality": "Berlin",
+              "addressRegion": "Berlin",
+              "addressCountry": "Germany"
+            }
+          }
+        },
+        {
+          "location": "",
+          "address": {
+            "postalAddress": {
+              "addressLocality": "",
+              "addressRegion": "",
+              "addressCountry": ""
+            }
+          }
+        }
+      ],
+      "publishedAt": "2026-04-15T10:00:00Z",
+      "workplaceType": "Remote",
+      "jobUrl": "https://jobs.ashbyhq.com/example/fallback-job-1"
+    }
+  ]
+}

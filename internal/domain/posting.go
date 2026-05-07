@@ -19,12 +19,19 @@ import (
 // adapters must error rather than emit zero values.
 //
 // Optional fields are pointers; nil means the source did not supply the value
-// (persisted as NULL, distinct from an empty string).
+// (persisted as NULL, distinct from an empty string). Slice-typed optional
+// fields follow the same contract: nil = NULL, non-nil = array (an empty
+// non-nil slice persists as an explicit empty array, distinct from NULL).
 type Posting struct {
-	SourceID       string
-	SourceURL      string
-	Title          *string
-	LocationText   *string
+	SourceID     string
+	SourceURL    string
+	Title        *string
+	LocationText *string
+	// LocationTexts is the multi-market location list. nil = source did not
+	// supply locations; empty slice = source returned an explicit empty array
+	// (rare but distinct); populated = one or more strings. The nil-vs-empty
+	// distinction is load-bearing for trend queries on multi-market roles.
+	LocationTexts  []string
 	Department     *string
 	Team           *string
 	EmploymentType *string

@@ -88,7 +88,9 @@ func run() error {
 
 	httpClient := &http.Client{}
 	adapters := map[string]atsAdapter{
-		"greenhouse": ats.New(httpClient),
+		"greenhouse": ats.NewGreenhouse(httpClient),
+		"lever":      ats.NewLever(httpClient),
+		"ashby":      ats.NewAshby(httpClient),
 	}
 
 	// Partition companies up front so unknown ATS values are reported once
@@ -301,6 +303,7 @@ func buildSnapshotParams(jobPostingID int64, fetchedAt time.Time, p domain.Posti
 		FetchedAt:              fetchedAt,
 		Title:                  nullStr(p.Title),
 		LocationText:           nullStr(p.LocationText),
+		LocationTexts:          p.LocationTexts,
 		Department:             nullStr(p.Department),
 		Team:                   nullStr(p.Team),
 		EmploymentType:         nullStr(p.EmploymentType),

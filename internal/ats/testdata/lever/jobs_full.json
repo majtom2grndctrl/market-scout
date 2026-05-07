@@ -1,0 +1,37 @@
+[
+  {
+    "id": "d88d75e3-9465-4ea9-93d1-129e835c4cd9",
+    "text": "Senior Designer",
+    "hostedUrl": "https://jobs.lever.co/leverdemo/d88d75e3-9465-4ea9-93d1-129e835c4cd9",
+    "createdAt": 1714521600000,
+    "workplaceType": "remote",
+    "country": "US",
+    "categories": {
+      "team": "Design Systems",
+      "department": "Design",
+      "commitment": "Full-time",
+      "location": "Amsterdam, Netherlands",
+      "allLocations": [
+        "Amsterdam, Netherlands",
+        "Berlin, Germany",
+        "Remote - EU"
+      ]
+    },
+    "lists": [],
+    "additional": "<div>extras</div>"
+  },
+  {
+    "id": "c559265a-55ec-4f75-ac56-78290081f6e7",
+    "text": "Account Executive",
+    "hostedUrl": "https://jobs.lever.co/leverdemo/c559265a-55ec-4f75-ac56-78290081f6e7",
+    "createdAt": 1574697610709,
+    "workplaceType": "hybrid",
+    "categories": {
+      "team": "Sales",
+      "department": "Revenue",
+      "commitment": "Contract",
+      "location": "London, UK",
+      "allLocations": ["London, UK"]
+    }
+  }
+]

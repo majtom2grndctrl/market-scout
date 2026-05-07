@@ -35,6 +35,8 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 | App layer | Next.js (Server Actions / API routes → Postgres direct) | No separate Go API server. `pg` or `postgres.js`. |
 | Future | `init` CLI | Scaffolds new users' setups. Not in scope yet. |
 
+Our own first-observed timestamp on a job-posting record is the load-bearing repost-detection signal. ATS-reported "first published" and "created at" timestamps refresh on repost on at least some boards, so they cannot be trusted as the primary signal. The append-only snapshot model combined with an immutable first-observed timestamp — set once on initial upsert, never overwritten — is what makes repost detection durable. Source-reported timestamps are captured on every snapshot as a secondary change-detection signal, not as the repost anchor.
+
 ## ATS targets
 
 Greenhouse first (cleanest API). Lever and Ashby follow. Each ATS is a separate file in `internal/ats`; all adapters return `domain.Posting` from `internal/domain`.
@@ -46,7 +48,6 @@ The Postgres DB is also intended to serve as a knowledge store for an AI agent l
 ## Non-goals (current scope)
 
 - Scheduler (deferred)
-- Lever and Ashby adapters (deferred)
 - Next.js app UI (deferred)
 - Enrichment workflow (deferred)
 - Agent UI (deferred)

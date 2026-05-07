@@ -1,0 +1,15 @@
+[
+  {
+    "id": "empty-locs-1",
+    "text": "Globally Distributed Role",
+    "hostedUrl": "https://jobs.lever.co/leverdemo/empty-locs-1",
+    "workplaceType": "remote",
+    "categories": {
+      "team": "Platform",
+      "department": "Engineering",
+      "commitment": "Full-time",
+      "location": "Anywhere",
+      "allLocations": []
+    }
+  }
+]

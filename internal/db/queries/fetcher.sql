@@ -28,5 +28,6 @@ INSERT INTO posting_snapshots (
     job_url,
     raw_data,
     source_first_published_at,
-    source_last_modified_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);
+    source_last_modified_at,
+    location_texts
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);

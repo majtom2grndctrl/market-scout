@@ -1,0 +1,47 @@
+{
+  "apiVersion": "1",
+  "jobs": [
+    {
+      "id": "7458d4e9-da2e-47bd-98cb-adfda43d42b2",
+      "title": "Engineering Manager, EU",
+      "department": "Engineering",
+      "team": "EMEA Engineering",
+      "employmentType": "FullTime",
+      "location": "Remote - European Union",
+      "secondaryLocations": [
+        {
+          "location": "Bucharest Office",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "",
+              "addressCountry": "Romania",
+              "addressLocality": ""
+            }
+          }
+        },
+        {
+          "location": "BCN HQ",
+          "address": {
+            "postalAddress": {
+              "addressRegion": "Catalonia",
+              "addressCountry": "Spain",
+              "addressLocality": "Barcelona"
+            }
+          }
+        }
+      ],
+      "publishedAt": "2026-04-15T10:00:00Z",
+      "workplaceType": "Remote",
+      "jobUrl": "https://jobs.ashbyhq.com/example/7458d4e9-da2e-47bd-98cb-adfda43d42b2"
+    },
+    {
+      "id": "minimal-job-2",
+      "title": "Designer",
+      "employmentType": "Contract",
+      "location": "New York, NY",
+      "publishedAt": "2026-03-01T09:30:00.123+00:00",
+      "workplaceType": "OnSite",
+      "jobUrl": "https://jobs.ashbyhq.com/example/minimal-job-2"
+    }
+  ]
+}

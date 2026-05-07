@@ -157,7 +157,7 @@ Fields kept only in `raw_data`: HTML descriptions, salary ranges, Ashby `address
 
 - `\d posting_snapshots` after migration shows `location_texts` as a nullable `text[]` column.
 - Down migration runs cleanly without error. Data in `location_texts` is lost on down (acceptable; this is a personal pre-1.0 tool).
-- If the live Lever API paginates (confirmed by the Task 5 spike): a multi-page fixture produces one combined `[]domain.Posting` slice and pagination terminates when `hasNext` is false. If the live API returns all jobs in a single response, the multi-page test case is dropped.
+- The Lever adapter paginates via `?skip=N&limit=100` (per the Task 5 spike — bare-array responses, no `hasNext` envelope). A multi-page fixture produces one combined `[]domain.Posting` slice and pagination terminates when a page returns fewer than 100 rows.
 - A Lever fixture with `categories.allLocations` populated produces `LocationTexts` matching the array.
 - A Lever fixture without `categories.allLocations` but with `categories.location` produces `LocationTexts` as a single-element array with that string.
 - A Lever fixture with `workplaceType: "remote"` produces `WorkplaceType = "remote"`. `"unspecified"` produces nil. An unrecognized value produces nil plus a `[lever]` warn line naming the wire value.
@@ -197,9 +197,9 @@ Add a package-private file in `internal/ats` exposing one helper: takes `(ctx, *
 
 Write `internal/ats/lever.go`. Constructor `NewLever(client *http.Client) *Lever` matching the Greenhouse signature.
 
-Before writing the decoder: fetch one real Lever board (e.g. `https://api.lever.co/v0/postings/<some-public-board>`) and pin the actual response shape and pagination behavior. Update this task and the relevant ACs if the live API contradicts the research doc.
+**Spike findings (2026-05-06, against `leverdemo`):** the v0 public postings API returns a **bare JSON array** of jobs — no `{data, next, hasNext}` envelope (research doc was wrong on this). Pagination is by **`?skip=N&limit=100`** (numeric, not opaque tokens; `offset=N` is silently ignored on this API). There is no `hasNext` field; the termination signal is "fewer than `limit` rows returned." The 390-job demo board paginates correctly under this scheme.
 
-`FetchPostings(ctx, boardToken)` paginates with `?limit=100&offset=<token>` until `hasNext` is false (pagination shape to be confirmed by the spike above). Wire structs are private; one `leverJob` struct mirrors the subset of fields normalized into `domain.Posting`. Unknown employment-type and workplace-type values warn and produce nil. `createdAt` (ms epoch) parses via `time.UnixMilli`. `LocationTexts` falls back from `categories.allLocations` to `[categories.location]` to nil. `LocationText` is set to the first element of `LocationTexts` when non-empty. `RawData` carries the per-job raw bytes (shape pinned by the spike). `SourceURL` and `JobURL` both = `hostedUrl`; reject empty per the existing `domain.Posting` contract. Employment-type normalization: lowercase + strip non-alphanum, match starter alias map (extend via warns).
+`FetchPostings(ctx, boardToken)` paginates with `?limit=100&skip=N&mode=json`, advancing `skip` by 100 each loop, terminating when the API returns fewer than 100 rows. Wire structs are private; one `leverJob` struct mirrors the subset of fields normalized into `domain.Posting`, decoded from per-job `json.RawMessage` so `RawData` preserves the original bytes. Unknown employment-type and workplace-type values warn and produce nil. `createdAt` (ms epoch) parses via `time.UnixMilli`; the same value populates `PostedAt` and `SourceFirstPublishedAt`. `SourceLastModifiedAt` stays nil — Lever exposes no last-modified field. `LocationTexts` falls back from `categories.allLocations` to `[categories.location]` to nil. `LocationText` is set to the first element of `LocationTexts` when non-empty. `SourceURL` and `JobURL` both = `hostedUrl`; reject empty `id` and empty `hostedUrl` per the existing `domain.Posting` contract. Employment-type normalization: lowercase + strip non-alphanum, match starter alias map (extend via warns).
 
 ### Task 6 — Ashby adapter
 
