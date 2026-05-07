@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
@@ -23,6 +24,8 @@ func main() {
 }
 
 func run() error {
+	_ = godotenv.Load(".env.local") // no-op if absent; prod sets env vars directly
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		return errors.New("DATABASE_URL is not set")

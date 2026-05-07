@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for database/sql
 
 	"github.com/majtom2grndctrl/market-scout/internal/ats"
@@ -53,6 +55,8 @@ func main() {
 }
 
 func run() error {
+	_ = godotenv.Load(".env.local") // no-op if absent; prod sets env vars directly
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		return errors.New("DATABASE_URL is not set")
