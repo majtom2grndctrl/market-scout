@@ -92,7 +92,7 @@ Use table-driven subtests (`t.Run`) when several inputs exercise the same behavi
 | Each integration test gets a fresh schema or transaction-wrapped DB | Cross-test row leakage produces flaky, order-dependent failures. |
 | Use `t.Cleanup` for teardown | Runs even on `t.Fatal`. Prefer over `defer` in helpers. |
 | Use `context.Context` with `t.Context()` (Go 1.24+) or a per-test `context.WithCancel` | Prevents goroutine leaks when a test fails mid-fetch. |
-| Never share a `*sql.DB` / `*pgxpool.Pool` between tests that mutate schema | Use one pool per package, isolate state via transactions or schemas. |
+| Never share a `*sql.DB` between tests that mutate schema | Use one pool per package, isolate state via transactions or schemas. |
 | Record real ATS responses into `testdata/` rather than hand-writing JSON | Hand-written fixtures encode your assumptions, not the API's actual shape. |
 | Use `testing.Short()` to gate slow tests | `go test -short ./...` stays fast for the inner loop. |
 
