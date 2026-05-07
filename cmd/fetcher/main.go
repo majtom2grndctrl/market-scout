@@ -306,28 +306,17 @@ func fetchCompany(ctx context.Context, pool *sql.DB, adapter atsAdapter, c db.Co
 	return nil
 }
 
-// insertFetchRun creates an in_progress fetch_runs row in its own short
-// transaction so it persists even if the rest of the work crashes. Returns
-// the new row id.
+// insertFetchRun creates an in_progress fetch_runs row so it persists even
+// if the rest of the work crashes. Returns the new row id. A single INSERT
+// is its own implicit transaction — wrapping it in BEGIN/COMMIT would add
+// two round-trips for no isolation benefit.
 func insertFetchRun(ctx context.Context, pool *sql.DB, c db.Company, startedAt time.Time) (int64, error) {
-	tx, err := pool.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("beginning transaction: %w", err)
-	}
-	defer func() {
-		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-			slog.Warn("[fetcher] fetch_run insert rollback error", "company", c.Name, "error", err)
-		}
-	}()
-	id, err := db.New(tx).InsertFetchRun(ctx, db.InsertFetchRunParams{
+	id, err := db.New(pool).InsertFetchRun(ctx, db.InsertFetchRunParams{
 		CompanyID: c.ID,
 		StartedAt: startedAt,
 	})
 	if err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("committing transaction: %w", err)
+		return 0, fmt.Errorf("inserting fetch run: %w", err)
 	}
 	return id, nil
 }
@@ -335,13 +324,13 @@ func insertFetchRun(ctx context.Context, pool *sql.DB, c db.Company, startedAt t
 // markFetchRunFailed updates the fetch_runs row to status='failed' on a
 // fresh 5-second context derived from the caller's parent ctx. The parent
 // ctx is used (not workCtx) because workCtx may already be expired or
-// cancelled by the failure we're recording. If the parent itself is already
-// cancelled (shutdown), we skip the update — there's no time budget to
-// burn on bookkeeping during shutdown.
+// cancelled by the failure we're recording. The write must proceed even
+// during shutdown — leaving the row stuck as in_progress would make a clean
+// SIGTERM indistinguishable from a crash, which is the one thing
+// in_progress is meant to signal.
 func markFetchRunFailed(parentCtx context.Context, pool *sql.DB, fetchRunID int64, cause error) {
-	if parentCtx.Err() != nil {
-		return
-	}
+	// WithoutCancel preserves context values (e.g. trace IDs) from parentCtx
+	// while stripping its cancellation, so this write proceeds even on shutdown.
 	updateCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 5*time.Second)
 	defer cancel()
 

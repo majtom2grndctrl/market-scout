@@ -139,7 +139,7 @@ func TestFetchCompany_SuccessPath_WritesFetchRunAndSnapshots(t *testing.T) {
 	)
 	err := pool.QueryRowContext(t.Context(), `
 		SELECT id, status, postings_count, error_message, completed_at
-		FROM fetch_runs WHERE company_id = $1
+		FROM fetch_runs WHERE company_id = $1 ORDER BY id DESC LIMIT 1
 	`, c.ID).Scan(&fetchRunID, &status, &postingsCount, &errorMessage, &completedAt)
 	if err != nil {
 		t.Fatalf("query fetch_runs: %v", err)
@@ -208,7 +208,7 @@ func TestFetchCompany_FailurePath_MarksFailedAndWritesNoSnapshots(t *testing.T) 
 	)
 	row := pool.QueryRowContext(t.Context(), `
 		SELECT id, status, postings_count, error_message, completed_at
-		FROM fetch_runs WHERE company_id = $1
+		FROM fetch_runs WHERE company_id = $1 ORDER BY id DESC LIMIT 1
 	`, c.ID)
 	if err := row.Scan(&fetchRunID, &status, &postingsCount, &errorMessage, &completedAt); err != nil {
 		t.Fatalf("query fetch_runs: %v", err)

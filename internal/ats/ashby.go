@@ -19,7 +19,7 @@ const ashbyPublicBaseURL = "https://api.ashbyhq.com/posting-api/job-board"
 // The API requires no auth and returns all jobs for a clientname in a single
 // request (no pagination).
 //
-// Wire shape pinned by the Task 6 live-API spike against several public boards
+// Wire shape pinned by a live-API spike (2026-05) against several public boards
 // (`ashby`, `posthog`, `linear`, `notion`):
 //   - Top-level shape: `{"jobs": [...], "apiVersion": "..."}`.
 //   - `workplaceType` arrives PascalCase (`OnSite | Hybrid | Remote`) and is
@@ -169,10 +169,9 @@ func decodeAshbyJob(raw json.RawMessage, clientName string, index int) (domain.P
 		posting.DescriptionText = &text
 	}
 
-	// Ashby compensation deferred; see fetch-runs-and-richer-snapshots spec.
-	// The public job-board API exposes a `compensation` block, but normalizing
-	// its tiered/component shape into the schema's flat min/max/currency/period
-	// model is out of scope for this iteration. All four comp fields stay nil.
+	// Ashby compensation deferred: the API's compensation field is a tier summary
+	// string, not a numeric range. Structured parsing is not viable; revisit if
+	// Ashby exposes a numeric field or LLM-based extraction lands.
 
 	if job.PublishedAt != "" {
 		t, err := time.Parse(time.RFC3339Nano, job.PublishedAt)

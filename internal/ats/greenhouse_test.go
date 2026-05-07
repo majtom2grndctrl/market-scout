@@ -51,8 +51,9 @@ func TestGreenhouseAdapter_SuccessfulParse(t *testing.T) {
 	if p.LocationText == nil || *p.LocationText != "London, England" {
 		t.Errorf("LocationText: got %v, want pointer to %q", p.LocationText, "London, England")
 	}
-	// LocationTexts is a single-element array mirroring location.name — this is
-	// the multi-source parity invariant called out in the plan.
+	// LocationTexts wraps the single Greenhouse location string in a one-element
+	// array — the column is a multi-value array on all three adapters, so wrapping
+	// here prevents NULL skew against Lever/Ashby rows.
 	if len(p.LocationTexts) != 1 || p.LocationTexts[0] != "London, England" {
 		t.Errorf("LocationTexts: got %v, want [%q]", p.LocationTexts, "London, England")
 	}

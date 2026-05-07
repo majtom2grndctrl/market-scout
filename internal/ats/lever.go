@@ -50,8 +50,9 @@ func newLeverWithBaseURL(client *http.Client, baseURL string) *Lever {
 
 // leverJob is the subset of the per-job wire shape the adapter extracts into
 // Posting. The full job is preserved in RawData so fields not declared here
-// (description HTML, lists, additional, salaryRange, opening, etc.) can be
-// re-interpreted later without re-fetching.
+// (opening, additional, etc.) can be re-interpreted later without
+// re-fetching. Description and salaryRange are extracted at ingest
+// (see DescriptionText and CompensationMin/Max/Currency/Period on domain.Posting).
 //
 // `categories.allLocations` is the multi-market field; `categories.location`
 // is the single-string fallback. `createdAt` is a millisecond epoch and is
@@ -323,6 +324,13 @@ func normalizeLeverSalary(s *leverSalaryRange) (min int64, max int64, currency s
 	currency = strings.ToUpper(strings.TrimSpace(s.Currency))
 	if !isThreeUpperLetters(currency) {
 		slog.Warn("[lever] invalid currency", "currency", s.Currency)
+		return 0, 0, "", "", false
+	}
+	// Lever boards advertising "competitive" sometimes emit a zeroed range
+	// (min/max both 0). Treat zero, negative, or inverted ranges as absent
+	// rather than persisting misleading $0 comp data.
+	if s.Min <= 0 || s.Max <= 0 || s.Max < s.Min {
+		slog.Warn("[lever] invalid salary range", "min", s.Min, "max", s.Max)
 		return 0, 0, "", "", false
 	}
 	return s.Min, s.Max, currency, period, true

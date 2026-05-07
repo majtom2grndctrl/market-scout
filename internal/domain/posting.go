@@ -44,7 +44,8 @@ type Posting struct {
 	DescriptionText        *string
 	// Compensation fields are all-or-nothing: adapters set all four
 	// (CompensationMin, CompensationMax, CompensationCurrency,
-	// CompensationPeriod) together, or none.
+	// CompensationPeriod) together, or none. Min and Max are in whole units
+	// of Currency (e.g. dollars, not cents).
 	CompensationMin      *int64
 	CompensationMax      *int64
 	CompensationCurrency *string

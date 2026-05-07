@@ -656,4 +656,34 @@ func TestLeverAdapter_NilCompOnUnknownInterval(t *testing.T) {
 	}
 }
 
+// TestLeverAdapter_NilCompOnZeroRange pins the all-or-nothing rule for the
+// "competitive" case: some Lever boards emit a zeroed salaryRange
+// (min=0, max=0) with an otherwise-valid currency and interval. The adapter
+// must drop every comp field rather than persist misleading $0 data.
+func TestLeverAdapter_NilCompOnZeroRange(t *testing.T) {
+	body := `[{"id":"x","hostedUrl":"https://example.com/x","salaryRange":{"min":0,"max":0,"currency":"USD","interval":"per-year-salary"}}]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newLeverWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "leverdemo")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	p := postings[0]
+	if p.CompensationMin != nil {
+		t.Errorf("CompensationMin: got %v, want nil", *p.CompensationMin)
+	}
+	if p.CompensationMax != nil {
+		t.Errorf("CompensationMax: got %v, want nil", *p.CompensationMax)
+	}
+	if p.CompensationCurrency != nil {
+		t.Errorf("CompensationCurrency: got %v, want nil", *p.CompensationCurrency)
+	}
+	if p.CompensationPeriod != nil {
+		t.Errorf("CompensationPeriod: got %v, want nil", *p.CompensationPeriod)
+	}
+}
+
 func strPtr(s string) *string { return &s }
