@@ -19,6 +19,8 @@
       "Bash(staticcheck ./...)",
       "Skill(review-panel)",
       "Skill(review-panel:*)",
+      "Skill(fix-findings)",
+      "Skill(fix-findings:*)",
       "WebFetch(domain:boards-api.greenhouse.io)",
       "Bash(curl -s \"https://api.lever.co/v0/postings/lever?limit=2&mode=json\")",
       "Bash(curl -s \"https://api.lever.co/v0/postings/microsoft?limit=2&mode=json\")",
@@ -40,7 +42,12 @@
       "Bash(gofmt -l .)",
       "Bash(gofmt -d cmd/migrate/main.go)",
       "Bash(git stash *)",
-      "Bash(gofmt -l internal/domain/posting.go internal/ats/greenhouse.go cmd/fetcher/main.go)"
+      "Bash(gofmt -l internal/domain/posting.go internal/ats/greenhouse.go cmd/fetcher/main.go)",
+      "Bash(mv agent-context/plans/ready/lever-and-ashby-adapters *)",
+      "Bash(gofmt -l internal/ats/lever_test.go)",
+      "Bash(gofmt -l cmd/fetcher/main.go)",
+      "Bash(gofmt -d cmd/fetcher/main.go)",
+      "Bash(gofmt *)"
     ]
   }
 }
