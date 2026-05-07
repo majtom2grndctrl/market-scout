@@ -15,6 +15,7 @@
 - **Test strategy, patterns, running tests** → `agent-context/lib/testing-guide.md`
 - **Go fetcher (structure, conventions)** → `agent-context/lib/project.md` §Settled architecture
 - **ATS adapter (adding or modifying)** → `agent-context/lib/project.md` §ATS targets
+- **Company watchlist (active scrape run, candidates, onboarding)** → `agent-context/lib/watchlist.md`
 - **Database schema / migrations** → `agent-context/lib/project.md` §Settled architecture
 - **Generated files (sqlc, codegen) — never hand-edit** → `agent-context/lib/developer-guide.md` §5.8
 - **Snapshot storage model** → `agent-context/lib/project.md` §Settled architecture *(append-only, never upsert)*

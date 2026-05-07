@@ -30,6 +30,8 @@ func httpFetch(ctx context.Context, client *http.Client, url string) ([]byte, er
 	if err != nil {
 		return nil, fmt.Errorf("httpfetch: building request for %s: %w", url, err)
 	}
+	// Some job-board CDNs (Cloudflare) reset connections from Go's default UA.
+	req.Header.Set("User-Agent", "market-scout/0.1 (job board fetcher; +https://github.com/majtom2grndctrl/market-scout)")
 
 	resp, err := client.Do(req)
 	if err != nil {
