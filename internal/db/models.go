@@ -33,6 +33,16 @@ type Company struct {
 	EnrichedAt         sql.NullTime
 }
 
+type FetchRun struct {
+	ID            int64
+	CompanyID     int64
+	StartedAt     time.Time
+	CompletedAt   sql.NullTime
+	Status        string
+	ErrorMessage  sql.NullString
+	PostingsCount sql.NullInt32
+}
+
 type JobPosting struct {
 	ID          int64
 	CompanyID   int64
@@ -74,6 +84,12 @@ type PostingSnapshot struct {
 	SourceFirstPublishedAt sql.NullTime
 	SourceLastModifiedAt   sql.NullTime
 	LocationTexts          []string
+	FetchRunID             sql.NullInt64
+	DescriptionText        sql.NullString
+	CompensationMin        sql.NullInt64
+	CompensationMax        sql.NullInt64
+	CompensationCurrency   sql.NullString
+	CompensationPeriod     sql.NullString
 }
 
 type Skill struct {

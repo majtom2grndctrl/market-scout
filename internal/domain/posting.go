@@ -41,5 +41,13 @@ type Posting struct {
 	SourceFirstPublishedAt *time.Time
 	SourceLastModifiedAt   *time.Time
 	JobURL                 *string
-	RawData                json.RawMessage
+	DescriptionText        *string
+	// Compensation fields are all-or-nothing: adapters set all four
+	// (CompensationMin, CompensationMax, CompensationCurrency,
+	// CompensationPeriod) together, or none.
+	CompensationMin      *int64
+	CompensationMax      *int64
+	CompensationCurrency *string
+	CompensationPeriod   *string
+	RawData              json.RawMessage
 }

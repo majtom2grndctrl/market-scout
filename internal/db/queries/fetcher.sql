@@ -29,5 +29,11 @@ INSERT INTO posting_snapshots (
     raw_data,
     source_first_published_at,
     source_last_modified_at,
-    location_texts
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14);
+    location_texts,
+    fetch_run_id,
+    description_text,
+    compensation_min,
+    compensation_max,
+    compensation_currency,
+    compensation_period
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);

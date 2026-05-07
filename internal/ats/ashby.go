@@ -73,6 +73,7 @@ type ashbyJob struct {
 	PublishedAt        string              `json:"publishedAt"`
 	WorkplaceType      string              `json:"workplaceType"`
 	JobURL             string              `json:"jobUrl"`
+	DescriptionHtml    string              `json:"descriptionHtml"`
 }
 
 type ashbySecondaryLoc struct {
@@ -163,6 +164,15 @@ func decodeAshbyJob(raw json.RawMessage, clientName string, index int) (domain.P
 
 	posting.WorkplaceType = normalizeAshbyWorkplaceType(job.WorkplaceType)
 	posting.EmploymentType = normalizeAshbyEmploymentType(job.EmploymentType)
+
+	if text := htmlToPlainText(job.DescriptionHtml); text != "" {
+		posting.DescriptionText = &text
+	}
+
+	// Ashby compensation deferred; see fetch-runs-and-richer-snapshots spec.
+	// The public job-board API exposes a `compensation` block, but normalizing
+	// its tiered/component shape into the schema's flat min/max/currency/period
+	// model is out of scope for this iteration. All four comp fields stay nil.
 
 	if job.PublishedAt != "" {
 		t, err := time.Parse(time.RFC3339Nano, job.PublishedAt)

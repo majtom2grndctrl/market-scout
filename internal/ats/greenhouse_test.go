@@ -472,6 +472,86 @@ func TestGreenhouseAdapter_SourceTimestamps_MalformedUpdatedAt(t *testing.T) {
 	}
 }
 
+// TestGreenhouseAdapter_PopulatesDescriptionText pins the wiring from the
+// Greenhouse `content` field through htmlToPlainText into Posting.DescriptionText.
+// Inline JSON keeps the wire shape minimal and isolates the description path
+// from unrelated fixture noise.
+func TestGreenhouseAdapter_PopulatesDescriptionText(t *testing.T) {
+	body := `{"jobs":[{"id":42,"title":"Role","content":"<p>Hello <b>world</b></p>"}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	if len(postings) != 1 {
+		t.Fatalf("got %d postings, want 1", len(postings))
+	}
+	p := postings[0]
+	if p.DescriptionText == nil {
+		t.Fatalf("DescriptionText: got nil, want pointer to %q", "Hello world")
+	}
+	if got, want := *p.DescriptionText, "Hello world"; got != want {
+		t.Errorf("DescriptionText: got %q, want %q", got, want)
+	}
+}
+
+// TestGreenhouseAdapter_NilDescriptionTextWhenNoContent verifies that an empty
+// `content` field leaves DescriptionText nil — the absence path matches the
+// adapter contract (nil, not an empty pointer).
+func TestGreenhouseAdapter_NilDescriptionTextWhenNoContent(t *testing.T) {
+	body := `{"jobs":[{"id":42,"title":"Role","content":""}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	if len(postings) != 1 {
+		t.Fatalf("got %d postings, want 1", len(postings))
+	}
+	if postings[0].DescriptionText != nil {
+		t.Errorf("DescriptionText: got pointer to %q, want nil", *postings[0].DescriptionText)
+	}
+}
+
+// TestGreenhouseAdapter_NilCompensation pins the Task 4 spike finding: no live
+// Greenhouse board exposes pay_input_ranges, so all four compensation fields
+// always come back nil. If a future board surfaces structured comp, this test
+// will start failing and force the parsing path to be implemented (not silently
+// drop data).
+func TestGreenhouseAdapter_NilCompensation(t *testing.T) {
+	body := `{"jobs":[{"id":42,"title":"Role","content":"<p>desc</p>","pay_input_ranges":[{"min":150000,"max":200000,"currency":"USD"}]}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	p := postings[0]
+	if p.CompensationMin != nil {
+		t.Errorf("CompensationMin: got %v, want nil", *p.CompensationMin)
+	}
+	if p.CompensationMax != nil {
+		t.Errorf("CompensationMax: got %v, want nil", *p.CompensationMax)
+	}
+	if p.CompensationCurrency != nil {
+		t.Errorf("CompensationCurrency: got %v, want nil", *p.CompensationCurrency)
+	}
+	if p.CompensationPeriod != nil {
+		t.Errorf("CompensationPeriod: got %v, want nil", *p.CompensationPeriod)
+	}
+}
+
 func TestGreenhouseAdapter_OversizeResponse_ReturnsError(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping 32 MiB allocation in -short mode")

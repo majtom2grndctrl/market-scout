@@ -550,4 +550,110 @@ func TestLever_PaginationEmptyFirstPage(t *testing.T) {
 	}
 }
 
+// TestLeverAdapter_PrefersDescriptionPlain pins the precedence rule: when both
+// descriptionPlain and description are present, the adapter uses the wire's
+// pre-flattened plain text rather than running its own HTML→text conversion.
+// This avoids round-tripping content through the local sanitizer when the
+// upstream already provided a clean version.
+func TestLeverAdapter_PrefersDescriptionPlain(t *testing.T) {
+	body := `[{"id":"x","hostedUrl":"https://example.com/x","descriptionPlain":"Plain text","description":"<p>HTML version</p>"}]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newLeverWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "leverdemo")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	p := postings[0]
+	if p.DescriptionText == nil {
+		t.Fatalf("DescriptionText: got nil, want pointer to %q", "Plain text")
+	}
+	if got, want := *p.DescriptionText, "Plain text"; got != want {
+		t.Errorf("DescriptionText: got %q, want %q (must not run HTML→text on `description` when `descriptionPlain` is present)", got, want)
+	}
+}
+
+// TestLeverAdapter_StripsHTMLWhenNoDescriptionPlain verifies the fallback path:
+// when descriptionPlain is empty/absent, the adapter renders the HTML
+// `description` field through htmlToPlainText.
+func TestLeverAdapter_StripsHTMLWhenNoDescriptionPlain(t *testing.T) {
+	body := `[{"id":"x","hostedUrl":"https://example.com/x","descriptionPlain":"","description":"<p>HTML</p>"}]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newLeverWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "leverdemo")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	p := postings[0]
+	if p.DescriptionText == nil {
+		t.Fatalf("DescriptionText: got nil, want pointer to %q", "HTML")
+	}
+	if got, want := *p.DescriptionText, "HTML"; got != want {
+		t.Errorf("DescriptionText: got %q, want %q", got, want)
+	}
+}
+
+// TestLeverAdapter_PopulatesCompensation pins the salaryRange → schema mapping:
+// well-formed wire data produces all four comp fields with the interval mapped
+// through leverIntervalAliases ("per-year-salary" → "year").
+func TestLeverAdapter_PopulatesCompensation(t *testing.T) {
+	body := `[{"id":"x","hostedUrl":"https://example.com/x","salaryRange":{"min":150000,"max":200000,"currency":"USD","interval":"per-year-salary"}}]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newLeverWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "leverdemo")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	p := postings[0]
+	if p.CompensationMin == nil || *p.CompensationMin != 150000 {
+		t.Errorf("CompensationMin: got %v, want pointer to 150000", p.CompensationMin)
+	}
+	if p.CompensationMax == nil || *p.CompensationMax != 200000 {
+		t.Errorf("CompensationMax: got %v, want pointer to 200000", p.CompensationMax)
+	}
+	if p.CompensationCurrency == nil || *p.CompensationCurrency != "USD" {
+		t.Errorf("CompensationCurrency: got %v, want pointer to %q", p.CompensationCurrency, "USD")
+	}
+	if p.CompensationPeriod == nil || *p.CompensationPeriod != "year" {
+		t.Errorf("CompensationPeriod: got %v, want pointer to %q", p.CompensationPeriod, "year")
+	}
+}
+
+// TestLeverAdapter_NilCompOnUnknownInterval pins the all-or-nothing rule on the
+// comp fields: an unrecognized interval drops every field, even though min/max
+// and currency are otherwise well-formed. Partial population is never allowed.
+func TestLeverAdapter_NilCompOnUnknownInterval(t *testing.T) {
+	body := `[{"id":"x","hostedUrl":"https://example.com/x","salaryRange":{"min":1000,"max":2000,"currency":"USD","interval":"per-fortnight"}}]`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newLeverWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "leverdemo")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	p := postings[0]
+	if p.CompensationMin != nil {
+		t.Errorf("CompensationMin: got %v, want nil", *p.CompensationMin)
+	}
+	if p.CompensationMax != nil {
+		t.Errorf("CompensationMax: got %v, want nil", *p.CompensationMax)
+	}
+	if p.CompensationCurrency != nil {
+		t.Errorf("CompensationCurrency: got %v, want nil", *p.CompensationCurrency)
+	}
+	if p.CompensationPeriod != nil {
+		t.Errorf("CompensationPeriod: got %v, want nil", *p.CompensationPeriod)
+	}
+}
+
 func strPtr(s string) *string { return &s }

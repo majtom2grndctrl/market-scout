@@ -37,6 +37,8 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 
 Our own first-observed timestamp on a job-posting record is the load-bearing repost-detection signal. ATS-reported "first published" and "created at" timestamps refresh on repost on at least some boards, so they cannot be trusted as the primary signal. The append-only snapshot model combined with an immutable first-observed timestamp — set once on initial upsert, never overwritten — is what makes repost detection durable. Source-reported timestamps are captured on every snapshot as a secondary change-detection signal, not as the repost anchor.
 
+Every fetch is recorded as a fetch-run row, one per company per invocation, capturing the outcome and timing of that attempt. Each snapshot links back to the run that produced it. This separation is load-bearing for trend queries: a posting's absence from a fetch only counts as "removed" when the run for that company succeeded. A failed run, or a company we didn't fetch in a given window, is distinguishable from a posting that genuinely disappeared from the board. Without the run record, a network blip looks identical to a wave of closed roles.
+
 ## ATS targets
 
 Greenhouse first (cleanest API). Lever and Ashby follow. Each ATS is a separate file in `internal/ats`; all adapters return `domain.Posting` from `internal/domain`.

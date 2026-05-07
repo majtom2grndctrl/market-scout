@@ -68,18 +68,41 @@ func newLeverWithBaseURL(client *http.Client, baseURL string) *Lever {
 // (nil) from explicit empty array (non-nil, len 0); the distinction is
 // load-bearing for domain.Posting.LocationTexts.
 type leverJob struct {
-	ID            string `json:"id"`
-	Text          string `json:"text"` // Lever's wire field for the job title.
-	HostedURL     string `json:"hostedUrl"`
-	CreatedAt     int64  `json:"createdAt"`
-	WorkplaceType string `json:"workplaceType"`
-	Categories    struct {
+	ID               string            `json:"id"`
+	Text             string            `json:"text"` // Lever's wire field for the job title.
+	HostedURL        string            `json:"hostedUrl"`
+	CreatedAt        int64             `json:"createdAt"`
+	WorkplaceType    string            `json:"workplaceType"`
+	Description      string            `json:"description"`
+	DescriptionPlain string            `json:"descriptionPlain"`
+	SalaryRange      *leverSalaryRange `json:"salaryRange"`
+	Categories       struct {
 		Team         string    `json:"team"`
 		Department   string    `json:"department"`
 		Commitment   string    `json:"commitment"`
 		Location     string    `json:"location"`
 		AllLocations *[]string `json:"allLocations"`
 	} `json:"categories"`
+}
+
+// leverSalaryRange is Lever's structured compensation block. Pointer on the
+// parent so a wire-absent field stays distinct from a zero-valued struct.
+type leverSalaryRange struct {
+	Min      int64  `json:"min"`
+	Max      int64  `json:"max"`
+	Currency string `json:"currency"`
+	Interval string `json:"interval"`
+}
+
+// leverIntervalAliases maps Lever's wire `salaryRange.interval` values to the
+// schema CompensationPeriod vocabulary. Unknown intervals are dropped (all
+// four comp fields go nil) and surface via the [lever] warn channel.
+var leverIntervalAliases = map[string]string{
+	"per-year-salary":  "year",
+	"per-month-salary": "month",
+	"per-week-salary":  "week",
+	"per-day-wage":     "day",
+	"per-hour-wage":    "hour",
 }
 
 // leverWorkplaceAliases maps Lever's wire workplaceType values to the
@@ -98,16 +121,18 @@ var leverWorkplaceAliases = map[string]string{
 // observed wire values surfaced through the [lever] unknown-commitment
 // warn channel.
 var leverEmploymentAliases = map[string]string{
-	"fulltime":   "full_time",
-	"ft":         "full_time",
-	"parttime":   "part_time",
-	"pt":         "part_time",
-	"contract":   "contract",
-	"contractor": "contract",
-	"intern":     "intern",
-	"internship": "intern",
-	"temporary":  "temporary",
-	"temp":       "temporary",
+	"fulltime":           "full_time",
+	"ft":                 "full_time",
+	"parttime":           "part_time",
+	"pt":                 "part_time",
+	"contract":           "contract",
+	"contractor":         "contract",
+	"fixedterm":          "contract", // "Fixed term" observed on Mistral board
+	"fulltimefreelance":  "contract", // "Full-time / freelance" observed on Mistral board
+	"intern":             "intern",
+	"internship":         "intern",
+	"temporary":          "temporary",
+	"temp":               "temporary",
 }
 
 // FetchPostings retrieves all jobs for the given Lever board token and
@@ -215,6 +240,23 @@ func decodeLeverJob(raw json.RawMessage, boardToken string, index int) (domain.P
 	posting.WorkplaceType = normalizeLeverWorkplaceType(job.WorkplaceType)
 	posting.EmploymentType = normalizeLeverEmploymentType(job.Categories.Commitment)
 
+	// DescriptionText: prefer the wire's pre-flattened descriptionPlain;
+	// fall back to converting the HTML description ourselves. Both empty
+	// leaves the field nil.
+	if job.DescriptionPlain != "" {
+		text := job.DescriptionPlain
+		posting.DescriptionText = &text
+	} else if text := htmlToPlainText(job.Description); text != "" {
+		posting.DescriptionText = &text
+	}
+
+	if min, max, currency, period, ok := normalizeLeverSalary(job.SalaryRange); ok {
+		posting.CompensationMin = &min
+		posting.CompensationMax = &max
+		posting.CompensationCurrency = &currency
+		posting.CompensationPeriod = &period
+	}
+
 	if job.CreatedAt != 0 {
 		t := time.UnixMilli(job.CreatedAt).UTC()
 		posting.PostedAt = &t
@@ -261,6 +303,44 @@ func normalizeLeverEmploymentType(raw string) *string {
 	}
 	slog.Warn("[lever] unknown commitment", "value", raw)
 	return nil
+}
+
+// normalizeLeverSalary maps Lever's `salaryRange` block to the four schema
+// compensation fields. All-or-nothing: if any check fails (unknown interval,
+// non-3-letter currency code), every field is dropped and the caller leaves
+// all four nil — comp fields never partially populate. Unknown intervals and
+// malformed currencies surface via the [lever] warn channel so genuinely-new
+// values can be triaged without aborting the fetch.
+func normalizeLeverSalary(s *leverSalaryRange) (min int64, max int64, currency string, period string, ok bool) {
+	if s == nil {
+		return 0, 0, "", "", false
+	}
+	period, intervalOK := leverIntervalAliases[s.Interval]
+	if !intervalOK {
+		slog.Warn("[lever] unknown interval", "interval", s.Interval)
+		return 0, 0, "", "", false
+	}
+	currency = strings.ToUpper(strings.TrimSpace(s.Currency))
+	if !isThreeUpperLetters(currency) {
+		slog.Warn("[lever] invalid currency", "currency", s.Currency)
+		return 0, 0, "", "", false
+	}
+	return s.Min, s.Max, currency, period, true
+}
+
+// isThreeUpperLetters reports whether s is exactly three ASCII uppercase
+// letters (the ISO 4217 shape for currency codes).
+func isThreeUpperLetters(s string) bool {
+	if len(s) != 3 {
+		return false
+	}
+	for i := 0; i < 3; i++ {
+		c := s[i]
+		if c < 'A' || c > 'Z' {
+			return false
+		}
+	}
+	return true
 }
 
 // stripNonAlphaNumLower lowercases s and drops every byte that is not an

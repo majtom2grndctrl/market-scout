@@ -135,7 +135,7 @@ func TestSnapshotWrite_ForwardsSourceTimestampsToParams(t *testing.T) {
 	}
 	fetchedAt := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
 
-	got := buildSnapshotParams(99, fetchedAt, p)
+	got := buildSnapshotParams(99, 7, fetchedAt, p)
 
 	wantFirst := sql.NullTime{Time: first, Valid: true}
 	if got.SourceFirstPublishedAt != wantFirst {
@@ -168,7 +168,7 @@ func TestSnapshotWrite_PreservesNonUTCTimezoneOffset(t *testing.T) {
 		SourceFirstPublishedAt: &first,
 		SourceLastModifiedAt:   &last,
 	}
-	got := buildSnapshotParams(1, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
+	got := buildSnapshotParams(1, 7, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
 
 	if !got.SourceFirstPublishedAt.Valid {
 		t.Fatal("SourceFirstPublishedAt: got Valid=false, want Valid=true")
@@ -191,7 +191,7 @@ func TestSnapshotWrite_NilSourceTimestampsBecomeNullTime(t *testing.T) {
 		SourceURL: "https://example.com/jobs/123",
 		RawData:   json.RawMessage(`{"id":123}`),
 	}
-	got := buildSnapshotParams(1, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
+	got := buildSnapshotParams(1, 7, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
 	if got.SourceFirstPublishedAt.Valid {
 		t.Errorf("SourceFirstPublishedAt: got Valid=true, want Valid=false for nil input")
 	}
@@ -211,7 +211,7 @@ func TestSnapshotWrite_ForwardsLocationTextsToParams(t *testing.T) {
 			SourceURL: "https://example.com/jobs/123",
 			RawData:   json.RawMessage(`{"id":123}`),
 		}
-		got := buildSnapshotParams(1, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
+		got := buildSnapshotParams(1, 7, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
 		if got.LocationTexts != nil {
 			t.Errorf("LocationTexts: got %v, want nil", got.LocationTexts)
 		}
@@ -225,7 +225,7 @@ func TestSnapshotWrite_ForwardsLocationTextsToParams(t *testing.T) {
 			RawData:       json.RawMessage(`{"id":123}`),
 			LocationTexts: want,
 		}
-		got := buildSnapshotParams(1, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
+		got := buildSnapshotParams(1, 7, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
 		if len(got.LocationTexts) != len(want) {
 			t.Fatalf("LocationTexts: got len=%d, want len=%d", len(got.LocationTexts), len(want))
 		}

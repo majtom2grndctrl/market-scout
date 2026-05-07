@@ -50,6 +50,22 @@ type ghResponse struct {
 	Jobs []json.RawMessage `json:"jobs"`
 }
 
+// Compensation spike (Task 4 of fetch-runs-and-richer-snapshots, 2026-05):
+// Surveyed all five seeded Greenhouse boards (anthropic, stripe, figma, scaleai,
+// gleanwork) via the public Job Board API with `?content=true`. None expose a
+// top-level `pay_input_ranges` field, and none expose a `metadata` entry with
+// `value_type: "currency_range"`, `"currency"`, or any name matching pay/salary/
+// compensation. The only metadata seen in the sample is non-comp (e.g. Anthropic's
+// "Location Type" single_select). Per-job keys returned today:
+//   absolute_url, application_deadline, company_name, content, data_compliance,
+//   departments, first_published, id, internal_job_id, language, location,
+//   metadata, offices, requisition_id, title, updated_at
+// Where compensation does appear (Figma, some Stripe roles), it is embedded in
+// the rendered `content` HTML — e.g. <div class="pay-range">$165,000 — $190,000 USD</div>
+// — not in any structured field. Implication for Task 5: structured Greenhouse
+// compensation parsing is not viable against the current watchlist; the only
+// signal lives in the description body. Lever/Ashby remain the structured paths.
+//
 // ghJob is the subset of the per-job wire shape the adapter extracts into Posting.
 // FirstPublished and UpdatedAt are captured verbatim into SourceFirstPublishedAt
 // and SourceLastModifiedAt. Neither is promoted to PostedAt: `updated_at` is
@@ -61,12 +77,19 @@ type ghJob struct {
 	AbsoluteURL    string `json:"absolute_url"`
 	FirstPublished string `json:"first_published"`
 	UpdatedAt      string `json:"updated_at"`
+	Content        string `json:"content"`
 	Location       struct {
 		Name string `json:"name"`
 	} `json:"location"`
 	Departments []struct {
 		Name string `json:"name"`
 	} `json:"departments"`
+	// PayInputRanges: Task 4 spike (2026-05) found no live watchlist board
+	// (anthropic, stripe, figma, scaleai, gleanwork) exposes structured
+	// compensation here. Captured as raw messages so the parsing path ships
+	// dormant — when a board eventually surfaces it, the shape can be
+	// inspected and a typed sub-struct added without re-fetching.
+	PayInputRanges []json.RawMessage `json:"pay_input_ranges"`
 }
 
 // FetchPostings retrieves all jobs for the given Greenhouse board token and
@@ -118,6 +141,18 @@ func (g *Greenhouse) FetchPostings(ctx context.Context, boardToken string) ([]do
 		if len(job.Departments) > 0 {
 			posting.Department = ptrIfNonEmpty(job.Departments[0].Name)
 		}
+
+		if text := htmlToPlainText(job.Content); text != "" {
+			posting.DescriptionText = &text
+		}
+
+		// Compensation: Task 4 spike confirmed no current Greenhouse board
+		// exposes pay_input_ranges. The pathway ships dormant — when the field
+		// arrives on a future board, inspect a sample, define a typed
+		// sub-struct, and parse pay_input_ranges[0] here. For now, leaving all
+		// four comp fields nil is correct: an empty PayInputRanges yields NULL.
+		// See: agent-context/plans/in-progress/fetch-runs-and-richer-snapshots/
+		_ = job.PayInputRanges
 
 		if job.FirstPublished != "" {
 			t, err := time.Parse(time.RFC3339Nano, job.FirstPublished)

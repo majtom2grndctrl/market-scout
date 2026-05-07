@@ -209,7 +209,11 @@ func run() error {
 }
 
 // fetchCompany runs the fetch+persist cycle for one company: all snapshots
-// land atomically in a single transaction, or none do.
+// land atomically in a single transaction, or none do. A fetch_runs row is
+// inserted in its own short transaction before the adapter call so a
+// mid-fetch crash leaves an observable in_progress marker; the same row is
+// updated to success (inside the snapshot transaction) or failed (in a
+// separate short transaction) once the work resolves.
 func fetchCompany(ctx context.Context, pool *sql.DB, adapter atsAdapter, c db.Company) error {
 	// fetchedAt is captured before the network call so every snapshot row
 	// for this run shares one timestamp, which is what trend queries key on.
@@ -220,13 +224,24 @@ func fetchCompany(ctx context.Context, pool *sql.DB, adapter atsAdapter, c db.Co
 	workCtx, cancel := context.WithTimeout(ctx, companyTimeout)
 	defer cancel()
 
+	// Insert the fetch_runs marker in its own short transaction that commits
+	// before the adapter call — if the process dies during the fetch, the row
+	// remains visible as in_progress for postmortem.
+	fetchRunID, err := insertFetchRun(workCtx, pool, c, fetchedAt)
+	if err != nil {
+		return fmt.Errorf("inserting fetch_run: %w", err)
+	}
+	slog.Info("[fetcher] inserted fetch_run", "company", c.Name, "fetch_run_id", fetchRunID)
+
 	postings, err := adapter.FetchPostings(workCtx, c.BoardToken)
 	if err != nil {
+		markFetchRunFailed(ctx, pool, fetchRunID, err)
 		return fmt.Errorf("fetching postings: %w", err)
 	}
 
 	tx, err := pool.BeginTx(workCtx, nil)
 	if err != nil {
+		markFetchRunFailed(ctx, pool, fetchRunID, err)
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
 	// Rollback is a no-op after Commit (returns sql.ErrTxDone); safe to defer
@@ -246,6 +261,7 @@ func fetchCompany(ctx context.Context, pool *sql.DB, adapter atsAdapter, c db.Co
 		// partial state and break the "fetched_at represents a complete
 		// view of the board" invariant. Abort the whole transaction.
 		if err := validatePosting(i, p); err != nil {
+			markFetchRunFailed(ctx, pool, fetchRunID, err)
 			return err
 		}
 
@@ -256,20 +272,90 @@ func fetchCompany(ctx context.Context, pool *sql.DB, adapter atsAdapter, c db.Co
 			SourceID:   sql.NullString{String: p.SourceID, Valid: true},
 		})
 		if err != nil {
+			markFetchRunFailed(ctx, pool, fetchRunID, err)
 			return fmt.Errorf("upserting job_posting %s: %w", p.SourceURL, err)
 		}
 
-		if err := qtx.InsertPostingSnapshot(workCtx, buildSnapshotParams(jobPostingID, fetchedAt, p)); err != nil {
+		if err := qtx.InsertPostingSnapshot(workCtx, buildSnapshotParams(jobPostingID, fetchRunID, fetchedAt, p)); err != nil {
+			markFetchRunFailed(ctx, pool, fetchRunID, err)
 			return fmt.Errorf("inserting snapshot for %s: %w", p.SourceURL, err)
 		}
 	}
 
+	// Mark success inside the same transaction as the snapshots so the
+	// fetch_runs status flip and the snapshot rows commit (or roll back)
+	// atomically. postings_count fits comfortably in int32 — a board with
+	// >2B postings would have other problems first.
+	completedAt := time.Now().UTC()
+	if err := qtx.MarkFetchRunSuccess(workCtx, db.MarkFetchRunSuccessParams{
+		ID:            fetchRunID,
+		CompletedAt:   sql.NullTime{Time: completedAt, Valid: true},
+		PostingsCount: sql.NullInt32{Int32: int32(len(postings)), Valid: true},
+	}); err != nil {
+		markFetchRunFailed(ctx, pool, fetchRunID, err)
+		return fmt.Errorf("marking fetch_run success: %w", err)
+	}
+
 	if err := tx.Commit(); err != nil {
+		markFetchRunFailed(ctx, pool, fetchRunID, err)
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 
+	slog.Info("[fetcher] marked fetch_run success", "fetch_run_id", fetchRunID, "postings_count", len(postings))
 	slog.Info("[fetcher] fetched postings", "company", c.Name, "count", len(postings))
 	return nil
+}
+
+// insertFetchRun creates an in_progress fetch_runs row in its own short
+// transaction so it persists even if the rest of the work crashes. Returns
+// the new row id.
+func insertFetchRun(ctx context.Context, pool *sql.DB, c db.Company, startedAt time.Time) (int64, error) {
+	tx, err := pool.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() {
+		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
+			slog.Warn("[fetcher] fetch_run insert rollback error", "company", c.Name, "error", err)
+		}
+	}()
+	id, err := db.New(tx).InsertFetchRun(ctx, db.InsertFetchRunParams{
+		CompanyID: c.ID,
+		StartedAt: startedAt,
+	})
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("committing transaction: %w", err)
+	}
+	return id, nil
+}
+
+// markFetchRunFailed updates the fetch_runs row to status='failed' on a
+// fresh 5-second context derived from the caller's parent ctx. The parent
+// ctx is used (not workCtx) because workCtx may already be expired or
+// cancelled by the failure we're recording. If the parent itself is already
+// cancelled (shutdown), we skip the update — there's no time budget to
+// burn on bookkeeping during shutdown.
+func markFetchRunFailed(parentCtx context.Context, pool *sql.DB, fetchRunID int64, cause error) {
+	if parentCtx.Err() != nil {
+		return
+	}
+	updateCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 5*time.Second)
+	defer cancel()
+
+	completedAt := time.Now().UTC()
+	queries := db.New(pool)
+	if err := queries.MarkFetchRunFailed(updateCtx, db.MarkFetchRunFailedParams{
+		ID:           fetchRunID,
+		CompletedAt:  sql.NullTime{Time: completedAt, Valid: true},
+		ErrorMessage: sql.NullString{String: cause.Error(), Valid: true},
+	}); err != nil {
+		slog.Warn("[fetcher] failed to mark fetch_run failed", "fetch_run_id", fetchRunID, "error", err, "original_error", cause)
+		return
+	}
+	slog.Info("[fetcher] marked fetch_run failed", "fetch_run_id", fetchRunID, "error", cause)
 }
 
 // classifyCompanyError returns true if the error should count as aborted_shutdown
@@ -297,9 +383,10 @@ func validatePosting(i int, p domain.Posting) error {
 // buildSnapshotParams maps a domain.Posting onto the sqlc-generated insert
 // params struct. Extracted so the wire-up between domain optional fields and
 // the nullable DB columns can be unit-tested without a live database.
-func buildSnapshotParams(jobPostingID int64, fetchedAt time.Time, p domain.Posting) db.InsertPostingSnapshotParams {
+func buildSnapshotParams(jobPostingID int64, fetchRunID int64, fetchedAt time.Time, p domain.Posting) db.InsertPostingSnapshotParams {
 	return db.InsertPostingSnapshotParams{
 		JobPostingID:           jobPostingID,
+		FetchRunID:             sql.NullInt64{Int64: fetchRunID, Valid: true},
 		FetchedAt:              fetchedAt,
 		Title:                  nullStr(p.Title),
 		LocationText:           nullStr(p.LocationText),
@@ -313,6 +400,11 @@ func buildSnapshotParams(jobPostingID int64, fetchedAt time.Time, p domain.Posti
 		RawData:                p.RawData,
 		SourceFirstPublishedAt: nullTime(p.SourceFirstPublishedAt),
 		SourceLastModifiedAt:   nullTime(p.SourceLastModifiedAt),
+		DescriptionText:        nullStr(p.DescriptionText),
+		CompensationMin:        nullInt64(p.CompensationMin),
+		CompensationMax:        nullInt64(p.CompensationMax),
+		CompensationCurrency:   nullStr(p.CompensationCurrency),
+		CompensationPeriod:     nullStr(p.CompensationPeriod),
 	}
 }
 
@@ -328,4 +420,11 @@ func nullTime(t *time.Time) sql.NullTime {
 		return sql.NullTime{}
 	}
 	return sql.NullTime{Time: *t, Valid: true}
+}
+
+func nullInt64(v *int64) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: *v, Valid: true}
 }

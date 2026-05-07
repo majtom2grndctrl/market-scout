@@ -387,6 +387,61 @@ func TestAshby_SecondaryLocationResolution(t *testing.T) {
 	}
 }
 
+// TestAshbyAdapter_PopulatesDescriptionText pins the wiring from the Ashby
+// `descriptionHtml` field through htmlToPlainText into Posting.DescriptionText.
+func TestAshbyAdapter_PopulatesDescriptionText(t *testing.T) {
+	body := `{"jobs":[{"id":"x","jobUrl":"https://example.com/x","descriptionHtml":"<p>Role overview</p>"}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newAshbyWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "example")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	if len(postings) != 1 {
+		t.Fatalf("got %d postings, want 1", len(postings))
+	}
+	p := postings[0]
+	if p.DescriptionText == nil {
+		t.Fatalf("DescriptionText: got nil, want pointer to %q", "Role overview")
+	}
+	if got, want := *p.DescriptionText, "Role overview"; got != want {
+		t.Errorf("DescriptionText: got %q, want %q", got, want)
+	}
+}
+
+// TestAshbyAdapter_NilCompensation pins the deferred-compensation decision: even
+// when a `compensation` block is present on the wire, the adapter leaves all
+// four schema comp fields nil. Normalizing Ashby's tiered/component shape onto
+// the flat min/max/currency/period model is out of scope for this iteration.
+func TestAshbyAdapter_NilCompensation(t *testing.T) {
+	body := `{"jobs":[{"id":"x","jobUrl":"https://example.com/x","compensation":{"summaryComponents":[{"compensationTierSummary":"$150K – $200K","summary":"$150K – $200K"}]}}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newAshbyWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "example")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	p := postings[0]
+	if p.CompensationMin != nil {
+		t.Errorf("CompensationMin: got %v, want nil", *p.CompensationMin)
+	}
+	if p.CompensationMax != nil {
+		t.Errorf("CompensationMax: got %v, want nil", *p.CompensationMax)
+	}
+	if p.CompensationCurrency != nil {
+		t.Errorf("CompensationCurrency: got %v, want nil", *p.CompensationCurrency)
+	}
+	if p.CompensationPeriod != nil {
+		t.Errorf("CompensationPeriod: got %v, want nil", *p.CompensationPeriod)
+	}
+}
+
 // TestAshby_EmptyPostalAddressParts_AreSkipped verifies that secondary locations
 // where all three postal-address parts (addressLocality, addressRegion,
 // addressCountry) are empty strings render to nothing and are excluded from
