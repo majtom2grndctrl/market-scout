@@ -31,7 +31,16 @@
       "Bash(curl -s \"https://api.lever.co/v0/postings/plaid?limit=2&mode=json\")",
       "Bash(git rm *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(go run *)",
+      "Bash(mkdir -p agent-context/plans/in-progress)",
+      "Bash(mv agent-context/plans/ready/ats-source-timestamps agent-context/plans/in-progress/)",
+      "Bash(rmdir agent-context/plans/ready)",
+      "Bash(docker compose *)",
+      "Bash(gofmt -l .)",
+      "Bash(gofmt -d cmd/migrate/main.go)",
+      "Bash(git stash *)",
+      "Bash(gofmt -l internal/domain/posting.go internal/ats/greenhouse.go cmd/fetcher/main.go)"
     ]
   }
 }

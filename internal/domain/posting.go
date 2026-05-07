@@ -30,6 +30,9 @@ type Posting struct {
 	EmploymentType *string
 	WorkplaceType  *string
 	PostedAt       *time.Time
-	JobURL         *string
-	RawData        json.RawMessage
+	// Raw ATS-reported timestamps. Not used to derive PostedAt.
+	SourceFirstPublishedAt *time.Time
+	SourceLastModifiedAt   *time.Time
+	JobURL                 *string
+	RawData                json.RawMessage
 }

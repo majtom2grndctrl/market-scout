@@ -257,19 +257,7 @@ func fetchCompany(ctx context.Context, pool *sql.DB, adapter atsAdapter, c db.Co
 			return fmt.Errorf("upserting job_posting %s: %w", p.SourceURL, err)
 		}
 
-		if err := qtx.InsertPostingSnapshot(workCtx, db.InsertPostingSnapshotParams{
-			JobPostingID:   jobPostingID,
-			FetchedAt:      fetchedAt,
-			Title:          nullStr(p.Title),
-			LocationText:   nullStr(p.LocationText),
-			Department:     nullStr(p.Department),
-			Team:           nullStr(p.Team),
-			EmploymentType: nullStr(p.EmploymentType),
-			WorkplaceType:  nullStr(p.WorkplaceType),
-			PostedAt:       nullTime(p.PostedAt),
-			JobUrl:         nullStr(p.JobURL),
-			RawData:        p.RawData,
-		}); err != nil {
+		if err := qtx.InsertPostingSnapshot(workCtx, buildSnapshotParams(jobPostingID, fetchedAt, p)); err != nil {
 			return fmt.Errorf("inserting snapshot for %s: %w", p.SourceURL, err)
 		}
 	}
@@ -302,6 +290,27 @@ func validatePosting(i int, p domain.Posting) error {
 		return fmt.Errorf("posting %d (source_url=%s): empty RawData — adapter contract violation", i, p.SourceURL)
 	}
 	return nil
+}
+
+// buildSnapshotParams maps a domain.Posting onto the sqlc-generated insert
+// params struct. Extracted so the wire-up between domain optional fields and
+// the nullable DB columns can be unit-tested without a live database.
+func buildSnapshotParams(jobPostingID int64, fetchedAt time.Time, p domain.Posting) db.InsertPostingSnapshotParams {
+	return db.InsertPostingSnapshotParams{
+		JobPostingID:           jobPostingID,
+		FetchedAt:              fetchedAt,
+		Title:                  nullStr(p.Title),
+		LocationText:           nullStr(p.LocationText),
+		Department:             nullStr(p.Department),
+		Team:                   nullStr(p.Team),
+		EmploymentType:         nullStr(p.EmploymentType),
+		WorkplaceType:          nullStr(p.WorkplaceType),
+		PostedAt:               nullTime(p.PostedAt),
+		JobUrl:                 nullStr(p.JobURL),
+		RawData:                p.RawData,
+		SourceFirstPublishedAt: nullTime(p.SourceFirstPublishedAt),
+		SourceLastModifiedAt:   nullTime(p.SourceLastModifiedAt),
+	}
 }
 
 func nullStr(s *string) sql.NullString {

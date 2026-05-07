@@ -5,16 +5,9 @@ WHERE ats IS NOT NULL
 ORDER BY name;
 
 -- name: UpsertJobPosting :one
--- DO UPDATE is used rather than DO NOTHING so RETURNING id fires on conflict
--- (DO NOTHING returns no rows on conflict, and the caller needs the existing
--- row's id to write the snapshot).
---
--- In practice source_id is stable for a given source_url, so the SET is
--- effectively a no-op by value — but it still writes a new heap tuple each
--- run, which autovacuum reclaims. Accepted trade-off: avoids a separate
--- SELECT path and also silently corrects source_id if an ATS ever reassigns
--- an ID to the same URL.
---
+-- DO UPDATE (not DO NOTHING) so RETURNING id fires on conflict — the caller
+-- needs the row id to write the snapshot. SET source_id is usually a no-op by
+-- value but self-heals if an ATS reassigns the id for an existing source_url.
 -- Append-only semantics apply to posting_snapshots, not this table.
 INSERT INTO job_postings (company_id, source_type, source_url, source_id)
 VALUES ($1, $2, $3, $4)
@@ -33,5 +26,7 @@ INSERT INTO posting_snapshots (
     workplace_type,
     posted_at,
     job_url,
-    raw_data
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
+    raw_data,
+    source_first_published_at,
+    source_last_modified_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);

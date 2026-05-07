@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/majtom2grndctrl/market-scout/internal/domain"
 )
@@ -60,15 +61,18 @@ type ghResponse struct {
 }
 
 // ghJob is the subset of the per-job wire shape the adapter extracts into Posting.
-// PostedAt is intentionally not derived from the wire response — Greenhouse exposes
-// only last-modified semantics (`updated_at`) and an unreliable `first_published`,
-// neither of which match the domain meaning of "posted_at". The full job is still
-// preserved verbatim in Posting.RawData for downstream re-interpretation.
+// FirstPublished and UpdatedAt are captured verbatim into SourceFirstPublishedAt
+// and SourceLastModifiedAt. Neither is promoted to PostedAt: `updated_at` is
+// last-modified semantics (not posting age), and `first_published` is unreliable
+// across Greenhouse boards. The full job is preserved in RawData for
+// re-interpretation.
 type ghJob struct {
-	ID          int64  `json:"id"`
-	Title       string `json:"title"`
-	AbsoluteURL string `json:"absolute_url"`
-	Location    struct {
+	ID             int64  `json:"id"`
+	Title          string `json:"title"`
+	AbsoluteURL    string `json:"absolute_url"`
+	FirstPublished string `json:"first_published"`
+	UpdatedAt      string `json:"updated_at"`
+	Location       struct {
 		Name string `json:"name"`
 	} `json:"location"`
 	Departments []struct {
@@ -139,6 +143,21 @@ func (g *Greenhouse) FetchPostings(ctx context.Context, boardToken string) ([]do
 		posting.LocationText = ptrIfNonEmpty(job.Location.Name)
 		if len(job.Departments) > 0 {
 			posting.Department = ptrIfNonEmpty(job.Departments[0].Name)
+		}
+
+		if job.FirstPublished != "" {
+			t, err := time.Parse(time.RFC3339Nano, job.FirstPublished)
+			if err != nil {
+				return nil, fmt.Errorf("greenhouse: job at index %d for %s: parse %s %q: %w", i, boardToken, "first_published", job.FirstPublished, err)
+			}
+			posting.SourceFirstPublishedAt = &t
+		}
+		if job.UpdatedAt != "" {
+			t, err := time.Parse(time.RFC3339Nano, job.UpdatedAt)
+			if err != nil {
+				return nil, fmt.Errorf("greenhouse: job at index %d for %s: parse %s %q: %w", i, boardToken, "updated_at", job.UpdatedAt, err)
+			}
+			posting.SourceLastModifiedAt = &t
 		}
 
 		postings = append(postings, posting)

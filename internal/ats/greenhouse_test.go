@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGreenhouseAdapter_SuccessfulParse(t *testing.T) {
@@ -299,6 +300,165 @@ func TestGreenhouseAdapter_BoardTokenURLEscaping(t *testing.T) {
 	}
 	if !strings.Contains(postings[0].SourceURL, escapedToken) {
 		t.Errorf("SourceURL %q does not contain escaped token %q", postings[0].SourceURL, escapedToken)
+	}
+}
+
+func TestGreenhouseAdapter_SourceTimestamps_BothPresent(t *testing.T) {
+	// Each case supplies a single job with both timestamps set and asserts the
+	// parsed instants. want values are constructed with time.Date so the test
+	// verifies the adapter produces the right instant, not merely that two parsers
+	// agree. See testing-guide §4 (seam-crossing tests).
+	cases := []struct {
+		name           string
+		firstPublished string
+		updatedAt      string
+		wantFirst      time.Time
+		wantUpdated    time.Time
+	}{
+		{
+			// numeric UTC offset, no fractional seconds
+			name:           "numeric_offset_no_fraction",
+			firstPublished: "2026-04-17T12:21:54-04:00",
+			updatedAt:      "2026-04-17T16:21:54-04:00",
+			wantFirst:      time.Date(2026, 4, 17, 12, 21, 54, 0, time.FixedZone("", -4*60*60)),
+			wantUpdated:    time.Date(2026, 4, 17, 16, 21, 54, 0, time.FixedZone("", -4*60*60)),
+		},
+		{
+			// Z suffix, nanosecond precision
+			name:           "z_suffix_nanoseconds",
+			firstPublished: "2026-04-18T09:30:00.123456789Z",
+			updatedAt:      "2026-04-18T09:30:00.123456789Z",
+			wantFirst:      time.Date(2026, 4, 18, 9, 30, 0, 123456789, time.UTC),
+			wantUpdated:    time.Date(2026, 4, 18, 9, 30, 0, 123456789, time.UTC),
+		},
+		{
+			// fractional seconds combined with a numeric UTC offset — Greenhouse can
+			// emit this shape (e.g. 2024-08-12T17:33:21.456-04:00); previously
+			// untested combination.
+			name:           "fractional_seconds_and_numeric_offset",
+			firstPublished: "2024-08-12T17:33:21.456-04:00",
+			updatedAt:      "2024-08-12T21:33:21.456Z",
+			wantFirst:      time.Date(2024, 8, 12, 17, 33, 21, 456_000_000, time.FixedZone("", -4*60*60)),
+			wantUpdated:    time.Date(2024, 8, 12, 21, 33, 21, 456_000_000, time.UTC),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"jobs": [{"id": 42, "title": "Role", "first_published": "` +
+				tc.firstPublished + `", "updated_at": "` + tc.updatedAt + `"}]}`
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(body))
+			}))
+			t.Cleanup(srv.Close)
+
+			postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+			if err != nil {
+				t.Fatalf("FetchPostings: %v", err)
+			}
+			if len(postings) != 1 {
+				t.Fatalf("got %d postings, want 1", len(postings))
+			}
+			p := postings[0]
+			if p.SourceFirstPublishedAt == nil || !p.SourceFirstPublishedAt.Equal(tc.wantFirst) {
+				t.Errorf("SourceFirstPublishedAt: got %v, want %v", p.SourceFirstPublishedAt, tc.wantFirst)
+			}
+			if p.SourceLastModifiedAt == nil || !p.SourceLastModifiedAt.Equal(tc.wantUpdated) {
+				t.Errorf("SourceLastModifiedAt: got %v, want %v", p.SourceLastModifiedAt, tc.wantUpdated)
+			}
+		})
+	}
+}
+
+func TestGreenhouseAdapter_SourceTimestamps_BothAbsent(t *testing.T) {
+	// Cover both absence shapes the adapter is meant to treat uniformly:
+	// JSON null on first_published, missing key on updated_at, and
+	// empty string on a third row. All three should land as nil fields,
+	// no error.
+	body := `{"jobs": [
+		{"id": 1, "title": "Null Role", "first_published": null, "updated_at": null},
+		{"id": 2, "title": "Missing Role"},
+		{"id": 3, "title": "Empty Role", "first_published": "", "updated_at": ""}
+	]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	if len(postings) != 3 {
+		t.Fatalf("got %d postings, want 3", len(postings))
+	}
+	for i, p := range postings {
+		if p.SourceFirstPublishedAt != nil {
+			t.Errorf("posting %d: SourceFirstPublishedAt: got pointer to %v, want nil", i, *p.SourceFirstPublishedAt)
+		}
+		if p.SourceLastModifiedAt != nil {
+			t.Errorf("posting %d: SourceLastModifiedAt: got pointer to %v, want nil", i, *p.SourceLastModifiedAt)
+		}
+	}
+}
+
+func TestGreenhouseAdapter_SourceTimestamps_MalformedFirstPublished(t *testing.T) {
+	body := `{"jobs": [{"id": 7, "title": "Role", "first_published": "not-a-date"}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	if err == nil {
+		t.Fatalf("FetchPostings: got nil error, want non-nil for malformed first_published")
+	}
+	if postings != nil {
+		t.Errorf("postings: got %v, want nil on error", postings)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "first_published") {
+		t.Errorf("error %q does not name the wire field first_published", msg)
+	}
+	if strings.Contains(msg, "parse updated_at") {
+		t.Errorf("error %q mentions parse updated_at — wire field name substitution should be first_published only", msg)
+	}
+	if !strings.Contains(msg, `"not-a-date"`) {
+		t.Errorf("error %q does not contain the raw value %q (%%q-quoted)", msg, "not-a-date")
+	}
+}
+
+func TestGreenhouseAdapter_SourceTimestamps_MalformedUpdatedAt(t *testing.T) {
+	// updated_at malformed but first_published valid — confirms the %s
+	// substitution carries the offending wire field name (not a hard-coded one).
+	body := `{"jobs": [{
+		"id": 8,
+		"title": "Role",
+		"first_published": "2026-04-17T12:21:54-04:00",
+		"updated_at": "garbage"
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	if err == nil {
+		t.Fatalf("FetchPostings: got nil error, want non-nil for malformed updated_at")
+	}
+	if postings != nil {
+		t.Errorf("postings: got %v, want nil on error", postings)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "updated_at") {
+		t.Errorf("error %q does not name the wire field updated_at", msg)
+	}
+	// first_published parses fine here; the error must not point at it.
+	if strings.Contains(msg, "parse first_published") {
+		t.Errorf("error %q points at first_published — wire field name should be updated_at", msg)
+	}
+	if !strings.Contains(msg, `"garbage"`) {
+		t.Errorf("error %q does not contain the raw value %q (%%q-quoted)", msg, "garbage")
 	}
 }
 

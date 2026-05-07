@@ -24,22 +24,26 @@ INSERT INTO posting_snapshots (
     workplace_type,
     posted_at,
     job_url,
-    raw_data
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    raw_data,
+    source_first_published_at,
+    source_last_modified_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 `
 
 type InsertPostingSnapshotParams struct {
-	JobPostingID   int64
-	FetchedAt      time.Time
-	Title          sql.NullString
-	LocationText   sql.NullString
-	Department     sql.NullString
-	Team           sql.NullString
-	EmploymentType sql.NullString
-	WorkplaceType  sql.NullString
-	PostedAt       sql.NullTime
-	JobUrl         sql.NullString
-	RawData        json.RawMessage
+	JobPostingID           int64
+	FetchedAt              time.Time
+	Title                  sql.NullString
+	LocationText           sql.NullString
+	Department             sql.NullString
+	Team                   sql.NullString
+	EmploymentType         sql.NullString
+	WorkplaceType          sql.NullString
+	PostedAt               sql.NullTime
+	JobUrl                 sql.NullString
+	RawData                json.RawMessage
+	SourceFirstPublishedAt sql.NullTime
+	SourceLastModifiedAt   sql.NullTime
 }
 
 func (q *Queries) InsertPostingSnapshot(ctx context.Context, arg InsertPostingSnapshotParams) error {
@@ -55,6 +59,8 @@ func (q *Queries) InsertPostingSnapshot(ctx context.Context, arg InsertPostingSn
 		arg.PostedAt,
 		arg.JobUrl,
 		arg.RawData,
+		arg.SourceFirstPublishedAt,
+		arg.SourceLastModifiedAt,
 	)
 	return err
 }
@@ -117,6 +123,10 @@ type UpsertJobPostingParams struct {
 	SourceID   sql.NullString
 }
 
+// DO UPDATE (not DO NOTHING) so RETURNING id fires on conflict — the caller
+// needs the row id to write the snapshot. SET source_id is usually a no-op by
+// value but self-heals if an ATS reassigns the id for an existing source_url.
+// Append-only semantics apply to posting_snapshots, not this table.
 func (q *Queries) UpsertJobPosting(ctx context.Context, arg UpsertJobPostingParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, upsertJobPosting,
 		arg.CompanyID,

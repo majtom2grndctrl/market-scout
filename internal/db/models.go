@@ -59,18 +59,20 @@ type JobPostingSpecialization struct {
 }
 
 type PostingSnapshot struct {
-	ID             int64
-	JobPostingID   int64
-	FetchedAt      time.Time
-	Title          sql.NullString
-	LocationText   sql.NullString
-	Department     sql.NullString
-	Team           sql.NullString
-	EmploymentType sql.NullString
-	WorkplaceType  sql.NullString
-	PostedAt       sql.NullTime
-	JobUrl         sql.NullString
-	RawData        json.RawMessage
+	ID                     int64
+	JobPostingID           int64
+	FetchedAt              time.Time
+	Title                  sql.NullString
+	LocationText           sql.NullString
+	Department             sql.NullString
+	Team                   sql.NullString
+	EmploymentType         sql.NullString
+	WorkplaceType          sql.NullString
+	PostedAt               sql.NullTime
+	JobUrl                 sql.NullString
+	RawData                json.RawMessage
+	SourceFirstPublishedAt sql.NullTime
+	SourceLastModifiedAt   sql.NullTime
 }
 
 type Skill struct {
