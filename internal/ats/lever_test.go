@@ -686,4 +686,52 @@ func TestLeverAdapter_NilCompOnZeroRange(t *testing.T) {
 	}
 }
 
+// TestLeverAdapter_NilCompOnInvalidCurrency pins the all-or-nothing rule for
+// the currency validation path: a currency code that is not exactly three
+// ASCII uppercase letters after upper-casing and trimming drops every comp
+// field. Note that lowercase "usd" is uppercased to "USD" before the check and
+// therefore passes; the cases below are ones that genuinely fail
+// isThreeUpperLetters.
+func TestLeverAdapter_NilCompOnInvalidCurrency(t *testing.T) {
+	cases := []struct {
+		name     string
+		currency string
+	}{
+		{"four_letters", "USDT"},
+		{"two_letters", "US"},
+		{"non_letter_char", "US$"},
+		{"empty", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := fmt.Sprintf(
+				`[{"id":"x","hostedUrl":"https://example.com/x","salaryRange":{"min":1000,"max":2000,"currency":%q,"interval":"per-year-salary"}}]`,
+				tc.currency,
+			)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(body))
+			}))
+			t.Cleanup(srv.Close)
+
+			postings, err := newLeverWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "leverdemo")
+			if err != nil {
+				t.Fatalf("FetchPostings: %v", err)
+			}
+			p := postings[0]
+			if p.CompensationMin != nil {
+				t.Errorf("CompensationMin: got %v, want nil", *p.CompensationMin)
+			}
+			if p.CompensationMax != nil {
+				t.Errorf("CompensationMax: got %v, want nil", *p.CompensationMax)
+			}
+			if p.CompensationCurrency != nil {
+				t.Errorf("CompensationCurrency: got %v, want nil", *p.CompensationCurrency)
+			}
+			if p.CompensationPeriod != nil {
+				t.Errorf("CompensationPeriod: got %v, want nil", *p.CompensationPeriod)
+			}
+		})
+	}
+}
+
 func strPtr(s string) *string { return &s }

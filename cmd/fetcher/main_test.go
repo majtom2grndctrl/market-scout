@@ -151,6 +151,58 @@ func TestSnapshotWrite_ForwardsSourceTimestampsToParams(t *testing.T) {
 	if !got.FetchedAt.Equal(fetchedAt) {
 		t.Errorf("FetchedAt: got %v, want %v", got.FetchedAt, fetchedAt)
 	}
+	wantFetchRunID := sql.NullInt64{Int64: 7, Valid: true}
+	if got.FetchRunID != wantFetchRunID {
+		t.Errorf("FetchRunID: got %+v, want %+v", got.FetchRunID, wantFetchRunID)
+	}
+}
+
+func TestSnapshotWrite_ForwardsCompensationAndDescriptionToParams(t *testing.T) {
+	// DescriptionText and the four compensation fields on domain.Posting must
+	// flow through buildSnapshotParams into the corresponding nullable DB
+	// columns. This pins the wiring so a future refactor can't silently drop
+	// any of the five fields without a test failure.
+	desc := "Build cool things."
+	var minComp int64 = 120000
+	var maxComp int64 = 160000
+	currency := "USD"
+	period := "year"
+	p := domain.Posting{
+		SourceID:             "789",
+		SourceURL:            "https://example.com/jobs/789",
+		RawData:              json.RawMessage(`{"id":789}`),
+		DescriptionText:      &desc,
+		CompensationMin:      &minComp,
+		CompensationMax:      &maxComp,
+		CompensationCurrency: &currency,
+		CompensationPeriod:   &period,
+	}
+	got := buildSnapshotParams(1, 7, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
+
+	wantFetchRunID := sql.NullInt64{Int64: 7, Valid: true}
+	if got.FetchRunID != wantFetchRunID {
+		t.Errorf("FetchRunID: got %+v, want %+v", got.FetchRunID, wantFetchRunID)
+	}
+	wantDesc := sql.NullString{String: desc, Valid: true}
+	if got.DescriptionText != wantDesc {
+		t.Errorf("DescriptionText: got %+v, want %+v", got.DescriptionText, wantDesc)
+	}
+	wantMin := sql.NullInt64{Int64: minComp, Valid: true}
+	if got.CompensationMin != wantMin {
+		t.Errorf("CompensationMin: got %+v, want %+v", got.CompensationMin, wantMin)
+	}
+	wantMax := sql.NullInt64{Int64: maxComp, Valid: true}
+	if got.CompensationMax != wantMax {
+		t.Errorf("CompensationMax: got %+v, want %+v", got.CompensationMax, wantMax)
+	}
+	wantCurrency := sql.NullString{String: currency, Valid: true}
+	if got.CompensationCurrency != wantCurrency {
+		t.Errorf("CompensationCurrency: got %+v, want %+v", got.CompensationCurrency, wantCurrency)
+	}
+	wantPeriod := sql.NullString{String: period, Valid: true}
+	if got.CompensationPeriod != wantPeriod {
+		t.Errorf("CompensationPeriod: got %+v, want %+v", got.CompensationPeriod, wantPeriod)
+	}
 }
 
 func TestSnapshotWrite_PreservesNonUTCTimezoneOffset(t *testing.T) {

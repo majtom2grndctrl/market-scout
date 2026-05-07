@@ -256,10 +256,9 @@ func fetchCompany(ctx context.Context, pool *sql.DB, adapter atsAdapter, c db.Co
 	qtx := db.New(tx)
 
 	for i, p := range postings {
-		// Empty RawData is a fatal adapter contract violation: persisting
-		// the company's snapshots without it would leave the board in a
-		// partial state and break the "fetched_at represents a complete
-		// view of the board" invariant. Abort the whole transaction.
+		// Missing required fields (SourceURL, SourceID, RawData) are fatal
+		// adapter contract violations: persisting partial state would break
+		// the board-completeness invariant. Abort the whole transaction.
 		if err := validatePosting(i, p); err != nil {
 			markFetchRunFailed(ctx, pool, fetchRunID, err)
 			return err
@@ -285,24 +284,32 @@ func fetchCompany(ctx context.Context, pool *sql.DB, adapter atsAdapter, c db.Co
 	// Mark success inside the same transaction as the snapshots so the
 	// fetch_runs status flip and the snapshot rows commit (or roll back)
 	// atomically. postings_count fits comfortably in int32 — a board with
-	// >2B postings would have other problems first.
+	// >2B postings would have other problems first. If MarkFetchRunSuccess
+	// fails, the transaction rolls back (snapshots discarded) and
+	// markFetchRunFailed writes the failed status outside the transaction.
 	completedAt := time.Now().UTC()
 	if err := qtx.MarkFetchRunSuccess(workCtx, db.MarkFetchRunSuccessParams{
 		ID:            fetchRunID,
 		CompletedAt:   sql.NullTime{Time: completedAt, Valid: true},
 		PostingsCount: sql.NullInt32{Int32: int32(len(postings)), Valid: true},
 	}); err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
+			slog.Warn("[fetcher] rollback error", "company", c.Name, "error", rbErr)
+		}
 		markFetchRunFailed(ctx, pool, fetchRunID, err)
 		return fmt.Errorf("marking fetch_run success: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
+		if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
+			slog.Warn("[fetcher] rollback error", "company", c.Name, "error", rbErr)
+		}
 		markFetchRunFailed(ctx, pool, fetchRunID, err)
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 
-	slog.Info("[fetcher] marked fetch_run success", "fetch_run_id", fetchRunID, "postings_count", len(postings))
 	slog.Info("[fetcher] fetched postings", "company", c.Name, "count", len(postings))
+	slog.Info("[fetcher] marked fetch_run success", "fetch_run_id", fetchRunID, "postings_count", len(postings))
 	return nil
 }
 
@@ -321,17 +328,19 @@ func insertFetchRun(ctx context.Context, pool *sql.DB, c db.Company, startedAt t
 	return id, nil
 }
 
-// markFetchRunFailed updates the fetch_runs row to status='failed' on a
-// fresh 5-second context derived from the caller's parent ctx. The parent
-// ctx is used (not workCtx) because workCtx may already be expired or
-// cancelled by the failure we're recording. The write must proceed even
-// during shutdown — leaving the row stuck as in_progress would make a clean
-// SIGTERM indistinguishable from a crash, which is the one thing
-// in_progress is meant to signal.
+// markFetchRunFailed updates the fetch_runs row to status='failed'. If the
+// parent context is cancelled (shutdown), the write is skipped and the row
+// is left as in_progress for the orphan reaper to handle — this preserves
+// the distinction between a clean SIGTERM and a crash. Per-company timeouts
+// (DeadlineExceeded on workCtx) still write failed because parentCtx remains
+// uncancelled in that case.
 func markFetchRunFailed(parentCtx context.Context, pool *sql.DB, fetchRunID int64, cause error) {
-	// WithoutCancel preserves context values (e.g. trace IDs) from parentCtx
-	// while stripping its cancellation, so this write proceeds even on shutdown.
-	updateCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 5*time.Second)
+	if errors.Is(parentCtx.Err(), context.Canceled) {
+		slog.Info("[fetcher] shutdown: skipping fetch_run failed update, leaving in_progress for orphan reaper", "fetch_run_id", fetchRunID)
+		return
+	}
+
+	updateCtx, cancel := context.WithTimeout(parentCtx, 5*time.Second)
 	defer cancel()
 
 	completedAt := time.Now().UTC()

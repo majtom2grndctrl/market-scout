@@ -41,7 +41,7 @@ Every fetch is recorded as a fetch-run row, one per company per invocation, capt
 
 ## ATS targets
 
-Greenhouse first (cleanest API). Lever and Ashby follow. Each ATS is a separate file in `internal/ats`; all adapters return `domain.Posting` from `internal/domain`.
+Three adapters are live: Greenhouse, Lever, and Ashby. Each ATS is a separate file in `internal/ats`; all adapters return `domain.Posting` from `internal/domain`.
 
 Greenhouse does not expose structured pay data on the public Job Board API for any board in the current watchlist; compensation appears only in description HTML. Lever is the structured compensation source.
 

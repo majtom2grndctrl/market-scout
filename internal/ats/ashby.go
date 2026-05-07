@@ -60,8 +60,8 @@ type ashbyResponse struct {
 
 // ashbyJob is the subset of the per-job wire shape the adapter normalizes.
 // The full job is preserved in RawData; fields not declared here
-// (descriptionHtml, descriptionPlain, applyUrl, isRemote, isListed,
-// compensation, etc.) can be re-interpreted later without re-fetching.
+// (applyUrl, isRemote, isListed, compensation, etc.) can be re-interpreted
+// later without re-fetching.
 type ashbyJob struct {
 	ID                 string              `json:"id"`
 	Title              string              `json:"title"`

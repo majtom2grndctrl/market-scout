@@ -7,8 +7,9 @@ import (
 )
 
 // htmlToPlainText converts an HTML fragment into a flattened plain-text string.
-// It strips tags, decodes the common named entities plus numeric (decimal and
-// hex) character references, and collapses internal whitespace runs to single
+// It drops entire <script> and <style> elements (tag, body, and closing tag),
+// strips remaining tags, decodes the common named entities plus numeric (decimal
+// and hex) character references, and collapses internal whitespace runs to single
 // spaces with leading/trailing whitespace trimmed.
 //
 // Why stdlib-only: ATS adapters are HTTP-only and we keep their dependency
@@ -21,7 +22,42 @@ func htmlToPlainText(s string) string {
 		return ""
 	}
 
-	// 1. Strip tags. Anything between '<' and the next '>' is dropped.
+	// 1. Drop entire <script>…</script> and <style>…</style> elements so their
+	//    body text never appears in output. Case-insensitive match on tag name.
+	for _, tag := range []string{"script", "style"} {
+		open := "<" + tag
+		close := "</" + tag + ">"
+		lower := strings.ToLower(s)
+		for {
+			start := strings.Index(lower, open)
+			if start < 0 {
+				break
+			}
+			// Verify the character after the tag name is '>' or whitespace (not a
+			// different tag that starts with the same prefix, e.g. <scriptx>).
+			afterTag := start + len(open)
+			if afterTag < len(s) && s[afterTag] != '>' && s[afterTag] != ' ' &&
+				s[afterTag] != '\t' && s[afterTag] != '\n' && s[afterTag] != '\r' &&
+				s[afterTag] != '/' {
+				// Not a match; advance past this position to avoid an infinite loop.
+				// Replace with a non-matching character in the working copy.
+				lower = lower[:start] + " " + lower[start+1:]
+				continue
+			}
+			end := strings.Index(lower[start:], close)
+			if end < 0 {
+				// No closing tag: drop to end of string.
+				s = s[:start]
+				lower = lower[:start]
+			} else {
+				remove := end + len(close)
+				s = s[:start] + s[start+remove:]
+				lower = lower[:start] + lower[start+remove:]
+			}
+		}
+	}
+
+	// 2. Strip remaining tags. Anything between '<' and the next '>' is dropped.
 	//    Unbalanced '<' with no matching '>' is treated as literal text.
 	var stripped strings.Builder
 	stripped.Grow(len(s))
@@ -41,10 +77,10 @@ func htmlToPlainText(s string) string {
 		i++
 	}
 
-	// 2. Decode entities.
+	// 3. Decode entities.
 	decoded := decodeEntities(stripped.String())
 
-	// 3. Collapse whitespace runs to single spaces; trim ends.
+	// 4. Collapse whitespace runs to single spaces; trim ends.
 	var out strings.Builder
 	out.Grow(len(decoded))
 	inSpace := false
@@ -143,7 +179,17 @@ func decodeOneEntity(token string) (string, bool) {
 		if err != nil || n < 0 || n > utf8.MaxRune {
 			return "", false
 		}
-		return string(rune(n)), true
+		r := rune(n)
+		// Reject C0/C1 control characters (except tab, LF, CR) and DEL.
+		// Postgres rejects NUL (\x00) in text columns; C0/C1 bytes are not
+		// meaningful in ATS content and produce garbage in full-text search.
+		// Return ("", true) so the caller consumes the entity rather than
+		// passing it through verbatim.
+		if (r < 0x20 && r != '\t' && r != '\n' && r != '\r') ||
+			(r >= 0x7F && r <= 0x9F) {
+			return "", true
+		}
+		return string(r), true
 	}
 	if v, ok := namedEntities[token]; ok {
 		return v, true

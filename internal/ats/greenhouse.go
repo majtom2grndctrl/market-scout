@@ -64,8 +64,9 @@ type ghResponse struct {
 // the rendered `content` HTML — e.g. <div class="pay-range">$165,000 — $190,000 USD</div>
 // — not in any structured field. Structured Greenhouse compensation parsing is
 // not viable against the current watchlist; the only signal lives in the
-// description body. Lever/Ashby remain the structured paths.
-//
+// description body. Lever is the structured compensation path; Ashby defers
+// (API exposes summary strings only).
+
 // ghJob is the subset of the per-job wire shape the adapter extracts into Posting.
 // FirstPublished and UpdatedAt are captured verbatim into SourceFirstPublishedAt
 // and SourceLastModifiedAt. Neither is promoted to PostedAt: `updated_at` is
@@ -150,7 +151,6 @@ func (g *Greenhouse) FetchPostings(ctx context.Context, boardToken string) ([]do
 		// arrives on a future board, inspect a sample, define a typed
 		// sub-struct, and parse pay_input_ranges[0] here. For now, leaving all
 		// four comp fields nil is correct: an empty PayInputRanges yields NULL.
-		_ = job.PayInputRanges
 
 		if job.FirstPublished != "" {
 			t, err := time.Parse(time.RFC3339Nano, job.FirstPublished)
