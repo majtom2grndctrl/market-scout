@@ -53,7 +53,7 @@ For each phase in the sequencing section:
 2. The agent's **specific task** — description, acceptance criteria
 3. Instruction to read relevant `agent-context/lib/` files for architectural guidance
 4. Instruction to follow `agent-context/lib/developer-guide.md` conventions
-5. Instruction to run `cargo check` and `cargo test` before considering the task complete
+5. Instruction to run `go build ./...` and `go test ./...` before considering the task complete
 
 **Do NOT provide:**
 - Other tasks' details (the agent doesn't need them)
@@ -73,7 +73,7 @@ Between phases, check that prerequisites for the next phase are satisfied.
 ### 5. Complete
 
 When all phases are done:
-- Run preflight checks: `cargo fmt --check && cargo clippy -- -D warnings && cargo test`
+- Run preflight checks: `gofmt -l . && go vet ./... && go test ./...`
 - Run a `/review-panel` on code edited in this session
 - Report review panel findings to user to discuss which feedback to act on
 

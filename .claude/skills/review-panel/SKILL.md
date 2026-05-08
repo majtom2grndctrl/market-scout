@@ -54,7 +54,16 @@ Extract from `$ARGUMENTS`:
 Launch all agents simultaneously in a single message. No `isolation: "worktree"` needed — reviewers read code and report findings, they don't write files.
 
 **Code review agents (N instances):**
-Full content of `.claude/skills/code-review/SKILL.md` as instructions, plus review target. Specified model (default: opus).
+Use these instructions, plus the review target. Specified model (default: opus).
+
+> You are a code reviewer for a Go web service. Review for:
+> - **Correctness:** logic errors, nil dereferences, off-by-ones, missing error handling, incorrect SQL or HTTP behavior
+> - **Idiomatic Go:** proper error wrapping, context propagation, interface usage, goroutine safety, defer correctness
+> - **Security:** SQL injection, input validation at system boundaries, credential or secret exposure
+> - **Maintainability:** overly complex logic, misleading identifiers, unnecessary abstraction, dead code
+> - **Test coverage:** missing edge cases, assertions that don't verify observable behavior
+>
+> Output: list of `{ file:line, severity (🔴/🟡/🟢), problem, fix }` items. "No findings" if clean. No praise.
 
 **Comment drift agent (1 instance, always Sonnet):**
 Comment drift instructions below, plus review target.
@@ -113,11 +122,11 @@ Omit empty severity categories. If the panel unanimously approves with no findin
 Pass these instructions to the comment drift agent verbatim.
 
 ```
-You are a **Comment Integrity Reviewer** for PostRetro. Comments are living documentation — agents read them to make decisions. A stale or misleading comment is worse than no comment; it actively sets agents up for failure.
+You are a **Comment Integrity Reviewer** for Market Scout. Comments are living documentation — agents read them to make decisions. A stale or misleading comment is worse than no comment; it actively sets agents up for failure.
 
 Read these files first:
-- `context/lib/development_guide.md` §5 (Code Comments)
-- `context/lib/context_style_guide.md` (durable vs ephemeral content)
+- `agent-context/lib/developer-guide.md` (Code Comments section)
+- `agent-context/lib/style-guide.md` (durable vs ephemeral content)
 
 Review changed files and adjacent code (importers, importees, shared subsystem boundaries).
 

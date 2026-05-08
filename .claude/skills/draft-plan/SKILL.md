@@ -38,7 +38,7 @@ Load relevant library files:
 
 Use subagents for exploration — codebase reading, pattern discovery, doc lookup. Target 80% confidence. Stop when you have enough to spec the work.
 
-**Code-grounding is non-negotiable.** Every Rust/TS/Lua identifier the spec will name — function, struct, type, field, enum variant — must be confirmed against current source before the spec asserts anything about it. Don't write "X returns Y" or "X has fields A, B" from memory. Open the file, read the signature, then write. Memory drift is the largest single source of spec inaccuracy.
+**Code-grounding is non-negotiable.** Every Go identifier the spec will name — function, struct, type, field, interface — must be confirmed against current source before the spec asserts anything about it. Don't write "X returns Y" or "X has fields A, B" from memory. Open the file, read the signature, then write. Memory drift is the largest single source of spec inaccuracy.
 
 **Research notes stay out of the spec.** If findings are useful but don't drive decisions, put them in a sibling `research.md` in the plan folder. The spec captures decisions and behavior, not the investigation that produced them.
 
@@ -83,18 +83,13 @@ One paragraph. What to build.
 (Optional.) Implementation direction, key modules, algorithm hints. Named types and functions live here, not in AC.
 
 ## Boundary inventory
-(Required when the plan crosses Rust ↔ JS/Lua ↔ wire ↔ FGD KVP boundaries. Skip otherwise.)
+(Required when the plan crosses Go ↔ JSON/HTTP ↔ SQL boundaries. Skip otherwise.)
 
 Pin casing and encoding once for every cross-boundary name. Reference this inventory throughout the spec instead of re-deciding inline.
 
-| Name | Rust | Wire / serde | JS / TS | Luau | FGD KVP |
-|---|---|---|---|---|---|
-| (example) `BillboardEmitter` | `ComponentValue::BillboardEmitter` | `"billboard_emitter"` | `"billboard_emitter"` | `"billboard_emitter"` | n/a |
-
-## Wire format
-(Required when the plan adds a binary or PRL section. Skip otherwise.)
-
-For each new binary surface, pin: endianness, integer signedness, length-prefix integer width, entry-count placement, per-entry field order, empty-list encoding, sentinel/null representation per runtime. State explicitly which existing section the new layout mirrors.
+| Name | Go struct field | JSON key | SQL column |
+|---|---|---|---|
+| (example) `CompanyID` | `CompanyID` | `"company_id"` | `company_id` |
 
 ## Open questions
 Unresolved items, risks, alternatives considered.
@@ -110,9 +105,9 @@ AC names observable behavior. Someone who didn't write the plan must be able to 
 
 | Too loose | Right | Too strict |
 |---|---|---|
-| "Movement feels good" | "Player walks slopes ≤ 45°; cannot pass through walls; jump launches when grounded" | "`CharacterController::step()` calls `trace_box()` with hull (16, 16, 56)" |
-| "Performance is acceptable" | "Frame time < 16ms on `assets/maps/stress.prl` at 1080p" | "BVH traversal ≤ 3.2ms measured via tracy" |
-| "Leaks are detected" | "`prl-build` exits non-zero on leaked map; writes `.pts` TrenchBroom loads" | "`LeakReport { seed_leaf, void_leaf, portal_path }` returned from `visibility::flood_fill()`" |
+| "Syncing works" | "`GET /jobs` returns all active listings from configured ATS sources; stale listings absent" | "`JobsHandler.List()` queries with `WHERE status = 'active'`" |
+| "Errors are handled" | "ATS fetch failure logs a structured error and skips that source; other sources still sync" | "`lever.Fetch()` returns wrapped error containing HTTP status code" |
+| "It's fast enough" | "Full ATS sync completes in < 30s for up to 1000 listings on a standard run" | "HTTP client timeout set to exactly 5s in `newHTTPClient()`" |
 
 Named types, functions, and line numbers belong in the sketch — not AC. AC survives a rewrite of the implementation; a spec keyed to function names does not.
 
