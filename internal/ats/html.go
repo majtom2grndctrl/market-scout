@@ -7,10 +7,24 @@ import (
 )
 
 // htmlToPlainText converts an HTML fragment into a flattened plain-text string.
-// It drops entire <script> and <style> elements (tag, body, and closing tag),
-// strips remaining tags, decodes the common named entities plus numeric (decimal
-// and hex) character references, and collapses internal whitespace runs to single
-// spaces with leading/trailing whitespace trimmed.
+// The pipeline loops `decode entities → drop <script>/<style> elements → strip
+// remaining tags` until the working string stabilizes (bounded by maxHTMLPasses
+// to cap CPU on adversarial input), then runs a final entity decode for
+// surviving body-text entities (e.g. `&amp;` → `&`) and collapses internal
+// whitespace runs to single spaces with leading/trailing whitespace trimmed.
+//
+// Why a loop: Greenhouse's `content` field is *entity-encoded HTML* (e.g.
+// `&lt;p&gt;…&lt;/p&gt;`), so a single decode-then-strip pass leaves wrapped
+// markup intact. Worse, multiply-encoded payloads (e.g. `&amp;lt;script&amp;gt;…`)
+// would survive a fixed two-pass pipeline and re-emerge as literal `<script>`
+// in output. Looping until stable catches arbitrary encoding depth while a
+// small iteration cap keeps adversarial input from burning unbounded CPU; if
+// the cap is hit the working string is returned as-is rather than erroring.
+// The function is idempotent on its own output: f(f(x)) == f(x).
+//
+// Lever (plain HTML) and Ashby (plain HTML) pass through under the same
+// pipeline — the loop terminates after one iteration when there is nothing
+// left to decode or strip.
 //
 // Why stdlib-only: ATS adapters are HTTP-only and we keep their dependency
 // surface minimal. The intent is "good enough to render Greenhouse/Lever/Ashby
@@ -22,8 +36,50 @@ func htmlToPlainText(s string) string {
 		return ""
 	}
 
-	// 1. Drop entire <script>…</script> and <style>…</style> elements so their
-	//    body text never appears in output. Case-insensitive match on tag name.
+	// Loop decode → drop scripts/styles → strip tags until the string is stable
+	// or the iteration cap is reached. This catches multiply-encoded markup
+	// (e.g. `&amp;lt;script&amp;gt;`) that a fixed-depth pipeline would miss.
+	for i := 0; i < maxHTMLPasses; i++ {
+		prev := s
+		s = decodeEntities(s)
+		s = dropScriptStyle(s)
+		s = stripTags(s)
+		if s == prev {
+			break
+		}
+	}
+
+	// Final decode pass: handle entities in body text that surfaced after the
+	// last strip (e.g. `&amp;` → `&`). The loop above stops as soon as one
+	// iteration is a no-op, which can leave one decode unconsumed.
+	s = decodeEntities(s)
+
+	// Collapse whitespace runs to single spaces; trim ends.
+	var out strings.Builder
+	out.Grow(len(s))
+	inSpace := false
+	for _, r := range s {
+		if isASCIISpace(r) {
+			inSpace = true
+			continue
+		}
+		if inSpace && out.Len() > 0 {
+			out.WriteByte(' ')
+		}
+		inSpace = false
+		out.WriteRune(r)
+	}
+	return out.String()
+}
+
+// maxHTMLPasses caps the decode/strip loop. Five passes is enough to unwrap
+// realistic multiply-encoded ATS payloads (one or two layers in practice) with
+// margin to spare, while keeping pathological adversarial input bounded.
+const maxHTMLPasses = 5
+
+// dropScriptStyle removes entire <script>…</script> and <style>…</style>
+// elements, including their bodies. Case-insensitive on the tag name.
+func dropScriptStyle(s string) string {
 	for _, tag := range []string{"script", "style"} {
 		open := "<" + tag
 		close := "</" + tag + ">"
@@ -56,44 +112,31 @@ func htmlToPlainText(s string) string {
 			}
 		}
 	}
+	return s
+}
 
-	// 2. Strip remaining tags. Anything between '<' and the next '>' is dropped.
-	//    Unbalanced '<' with no matching '>' is treated as literal text.
-	var stripped strings.Builder
-	stripped.Grow(len(s))
+// stripTags removes anything between '<' and the next '>'. Unbalanced '<' with
+// no matching '>' is treated as literal text.
+func stripTags(s string) string {
+	if !strings.ContainsRune(s, '<') {
+		return s
+	}
+	var out strings.Builder
+	out.Grow(len(s))
 	for i := 0; i < len(s); {
 		c := s[i]
 		if c == '<' {
 			end := strings.IndexByte(s[i:], '>')
 			if end < 0 {
 				// No closing '>': treat the rest as literal.
-				stripped.WriteString(s[i:])
+				out.WriteString(s[i:])
 				break
 			}
 			i += end + 1
 			continue
 		}
-		stripped.WriteByte(c)
+		out.WriteByte(c)
 		i++
-	}
-
-	// 3. Decode entities.
-	decoded := decodeEntities(stripped.String())
-
-	// 4. Collapse whitespace runs to single spaces; trim ends.
-	var out strings.Builder
-	out.Grow(len(decoded))
-	inSpace := false
-	for _, r := range decoded {
-		if isASCIISpace(r) {
-			inSpace = true
-			continue
-		}
-		if inSpace && out.Len() > 0 {
-			out.WriteByte(' ')
-		}
-		inSpace = false
-		out.WriteRune(r)
 	}
 	return out.String()
 }

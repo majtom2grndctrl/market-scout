@@ -78,7 +78,7 @@ type ghJob struct {
 	AbsoluteURL    string `json:"absolute_url"`
 	FirstPublished string `json:"first_published"`
 	UpdatedAt      string `json:"updated_at"`
-	Content        string `json:"content"`
+	Content        string `json:"content"` // entity-encoded HTML (e.g. &lt;p&gt;…); htmlToPlainText handles it
 	Location       struct {
 		Name string `json:"name"`
 	} `json:"location"`
