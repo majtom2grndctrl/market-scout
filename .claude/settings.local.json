@@ -47,7 +47,9 @@
       "Bash(gofmt -l internal/ats/lever_test.go)",
       "Bash(gofmt -l cmd/fetcher/main.go)",
       "Bash(gofmt -d cmd/fetcher/main.go)",
-      "Bash(gofmt *)"
+      "Bash(gofmt *)",
+      "Bash(git diff *)",
+      "Bash(docker exec *)"
     ]
   }
 }

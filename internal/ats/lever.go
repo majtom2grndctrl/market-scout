@@ -122,18 +122,18 @@ var leverWorkplaceAliases = map[string]string{
 // observed wire values surfaced through the [lever] unknown-commitment
 // warn channel.
 var leverEmploymentAliases = map[string]string{
-	"fulltime":           "full_time",
-	"ft":                 "full_time",
-	"parttime":           "part_time",
-	"pt":                 "part_time",
-	"contract":           "contract",
-	"contractor":         "contract",
-	"fixedterm":          "contract", // "Fixed term" observed on Mistral board
-	"fulltimefreelance":  "contract", // "Full-time / freelance" observed on Mistral board
-	"intern":             "intern",
-	"internship":         "intern",
-	"temporary":          "temporary",
-	"temp":               "temporary",
+	"fulltime":          "full_time",
+	"ft":                "full_time",
+	"parttime":          "part_time",
+	"pt":                "part_time",
+	"contract":          "contract",
+	"contractor":        "contract",
+	"fixedterm":         "contract", // "Fixed term" observed on Mistral board
+	"fulltimefreelance": "contract", // "Full-time / freelance" observed on Mistral board
+	"intern":            "intern",
+	"internship":        "intern",
+	"temporary":         "temporary",
+	"temp":              "temporary",
 }
 
 // FetchPostings retrieves all jobs for the given Lever board token and

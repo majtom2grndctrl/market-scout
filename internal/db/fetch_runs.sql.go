@@ -22,7 +22,6 @@ type InsertFetchRunParams struct {
 	StartedAt time.Time
 }
 
-// $1: company_id, $2: started_at
 func (q *Queries) InsertFetchRun(ctx context.Context, arg InsertFetchRunParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, insertFetchRun, arg.CompanyID, arg.StartedAt)
 	var id int64
@@ -42,7 +41,6 @@ type MarkFetchRunFailedParams struct {
 	ErrorMessage sql.NullString
 }
 
-// $1: id, $2: completed_at, $3: error_message
 func (q *Queries) MarkFetchRunFailed(ctx context.Context, arg MarkFetchRunFailedParams) error {
 	_, err := q.db.ExecContext(ctx, markFetchRunFailed, arg.ID, arg.CompletedAt, arg.ErrorMessage)
 	return err
@@ -60,7 +58,6 @@ type MarkFetchRunSuccessParams struct {
 	PostingsCount sql.NullInt32
 }
 
-// $1: id, $2: completed_at, $3: postings_count
 func (q *Queries) MarkFetchRunSuccess(ctx context.Context, arg MarkFetchRunSuccessParams) error {
 	_, err := q.db.ExecContext(ctx, markFetchRunSuccess, arg.ID, arg.CompletedAt, arg.PostingsCount)
 	return err

@@ -9,16 +9,16 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/joho/godotenv"
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/joho/godotenv"
 	db "github.com/majtom2grndctrl/market-scout/internal/db"
 )
 
 func main() {
 	if err := run(); err != nil {
-		slog.Error("[migrate] " + err.Error())
+		slog.Error("[migrate] migration failed", "err", err)
 		os.Exit(1)
 	}
 }

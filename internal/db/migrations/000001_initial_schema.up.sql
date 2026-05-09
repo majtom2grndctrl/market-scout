@@ -1,4 +1,7 @@
--- Enabled for pgvector similarity search; no vector columns yet. See: agent-context/lib/project.md
+-- Initial schema: companies, job_postings, posting_snapshots, classification taxonomy
+-- (canonical_roles, specializations, skills, legacy_archetypes, classifications, join tables),
+-- and seed data. Enables pgvector for future similarity search; no vector columns yet.
+-- See: agent-context/lib/project.md
 CREATE EXTENSION IF NOT EXISTS vector;
 
 CREATE TABLE companies (
@@ -45,42 +48,101 @@ CREATE TABLE posting_snapshots (
 );
 
 CREATE TABLE canonical_roles (
-    id       bigserial PRIMARY KEY,
-    slug     text NOT NULL UNIQUE,
-    name     text NOT NULL,
-    category text NOT NULL CHECK (category IN ('design','engineering','research'))
+    id         bigserial PRIMARY KEY,
+    slug       text NOT NULL UNIQUE,
+    name       text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE specializations (
-    id   bigserial PRIMARY KEY,
-    slug text NOT NULL UNIQUE,
-    name text NOT NULL
+    id         bigserial PRIMARY KEY,
+    slug       text NOT NULL UNIQUE,
+    name       text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE skills (
+    id         bigserial PRIMARY KEY,
+    slug       text NOT NULL UNIQUE,
+    name       text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- Closed seed-only set. Agents may not extend this table at runtime — unknown slugs abort writeback.
+-- Enforcement: batch-enrich preflight resolves every emitted archetype slug against the
+-- in-memory taxonomy map loaded at invocation start; any unknown slug aborts that posting's transaction.
+-- No created_at because membership is governed by migrations, not runtime inserts.
+CREATE TABLE legacy_archetypes (
     id   bigserial PRIMARY KEY,
     slug text NOT NULL UNIQUE,
     name text NOT NULL
 );
 
--- Classifications (roles, specializations, skills) are properties of a posting and cascade with it; snapshot rows are historical records and must not be deleted.
-CREATE TABLE job_posting_roles (
+CREATE TABLE canonical_role_archetypes (
+    canonical_role_id bigint NOT NULL REFERENCES canonical_roles(id) ON DELETE CASCADE,
+    archetype_id      bigint NOT NULL REFERENCES legacy_archetypes(id) ON DELETE RESTRICT,
+    PRIMARY KEY (canonical_role_id, archetype_id)
+);
+
+CREATE INDEX idx_canonical_role_archetypes_archetype ON canonical_role_archetypes (archetype_id);
+
+-- FK asymmetry (intentional): CASCADE from job_postings — deleting a posting takes its full
+-- classification history with it. RESTRICT on taxonomy FKs (canonical_roles, specializations,
+-- skills) — taxonomy deletion must confront existing classification history; provenance is the goal,
+-- so the DB blocks the delete rather than silently orphaning historical records.
+--
+-- A classification is one model run against one posting. Join tables hang off classifications so we
+-- keep provenance per run. Append-only: never delete or update classification rows. "Current" is
+-- derived per query (ORDER BY classified_at DESC LIMIT 1), backed by idx_classifications_posting_classified.
+-- Orchestrator idempotency (--force inserts a new row per run; non-force skips already-classified postings) is the enforcement boundary against unintended duplicates.
+CREATE TABLE classifications (
+    id             bigserial PRIMARY KEY,
     job_posting_id bigint NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
-    role_id        bigint NOT NULL REFERENCES canonical_roles(id) ON DELETE CASCADE,
-    PRIMARY KEY (job_posting_id, role_id)
+    model          text NOT NULL,
+    prompt_version text NOT NULL,
+    classified_at  timestamptz NOT NULL DEFAULT now(),
+    seniority      text NOT NULL CHECK (seniority IN ('intern','junior','mid','senior','staff','principal','lead','director','unknown')),
+    notes          text
+);
+
+CREATE INDEX idx_classifications_posting_classified ON classifications (job_posting_id, classified_at DESC);
+
+CREATE TABLE job_posting_roles (
+    classification_id bigint NOT NULL REFERENCES classifications(id) ON DELETE CASCADE,
+    role_id           bigint NOT NULL REFERENCES canonical_roles(id) ON DELETE RESTRICT,
+    PRIMARY KEY (classification_id, role_id)
 );
 
 CREATE TABLE job_posting_specializations (
-    job_posting_id    bigint NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
-    specialization_id bigint NOT NULL REFERENCES specializations(id) ON DELETE CASCADE,
-    PRIMARY KEY (job_posting_id, specialization_id)
+    classification_id bigint NOT NULL REFERENCES classifications(id) ON DELETE CASCADE,
+    specialization_id bigint NOT NULL REFERENCES specializations(id) ON DELETE RESTRICT,
+    PRIMARY KEY (classification_id, specialization_id)
 );
 
 CREATE TABLE job_posting_skills (
-    job_posting_id bigint NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
-    skill_id       bigint NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
-    PRIMARY KEY (job_posting_id, skill_id)
+    classification_id bigint NOT NULL REFERENCES classifications(id) ON DELETE CASCADE,
+    skill_id          bigint NOT NULL REFERENCES skills(id) ON DELETE RESTRICT,
+    PRIMARY KEY (classification_id, skill_id)
 );
 
 CREATE INDEX idx_posting_snapshots_posting_fetched ON posting_snapshots (job_posting_id, fetched_at DESC);
 CREATE INDEX idx_job_postings_cities ON job_postings USING GIN (cities);
+
+-- Seed data: closed set of legacy archetypes, plus the General Application canonical role mapped to non-role.
+-- These rows live here because they must exist before any enrichment run; company and watchlist seeding belongs in internal/db/seeds/.
+INSERT INTO legacy_archetypes (slug, name) VALUES
+    ('design', 'Design'),
+    ('engineering', 'Engineering'),
+    ('research', 'Research'),
+    ('non-role', 'Non-role')
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO canonical_roles (slug, name) VALUES ('general-application', 'General Application')
+ON CONFLICT (slug) DO NOTHING;
+
+INSERT INTO canonical_role_archetypes (canonical_role_id, archetype_id)
+VALUES (
+    (SELECT id FROM canonical_roles WHERE slug = 'general-application'),
+    (SELECT id FROM legacy_archetypes WHERE slug = 'non-role')
+)
+ON CONFLICT DO NOTHING;

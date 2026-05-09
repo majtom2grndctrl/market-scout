@@ -53,5 +53,7 @@ The Postgres DB is also intended to serve as a knowledge store for an AI agent l
 
 - Scheduler (deferred)
 - Next.js app UI (deferred)
-- Enrichment workflow (deferred)
+- Embedding storage for classification summaries (deferred — pgvector columns not yet added; summary is report-only today; classification provenance schema is live in migration 000001)
+- `skills[].requirement` persistence (deferred — writeback ignores the field today)
+- Boilerplate-stripping preprocessor (deferred — plan exists in drafts)
 - Agent UI (deferred)

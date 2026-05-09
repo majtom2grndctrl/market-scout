@@ -11,10 +11,25 @@ import (
 )
 
 type CanonicalRole struct {
-	ID       int64
-	Slug     string
-	Name     string
-	Category string
+	ID        int64
+	Slug      string
+	Name      string
+	CreatedAt time.Time
+}
+
+type CanonicalRoleArchetype struct {
+	CanonicalRoleID int64
+	ArchetypeID     int64
+}
+
+type Classification struct {
+	ID            int64
+	JobPostingID  int64
+	Model         string
+	PromptVersion string
+	ClassifiedAt  time.Time
+	Seniority     string
+	Notes         sql.NullString
 }
 
 type Company struct {
@@ -54,18 +69,24 @@ type JobPosting struct {
 }
 
 type JobPostingRole struct {
-	JobPostingID int64
-	RoleID       int64
+	ClassificationID int64
+	RoleID           int64
 }
 
 type JobPostingSkill struct {
-	JobPostingID int64
-	SkillID      int64
+	ClassificationID int64
+	SkillID          int64
 }
 
 type JobPostingSpecialization struct {
-	JobPostingID     int64
+	ClassificationID int64
 	SpecializationID int64
+}
+
+type LegacyArchetype struct {
+	ID   int64
+	Slug string
+	Name string
 }
 
 type PostingSnapshot struct {
@@ -93,13 +114,15 @@ type PostingSnapshot struct {
 }
 
 type Skill struct {
-	ID   int64
-	Slug string
-	Name string
+	ID        int64
+	Slug      string
+	Name      string
+	CreatedAt time.Time
 }
 
 type Specialization struct {
-	ID   int64
-	Slug string
-	Name string
+	ID        int64
+	Slug      string
+	Name      string
+	CreatedAt time.Time
 }

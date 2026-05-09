@@ -102,9 +102,9 @@ func dropScriptStyle(s string) string {
 			}
 			end := strings.Index(lower[start:], close)
 			if end < 0 {
-				// No closing tag: drop to end of string.
-				s = s[:start]
-				lower = lower[:start]
+				// No closing tag: no complete block to strip, so stop processing
+				// this tag type. Breaking avoids silent truncation of the tail.
+				break
 			} else {
 				remove := end + len(close)
 				s = s[:start] + s[start+remove:]
@@ -153,19 +153,19 @@ func isASCIISpace(r rune) bool {
 // ATS-supplied content. The full HTML5 named-entity table is large; we keep
 // only what's common and pass unknown references through verbatim.
 var namedEntities = map[string]string{
-	"amp":   "&",
-	"lt":    "<",
-	"gt":    ">",
-	"quot":  "\"",
-	"apos":  "'",
-	"nbsp":  " ",
-	"mdash": "—",
-	"ndash": "–",
+	"amp":    "&",
+	"lt":     "<",
+	"gt":     ">",
+	"quot":   "\"",
+	"apos":   "'",
+	"nbsp":   " ",
+	"mdash":  "—",
+	"ndash":  "–",
 	"hellip": "…",
-	"rsquo": "’",
-	"lsquo": "‘",
-	"rdquo": "”",
-	"ldquo": "“",
+	"rsquo":  "’",
+	"lsquo":  "‘",
+	"rdquo":  "”",
+	"ldquo":  "“",
 }
 
 func decodeEntities(s string) string {
