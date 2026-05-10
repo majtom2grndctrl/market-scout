@@ -19,9 +19,10 @@
 *.out
 coverage.txt
 coverage.html
-# Common output paths for the fetcher binary
+# Common output paths for Go binaries built at the repo root
 /cmd/fetcher/fetcher
 /fetcher
+/strip-boilerplate
 
 # --- Go module / tooling caches ---
 # vendor/ is intentionally NOT ignored — uncomment if you adopt vendoring later.
