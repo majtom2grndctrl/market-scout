@@ -37,3 +37,21 @@ INSERT INTO posting_snapshots (
     compensation_currency,
     compensation_period
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);
+
+-- name: ListLatestDescriptionsByCompany :many
+-- Latest snapshot's description_text per job_posting for a company.
+-- Skips postings whose latest snapshot has NULL description_text.
+-- ::text cast is intentional: forces sqlc to emit a plain string instead of
+-- sql.NullString. The outer WHERE guarantees non-null at the DB level; the
+-- cast surfaces that guarantee in the generated Go type.
+SELECT job_posting_id, description_text
+FROM (
+    SELECT DISTINCT ON (ps.job_posting_id)
+        ps.job_posting_id,
+        ps.description_text::text AS description_text
+    FROM posting_snapshots ps
+    JOIN job_postings jp ON jp.id = ps.job_posting_id
+    WHERE jp.company_id = $1
+    ORDER BY ps.job_posting_id, ps.fetched_at DESC
+) latest
+WHERE description_text IS NOT NULL;

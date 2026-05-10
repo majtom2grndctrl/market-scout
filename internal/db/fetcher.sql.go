@@ -132,6 +132,53 @@ func (q *Queries) ListCompaniesWithATS(ctx context.Context) ([]Company, error) {
 	return items, nil
 }
 
+const listLatestDescriptionsByCompany = `-- name: ListLatestDescriptionsByCompany :many
+SELECT job_posting_id, description_text
+FROM (
+    SELECT DISTINCT ON (ps.job_posting_id)
+        ps.job_posting_id,
+        ps.description_text::text AS description_text
+    FROM posting_snapshots ps
+    JOIN job_postings jp ON jp.id = ps.job_posting_id
+    WHERE jp.company_id = $1
+    ORDER BY ps.job_posting_id, ps.fetched_at DESC
+) latest
+WHERE description_text IS NOT NULL
+`
+
+type ListLatestDescriptionsByCompanyRow struct {
+	JobPostingID    int64
+	DescriptionText string
+}
+
+// Latest snapshot's description_text per job_posting for a company.
+// Skips postings whose latest snapshot has NULL description_text.
+// ::text cast is intentional: forces sqlc to emit a plain string instead of
+// sql.NullString. The outer WHERE guarantees non-null at the DB level; the
+// cast surfaces that guarantee in the generated Go type.
+func (q *Queries) ListLatestDescriptionsByCompany(ctx context.Context, companyID int64) ([]ListLatestDescriptionsByCompanyRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLatestDescriptionsByCompany, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLatestDescriptionsByCompanyRow
+	for rows.Next() {
+		var i ListLatestDescriptionsByCompanyRow
+		if err := rows.Scan(&i.JobPostingID, &i.DescriptionText); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertJobPosting = `-- name: UpsertJobPosting :one
 INSERT INTO job_postings (company_id, source_type, source_url, source_id)
 VALUES ($1, $2, $3, $4)

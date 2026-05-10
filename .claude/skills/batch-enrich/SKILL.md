@@ -66,7 +66,7 @@ Selection contract:
 - Order by `job_postings.first_seen_at` ascending
 - LIMIT by `count`
 
-Pull: `posting_id`, latest snapshot's `title`, latest snapshot's `description_text`.
+Pull: `posting_id`, `company_id`, latest snapshot's `title`, latest snapshot's `description_text`.
 
 Log how many postings were skipped because their latest snapshot had NULL `description_text`.
 
@@ -75,6 +75,7 @@ Log how many postings were skipped because their latest snapshot had NULL `descr
 Base query (always used):
 ```sql
 SELECT jp.id AS posting_id,
+       jp.company_id,
        s.title,
        s.description_text
 FROM job_postings jp
@@ -112,7 +113,27 @@ Hold the four lists in orchestrator state. Every agent receives them verbatim.
 
 In the agent prompt template, render `legacy_archetypes` as a bullet list under a `## Legacy archetypes (closed set)` heading, immediately after the canonical-roles taxonomy section.
 
-### 5. Dispatch waves
+### 5. Strip per-company boilerplate
+
+Group selected postings by `company_id`. For each company with ≥3 selected postings, strip boilerplate:
+
+```bash
+echo '{"company_id": <int>, "selected_ids": [<int>, ...]}' \
+  | go run ./cmd/strip-boilerplate
+```
+
+The binary self-fetches the company's full description corpus from the DB, runs `boilerplate.Strip`, and writes to stdout:
+
+```json
+{"postings": [{"posting_id": <int>, "cleaned_text": "<string>"}, ...]}
+```
+
+Substitute `cleaned_text` for `description_text` in the agent prompt for postings returned by the binary. Companies with <3 selected postings skip this step entirely and pass through unchanged.
+
+If the binary exits non-zero, abort the skill.
+
+### 6. Dispatch waves
+
 
 Wave size: **10**. For each wave, send 10 Agent tool calls in a **single message** — true parallel dispatch is the point of this skill. Wait for all 10 to return before starting the next wave. Final wave may be smaller than 10.
 
@@ -121,7 +142,7 @@ Agent config per call:
 - `model`: `haiku`
 - `description`: `Enrich posting <posting_id>`
 
-### 6. Agent contract
+### 7. Agent contract
 
 Each Haiku agent receives one posting and returns one JSON object.
 
@@ -174,13 +195,13 @@ Note: writeback ignores `skills[].requirement` today — there is no storage col
 - No marketing fluff, no company-specific framing
 - This text is what we'll embed later — write it for semantic similarity, not human reading
 
-### 7. Writeback
+### 8. Writeback
 
 Read `PROMPT_VERSION` and `MODEL` from the `classification-pins` block at the top of this file once at invocation start. Apply both uniformly to every posting in the batch. Parse the block as exact `KEY=VALUE` lines, no spaces around `=`; orchestrator greps `^PROMPT_VERSION=` and `^MODEL=` from the block.
 
-This writeback path is transitional — raw psql inside a Bash heredoc, with the orchestrator interpolating values into SQL string literals. The typed Go contract lives in `internal/db/queries/classifications.sql` (generated: `internal/db/classifications.sql.go`); a Go caller will replace this Bash path in a future plan. Until then, the validation and escaping rules in 7a are mandatory: agent-emitted strings are untrusted input.
+This writeback path is transitional — raw psql inside a Bash heredoc, with the orchestrator interpolating values into SQL string literals. The typed Go contract lives in `internal/db/queries/classifications.sql` (generated: `internal/db/classifications.sql.go`); a Go caller will replace this Bash path in a future plan. Until then, the validation and escaping rules in 8a are mandatory: agent-emitted strings are untrusted input.
 
-#### 7a. Pre-interpolation validation and escaping
+#### 8a. Pre-interpolation validation and escaping
 
 Run before any transaction opens. If any check fails, skip the posting, log the failure (`posting_id` + reason + offending value), continue the batch.
 
@@ -192,13 +213,13 @@ Run before any transaction opens. If any check fails, skip the posting, log the 
 
 These rules apply to every interpolation in both phases below.
 
-#### 7b. Phase A — Pre-flight (no transaction)
+#### 8b. Phase A — Pre-flight (no transaction)
 
 For each posting, in order:
 
 0. **Validate seniority.** If `classification.seniority` is missing or null, skip the posting, log a parse error (`posting_id` + `seniority missing`), continue the batch.
 
-1. **Validate and escape.** Apply Rule A to every slug and Rule B to every name/notes value per 7a. Any failure: skip, log, continue.
+1. **Validate and escape.** Apply Rule A to every slug and Rule B to every name/notes value per 8a. Any failure: skip, log, continue.
 
 2. **Verify every canonical_role has a non-empty archetype array.** Before any resolution, check that every emitted canonical_role has a `legacy_archetypes` array with at least one entry. If any role has an empty or missing array: skip the posting, log a parse error (`posting_id` + role slug + `empty archetypes`), continue the batch. This is checked explicitly so a future refactor that changes resolution loop semantics cannot silently drop the guard.
 
@@ -206,7 +227,7 @@ For each posting, in order:
 
 Pre-flight is the only place validation can fail. If a posting clears Phase A, Phase B can only fail on database errors.
 
-#### 7c. Phase B — Transactional writeback
+#### 8c. Phase B — Transactional writeback
 
 Open one psql transaction per posting. Each posting runs in a single `psql` invocation wrapping one BEGIN…COMMIT block:
 
@@ -220,7 +241,7 @@ COMMIT;
 SQL
 ```
 
-The `SET LOCAL standard_conforming_strings = on` is the first statement inside the transaction. The Rule B escaping in §7a (single-quote doubling, treating `\` as literal) is only safe when this setting is on. Postgres has defaulted it to `on` since 9.1, but pinning it per-transaction makes the assumption explicit and survives any future server-side override.
+The `SET LOCAL standard_conforming_strings = on` is the first statement inside the transaction. The Rule B escaping in §8a (single-quote doubling, treating `\` as literal) is only safe when this setting is on. Postgres has defaulted it to `on` since 9.1, but pinning it per-transaction makes the assumption explicit and survives any future server-side override.
 
 The whole transaction — taxonomy upserts, classification insert, join inserts — runs as one psql script delivered via stdin heredoc. psql processes `\gset` (used in step 3) only when reading a script, not with `-c`, so the heredoc delivery mode is load-bearing.
 
@@ -268,7 +289,7 @@ Drop fields with no storage column:
 
 On transaction failure for a posting (DB error only — validation already passed): skip it, continue the batch, log `posting_id` and error to the markdown report. That posting will be re-selected on the next non-`--force` run.
 
-### 8. Report
+### 9. Report
 
 Write `agent-output/batch-enrich/<YYYY-MM-DD-HHMM>.md`. Create the directory if missing. `agent-output/` is gitignored.
 
