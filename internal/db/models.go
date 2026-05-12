@@ -17,9 +17,9 @@ type CanonicalRole struct {
 	CreatedAt time.Time
 }
 
-type CanonicalRoleArchetype struct {
+type CanonicalRoleDimension struct {
 	CanonicalRoleID int64
-	ArchetypeID     int64
+	DimensionID     int64
 }
 
 type Classification struct {
@@ -83,12 +83,6 @@ type JobPostingSpecialization struct {
 	SpecializationID int64
 }
 
-type LegacyArchetype struct {
-	ID   int64
-	Slug string
-	Name string
-}
-
 type PostingSnapshot struct {
 	ID                     int64
 	JobPostingID           int64
@@ -111,6 +105,12 @@ type PostingSnapshot struct {
 	CompensationMax        sql.NullInt64
 	CompensationCurrency   sql.NullString
 	CompensationPeriod     sql.NullString
+}
+
+type RoleDimension struct {
+	ID   int64
+	Slug string
+	Name string
 }
 
 type Skill struct {

@@ -1,5 +1,5 @@
 -- Initial schema: companies, job_postings, posting_snapshots, classification taxonomy
--- (canonical_roles, specializations, skills, legacy_archetypes, classifications, join tables),
+-- (canonical_roles, specializations, skills, role_dimensions, classifications, join tables),
 -- and seed data. Enables pgvector for future similarity search; no vector columns yet.
 -- See: agent-context/lib/project.md
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -69,22 +69,22 @@ CREATE TABLE skills (
 );
 
 -- Closed seed-only set. Agents may not extend this table at runtime — unknown slugs abort writeback.
--- Enforcement: batch-enrich preflight resolves every emitted archetype slug against the
+-- Enforcement: batch-enrich preflight resolves every emitted dimension slug against the
 -- in-memory taxonomy map loaded at invocation start; any unknown slug aborts that posting's transaction.
 -- No created_at because membership is governed by migrations, not runtime inserts.
-CREATE TABLE legacy_archetypes (
+CREATE TABLE role_dimensions (
     id   bigserial PRIMARY KEY,
     slug text NOT NULL UNIQUE,
     name text NOT NULL
 );
 
-CREATE TABLE canonical_role_archetypes (
+CREATE TABLE canonical_role_dimensions (
     canonical_role_id bigint NOT NULL REFERENCES canonical_roles(id) ON DELETE CASCADE,
-    archetype_id      bigint NOT NULL REFERENCES legacy_archetypes(id) ON DELETE RESTRICT,
-    PRIMARY KEY (canonical_role_id, archetype_id)
+    dimension_id      bigint NOT NULL REFERENCES role_dimensions(id) ON DELETE RESTRICT,
+    PRIMARY KEY (canonical_role_id, dimension_id)
 );
 
-CREATE INDEX idx_canonical_role_archetypes_archetype ON canonical_role_archetypes (archetype_id);
+CREATE INDEX idx_canonical_role_dimensions_dimension ON canonical_role_dimensions (dimension_id);
 
 -- FK asymmetry (intentional): CASCADE from job_postings — deleting a posting takes its full
 -- classification history with it. RESTRICT on taxonomy FKs (canonical_roles, specializations,
@@ -128,21 +128,24 @@ CREATE TABLE job_posting_skills (
 CREATE INDEX idx_posting_snapshots_posting_fetched ON posting_snapshots (job_posting_id, fetched_at DESC);
 CREATE INDEX idx_job_postings_cities ON job_postings USING GIN (cities);
 
--- Seed data: closed set of legacy archetypes, plus the General Application canonical role mapped to non-role.
+-- Seed data: closed set of role dimensions, plus the General Application canonical role mapped to other.
 -- These rows live here because they must exist before any enrichment run; company and watchlist seeding belongs in internal/db/seeds/.
-INSERT INTO legacy_archetypes (slug, name) VALUES
+INSERT INTO role_dimensions (slug, name) VALUES
     ('design', 'Design'),
     ('engineering', 'Engineering'),
     ('research', 'Research'),
-    ('non-role', 'Non-role')
+    ('product', 'Product'),
+    ('data', 'Data'),
+    ('operations', 'Operations'),
+    ('other', 'Other')
 ON CONFLICT (slug) DO NOTHING;
 
 INSERT INTO canonical_roles (slug, name) VALUES ('general-application', 'General Application')
 ON CONFLICT (slug) DO NOTHING;
 
-INSERT INTO canonical_role_archetypes (canonical_role_id, archetype_id)
+INSERT INTO canonical_role_dimensions (canonical_role_id, dimension_id)
 VALUES (
     (SELECT id FROM canonical_roles WHERE slug = 'general-application'),
-    (SELECT id FROM legacy_archetypes WHERE slug = 'non-role')
+    (SELECT id FROM role_dimensions WHERE slug = 'other')
 )
 ON CONFLICT DO NOTHING;

@@ -1,5 +1,5 @@
--- name: GetLegacyArchetypeBySlug :one
-SELECT id, slug, name FROM legacy_archetypes WHERE slug = $1;
+-- name: GetRoleDimensionBySlug :one
+SELECT id, slug, name FROM role_dimensions WHERE slug = $1;
 
 -- GetOrCreate pattern: ON CONFLICT DO UPDATE SET slug = EXCLUDED.slug — the no-op update
 -- takes a row lock and always returns the existing row, avoiding a race under READ COMMITTED.
@@ -27,8 +27,8 @@ ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
 RETURNING id;
 
 -- Idempotent insert — ON CONFLICT DO NOTHING; does not update existing mappings.
--- name: InsertCanonicalRoleArchetype :exec
-INSERT INTO canonical_role_archetypes (canonical_role_id, archetype_id)
+-- name: InsertCanonicalRoleDimension :exec
+INSERT INTO canonical_role_dimensions (canonical_role_id, dimension_id)
 VALUES ($1, $2)
 ON CONFLICT DO NOTHING;
 

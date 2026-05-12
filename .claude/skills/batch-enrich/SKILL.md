@@ -2,7 +2,7 @@
 name: batch-enrich
 description: >
   Classifies unenriched job postings via parallel Haiku subagents. Each subagent
-  reads one description and emits canonical roles (with legacy archetype mappings),
+  reads one description and emits canonical roles (with role dimension mappings),
   specializations, skills, and a summary. Orchestrator dispatches in waves of 10,
   writes a classifications row per posting plus join rows keyed to that classification
   (provenance preserved across re-runs). Use to populate role/skill data during the
@@ -106,12 +106,12 @@ Use `DISTINCT ON` or `LATERAL` to keep one row per posting; a naive join against
 SELECT slug, name FROM canonical_roles;
 SELECT slug, name FROM specializations;
 SELECT slug, name FROM skills;
-SELECT slug, name FROM legacy_archetypes;
+SELECT slug, name FROM role_dimensions;
 ```
 
 Hold the four lists in orchestrator state. Every agent receives them verbatim.
 
-In the agent prompt template, render `legacy_archetypes` as a bullet list under a `## Legacy archetypes (closed set)` heading, immediately after the canonical-roles taxonomy section.
+In the agent prompt template, render `role_dimensions` as a bullet list under a `## Role dimensions (closed set)` heading, immediately after the canonical-roles taxonomy section.
 
 ### 5. Strip per-company boilerplate
 
@@ -148,7 +148,7 @@ Each Haiku agent receives one posting and returns one JSON object.
 
 **Input to agent:**
 - `posting_id`, title, `description_text`
-- Full existing taxonomy lists (canonical_roles, specializations, skills, legacy_archetypes)
+- Full existing taxonomy lists (canonical_roles, specializations, skills, role_dimensions)
 - Focus guidance (or omitted if empty)
 - The output schema below
 - Instruction: respond with JSON only, no prose, no code fences
@@ -166,7 +166,7 @@ Each Haiku agent receives one posting and returns one JSON object.
     {
       "slug": "<existing or new>",
       "name": "<human-readable>",
-      "legacy_archetypes": ["design", "engineering"]
+      "dimensions": ["design", "engineering"]
     }
   ],
   "specializations": [{"slug": "...", "name": "..."}],
@@ -181,13 +181,13 @@ Note: writeback ignores `skills[].requirement` today — there is no storage col
 - `canonical_roles` is an array. Blended roles are first-class; a posting may map to multiple roles (e.g. design-engineering hybrids).
 - Always emit `seniority`. If seniority cannot be determined from the posting, emit `"seniority": "unknown"` — never omit the field.
 - `notes` is optional. Either omit the key entirely or emit `null` when there are no notes. An empty string is treated as null.
-- `legacy_archetypes` is a **closed set**. Pick slugs only from the list provided in the prompt. Do not invent new archetype slugs.
-- Every emitted canonical_role — new or existing — must include a non-empty `legacy_archetypes` array. An empty array or missing key is a parse error; the orchestrator skips the posting.
+- `dimensions` is a **closed set**. Pick slugs only from the list provided in the prompt. Do not invent new dimension slugs.
+- Every emitted canonical_role — new or existing — must include a non-empty `dimensions` array. An empty array or missing key is a parse error; the orchestrator skips the posting.
 
 **Slug discipline (in agent prompt):**
 - Prefer an existing slug. Propose a new one only when no existing slug fits.
 - Kebab-case, ASCII, stable across re-runs.
-- New canonical_roles must include at least one `legacy_archetypes` slug from the closed set.
+- New canonical_roles must include at least one `dimensions` slug from the closed set.
 
 **Summary contract (in agent prompt):**
 - 100–200 tokens
@@ -205,7 +205,7 @@ This writeback path is transitional — raw psql inside a Bash heredoc, with the
 
 Run before any transaction opens. If any check fails, skip the posting, log the failure (`posting_id` + reason + offending value), continue the batch.
 
-**Rule A — Slug validation.** Every slug emitted by the agent (canonical_role slugs, specialization slugs, skill slugs, archetype slugs) must match `^[a-z0-9]+(-[a-z0-9]+)*$` and be at most 64 characters. This rejects leading/trailing dashes and consecutive dashes. A slug that fails either check is a parse error.
+**Rule A — Slug validation.** Every slug emitted by the agent (canonical_role slugs, specialization slugs, skill slugs, dimension slugs) must match `^[a-z0-9]+(-[a-z0-9]+)*$` and be at most 64 characters. This rejects leading/trailing dashes and consecutive dashes. A slug that fails either check is a parse error.
 
 **Rule B — String escaping.** Before interpolating any `name` or `notes` value into a SQL string literal, replace every `'` with `''` (SQL single-quote doubling). Apply to canonical_role names, specialization names, skill names, and classification notes. Slugs already passed Rule A and need no escaping. Relies on `standard_conforming_strings = on` (Postgres default since 9.1 — the Docker image used here sets this). If `\` appears in a name or notes value, it is treated as a literal backslash, not an escape character.
 
@@ -221,9 +221,9 @@ For each posting, in order:
 
 1. **Validate and escape.** Apply Rule A to every slug and Rule B to every name/notes value per 8a. Any failure: skip, log, continue.
 
-2. **Verify every canonical_role has a non-empty archetype array.** Before any resolution, check that every emitted canonical_role has a `legacy_archetypes` array with at least one entry. If any role has an empty or missing array: skip the posting, log a parse error (`posting_id` + role slug + `empty archetypes`), continue the batch. This is checked explicitly so a future refactor that changes resolution loop semantics cannot silently drop the guard.
+2. **Verify every canonical_role has a non-empty dimensions array.** Before any resolution, check that every emitted canonical_role has a `dimensions` array with at least one entry. If any role has an empty or missing array: skip the posting, log a parse error (`posting_id` + role slug + `empty dimensions`), continue the batch. This is checked explicitly so a future refactor that changes resolution loop semantics cannot silently drop the guard.
 
-3. **Resolve archetype slugs.** For each posting, build a per-posting mapping of canonical_role slug → [archetype_id] by looking up each emitted `canonical_roles[].legacy_archetypes[]` slug in the in-memory `legacy_archetypes` map already loaded in §4. No additional psql calls are needed. If any slug is not present in the in-memory map: skip the posting, log a parse error (`posting_id` + unknown slug), continue the batch. Do not open the transaction.
+3. **Resolve dimension slugs.** For each posting, build a per-posting mapping of canonical_role slug → [dimension_id] by looking up each emitted `canonical_roles[].dimensions[]` slug in the in-memory `role_dimensions` map already loaded in §4. No additional psql calls are needed. If any slug is not present in the in-memory map: skip the posting, log a parse error (`posting_id` + unknown slug), continue the batch. Do not open the transaction.
 
 Pre-flight is the only place validation can fail. If a posting clears Phase A, Phase B can only fail on database errors.
 
@@ -257,10 +257,10 @@ Steps within each transaction:
    - Agent-emitted `name` is used only on initial insert; on conflict, the existing row's `name` and `created_at` are unchanged.
    - Note: the sqlc typed contract (`GetOrCreateCanonicalRole`, etc.) uses `ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug` — a no-op write that acquires a row lock, preventing races under READ COMMITTED. This runtime `DO NOTHING` + `SELECT` path is equivalent under single-orchestrator operation but does not acquire the lock; concurrent orchestrators would need the sqlc path.
 
-2. **Upsert canonical_role_archetypes.** For each `(canonical_role_id, archetype_id)` pair from the Phase A mapping:
+2. **Upsert canonical_role_dimensions.** For each `(canonical_role_id, dimension_id)` pair from the Phase A mapping:
    ```sql
-   INSERT INTO canonical_role_archetypes (canonical_role_id, archetype_id)
-   VALUES (<canonical_role_id>, <archetype_id>)
+   INSERT INTO canonical_role_dimensions (canonical_role_id, dimension_id)
+   VALUES (<canonical_role_id>, <dimension_id>)
    ON CONFLICT DO NOTHING;
    ```
 
@@ -296,8 +296,8 @@ Write `agent-output/batch-enrich/<YYYY-MM-DD-HHMM>.md`. Create the directory if 
 Report contents:
 - Run params (count, focus, force)
 - Counts: selected, dispatched, enriched, JSON-failed, validation-failed, skipped-no-description, re-enriched (when force)
-- Validation-failed breakdown by reason: seniority missing, unknown archetype slug, empty archetypes array, invalid slug format
-- New taxonomy added (slug, name for roles; slug, name for specializations and skills; new canonical_role_archetypes pairs)
+- Validation-failed breakdown by reason: seniority missing, unknown dimension slug, empty dimensions array, invalid slug format
+- New taxonomy added (slug, name for roles; slug, name for specializations and skills; new canonical_role_dimensions pairs)
 - Per-posting summaries (`posting_id`, title, summary text)
 
 Note in the report that postings skipped on validation are not written and will be re-selected on the next non-`--force` run.

@@ -33,17 +33,6 @@ func (q *Queries) GetCurrentClassificationForPosting(ctx context.Context, jobPos
 	return i, err
 }
 
-const getLegacyArchetypeBySlug = `-- name: GetLegacyArchetypeBySlug :one
-SELECT id, slug, name FROM legacy_archetypes WHERE slug = $1
-`
-
-func (q *Queries) GetLegacyArchetypeBySlug(ctx context.Context, slug string) (LegacyArchetype, error) {
-	row := q.db.QueryRowContext(ctx, getLegacyArchetypeBySlug, slug)
-	var i LegacyArchetype
-	err := row.Scan(&i.ID, &i.Slug, &i.Name)
-	return i, err
-}
-
 const getOrCreateCanonicalRole = `-- name: GetOrCreateCanonicalRole :one
 
 INSERT INTO canonical_roles (slug, name) VALUES ($1, $2)
@@ -108,20 +97,31 @@ func (q *Queries) GetOrCreateSpecialization(ctx context.Context, arg GetOrCreate
 	return id, err
 }
 
-const insertCanonicalRoleArchetype = `-- name: InsertCanonicalRoleArchetype :exec
-INSERT INTO canonical_role_archetypes (canonical_role_id, archetype_id)
+const getRoleDimensionBySlug = `-- name: GetRoleDimensionBySlug :one
+SELECT id, slug, name FROM role_dimensions WHERE slug = $1
+`
+
+func (q *Queries) GetRoleDimensionBySlug(ctx context.Context, slug string) (RoleDimension, error) {
+	row := q.db.QueryRowContext(ctx, getRoleDimensionBySlug, slug)
+	var i RoleDimension
+	err := row.Scan(&i.ID, &i.Slug, &i.Name)
+	return i, err
+}
+
+const insertCanonicalRoleDimension = `-- name: InsertCanonicalRoleDimension :exec
+INSERT INTO canonical_role_dimensions (canonical_role_id, dimension_id)
 VALUES ($1, $2)
 ON CONFLICT DO NOTHING
 `
 
-type InsertCanonicalRoleArchetypeParams struct {
+type InsertCanonicalRoleDimensionParams struct {
 	CanonicalRoleID int64
-	ArchetypeID     int64
+	DimensionID     int64
 }
 
 // Idempotent insert — ON CONFLICT DO NOTHING; does not update existing mappings.
-func (q *Queries) InsertCanonicalRoleArchetype(ctx context.Context, arg InsertCanonicalRoleArchetypeParams) error {
-	_, err := q.db.ExecContext(ctx, insertCanonicalRoleArchetype, arg.CanonicalRoleID, arg.ArchetypeID)
+func (q *Queries) InsertCanonicalRoleDimension(ctx context.Context, arg InsertCanonicalRoleDimensionParams) error {
+	_, err := q.db.ExecContext(ctx, insertCanonicalRoleDimension, arg.CanonicalRoleID, arg.DimensionID)
 	return err
 }
 
