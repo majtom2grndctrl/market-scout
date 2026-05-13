@@ -49,7 +49,9 @@
       "Bash(gofmt -d cmd/fetcher/main.go)",
       "Bash(gofmt *)",
       "Bash(git diff *)",
-      "Bash(docker exec *)"
+      "Bash(docker exec *)",
+      "Bash(git -C /Users/dhiester/Projects/Personal/market-scout show 415de7b --stat)",
+      "Bash(git -C /Users/dhiester/Projects/Personal/market-scout show 415de7b -- internal/db/migrations/)"
     ]
   }
 }
