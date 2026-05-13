@@ -186,7 +186,9 @@ market-scout/
 ├── cmd/
 │   ├── fetcher/             # Main fetcher entry point
 │   │   └── main.go
-│   └── migrate/             # Migration runner
+│   ├── migrate/             # Migration runner
+│   │   └── main.go
+│   └── strip-boilerplate/   # Per-company boilerplate stripper (classification preprocessor)
 │       └── main.go
 ├── internal/
 │   ├── ats/                 # ATS adapter implementations (interface lives in cmd/fetcher per §5.3)
