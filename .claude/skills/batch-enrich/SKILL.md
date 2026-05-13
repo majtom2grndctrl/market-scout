@@ -110,7 +110,7 @@ SELECT slug, name FROM role_dimensions;
 
 Hold the four lists in orchestrator state. Every agent receives them verbatim.
 
-In the agent prompt template, render `role_dimensions` as a bullet list under a `## Role dimensions (closed set)` heading, immediately after the canonical-roles taxonomy section.
+In the agent prompt template, render `role_dimensions` as a bullet list under a `## Role dimensions (closed set)` heading (the heading text is part of the Haiku agent's instruction contract — do not paraphrase it), immediately after the canonical-roles taxonomy section.
 
 ### 5. Strip per-company boilerplate
 
@@ -141,7 +141,7 @@ Agent config per call:
 - `model`: `haiku`
 - `description`: `Enrich posting <posting_id>`
 
-**Repair retry loop (per agent in the wave).** After each agent in the wave returns, attempt to parse its output as JSON. If parsing fails, issue a repair retry via `SendMessage` against the same agent (using the agent ID returned by the Agent tool call). The retry directive is short: "your previous output was invalid JSON, return only the corrected JSON" followed by the prior raw response. Cap retries at **3** (1 initial attempt + up to 3 retries = up to 4 total agent calls per posting). The first parseable response wins and proceeds to Phase A validation normally. If all retries are exhausted without a parseable response, mark the posting `json_failed` and log every attempt (see Step 8d). Repair retries reuse the same `PROMPT_VERSION` pinned at invocation start — the repair directive is not a versioned prompt change.
+**Repair retry loop (per agent in the wave).** After each agent in the wave returns, attempt to parse its output as JSON. If parsing fails, issue a repair retry via `SendMessage` against the same agent (using the agent ID returned by the Agent tool call). The retry directive is short: "your previous output was invalid JSON, return only the corrected JSON" followed by the prior raw response. Maximum **4** total agent calls per posting (1 initial attempt + up to 3 repair retries). The first parseable response wins and proceeds to Phase A validation normally. If all retries are exhausted without a parseable response, mark the posting `json_failed` and log every attempt (see Step 8d). Repair retries reuse the same `PROMPT_VERSION` pinned at invocation start — the repair directive is not a versioned prompt change.
 
 ### 7. Agent contract
 
@@ -154,7 +154,7 @@ Each Haiku agent receives one posting and returns one JSON object.
 - The output schema below
 - Instruction: respond with JSON only, no prose, no code fences
 
-The Agent tool call returns both the agent's response and an **agent ID**. Retain this ID per posting — it is the address used to issue repair retries via `SendMessage` (see Step 6) when the agent's response is unparseable JSON. Repair retries continue the same agent session; they are not fresh dispatches.
+The Agent tool call returns both the agent's response and an **agent ID**. Retain this ID per posting — it is the address used to issue repair retries via `SendMessage` (see Step 6) when the agent's response is unparseable JSON. Verify that the Agent tool in this harness returns an agent ID in its result — if not, the repair retry falls back to a fresh Agent dispatch with the prior raw response included in the new prompt. Repair retries continue the same agent session; they are not fresh dispatches.
 
 **Output schema:**
 
@@ -178,12 +178,12 @@ The Agent tool call returns both the agent's response and an **agent ID**. Retai
 }
 ```
 
-Note: writeback ignores `skills[].requirement` today — there is no storage column to land it in yet. The contract preserves the field for future storage.
+Note: writeback ignores `skills[].requirement` today — there is no storage column to land it in yet. The contract preserves the field so classifications carry the signal when a storage column is added.
 
 **Classification discipline (in agent prompt):**
 - `canonical_roles` is an array. Blended roles are first-class; a posting may map to multiple roles (e.g. design-engineering hybrids).
 - Always emit `seniority`. If seniority cannot be determined from the posting, emit `"seniority": "unknown"` — never omit the field.
-- `notes` is optional. Either omit the key entirely or emit `null` when there are no notes. An empty string is treated as null.
+- `notes` is optional. Either omit the key entirely or emit `null` when there are no notes. An empty or whitespace-only string is treated as null.
 - `dimensions` is a **closed set**. Pick slugs only from the list provided in the prompt. Do not invent new dimension slugs.
 - Every emitted canonical_role — new or existing — must include a non-empty `dimensions` array. An empty array or missing key is a parse error; the orchestrator skips the posting.
 
@@ -202,7 +202,7 @@ Note: writeback ignores `skills[].requirement` today — there is no storage col
 
 Read `PROMPT_VERSION` and `MODEL` from the `classification-pins` block at the top of this file once at invocation start. Apply both uniformly to every posting in the batch. Parse the block as exact `KEY=VALUE` lines, no spaces around `=`; orchestrator greps `^PROMPT_VERSION=` and `^MODEL=` from the block.
 
-This writeback path is transitional — raw psql inside a Bash heredoc, with the orchestrator interpolating values into SQL string literals. The typed Go contract lives in `internal/db/queries/classifications.sql` (generated: `internal/db/classifications.sql.go`); a Go caller will replace this Bash path in a future plan. Until then, the validation and escaping rules in 8a are mandatory: agent-emitted strings are untrusted input.
+This writeback path is transitional — raw psql inside a Bash heredoc, with the orchestrator interpolating values into SQL string literals. The typed Go query contract lives in `internal/db/queries/classifications.sql`. Until a Go caller replaces this Bash path, the validation and escaping rules in §8a are mandatory: agent-emitted strings are untrusted input.
 
 #### 8a. Pre-interpolation validation and escaping
 
@@ -220,7 +220,7 @@ These rules apply to every interpolation in both phases below.
 
 For each posting, in order:
 
-0. **Validate seniority.** If `classification.seniority` is missing or null, skip the posting, log a parse error (`posting_id` + `seniority missing`), continue the batch.
+0. **Validate seniority.** If `classification.seniority` is missing or null, skip the posting, log a parse error (`posting_id` + `seniority missing`), continue the batch. Also verify `classification.seniority` is one of the allowed values: `intern`, `junior`, `mid`, `senior`, `staff`, `principal`, `lead`, `director`, `unknown`. If the value is present but not in this set, skip the posting, log a parse error (`posting_id` + `seniority invalid: <value>`), continue.
 
 1. **Validate and escape.** Apply Rule A to every slug and Rule B to every name/notes value per 8a. Any failure: skip, log, continue.
 
@@ -260,7 +260,7 @@ Steps within each transaction:
      ```
    - Same pattern for `specializations` and `skills`.
    - Agent-emitted `name` is used only on initial insert; on conflict, the existing row's `name` and `created_at` are unchanged.
-   - Note: the sqlc typed contract (`GetOrCreateCanonicalRole`, etc.) uses `ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug` — a no-op write that acquires a row lock, preventing races under READ COMMITTED. This runtime `DO NOTHING` + `SELECT` path is equivalent under single-orchestrator operation but does not acquire the lock; concurrent orchestrators would need the sqlc path.
+   - Note: the sqlc typed contract (`GetOrCreateCanonicalRole`, etc.) uses `ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug` — a no-op write that acquires a row lock, preventing races under READ COMMITTED. This runtime `DO NOTHING` + `SELECT` path is equivalent under single-orchestrator operation but does not acquire the lock; concurrent orchestrators would need the sqlc path. Phase B writebacks run serially in the orchestrator — one posting at a time, in sequence. This ensures the `DO NOTHING + SELECT` taxonomy upsert is safe; no two postings' writeback transactions are open simultaneously.
 
 2. **Upsert canonical_role_dimensions.** For each `(canonical_role_id, dimension_id)` pair from the Phase A mapping:
    ```sql
@@ -292,7 +292,7 @@ Steps within each transaction:
 Drop fields with no storage column:
 - `summary` — report only.
 
-On transaction failure for a posting (DB error only — validation already passed): skip it, continue the batch, log `posting_id` and error to the markdown report. That posting will be re-selected on the next non-`--force` run.
+On transaction failure for a posting (DB error only — validation already passed): skip it, continue the batch, log `posting_id` and error to the markdown report. That posting will be re-selected on the next non-`--force` run. DB failures are not written to `failures.jsonl` — that file tracks agent-output failures (`json_failed`, `validation_failed`) only. Infrastructure failures are visible in the markdown report.
 
 #### 8d. Failure logging
 
@@ -302,9 +302,8 @@ Every parse failure and every validation failure produces one append-only line i
 - **Append-only:** never truncated, never rewritten. Old runs' lines remain.
 - **Directory creation:** before the first append in a run, ensure the directory exists with `mkdir -p agent-output/batch-enrich`. Do not assume Step 9 has run — Step 9 may never run if the orchestrator aborts mid-batch.
 - **When to write:**
-  - One line per JSON parse failure, across every attempt. A posting that exhausts retries (1 initial + 3 retries) produces up to 4 lines, one per failed attempt. The `outcome` for each is `json_failed`.
+  - For a posting that **ultimately fails** (exhausts all retries without a parseable response): one line per failed attempt, so up to 4 lines. The `outcome` for each is `json_failed`. **A posting that ultimately succeeds — including one that succeeded only after repair retries — produces zero lines.** Individual retry attempts that fail but are followed by a successful attempt are not logged.
   - One line per Phase A validation failure, at the rejection point. `outcome` is `validation_failed`. Exactly one line per `validation_failed` posting (the last successful-parse attempt that then failed validation).
-- **A successful posting writes zero lines**, including one that succeeded only after one or more JSON repair retries.
 
 **Line schema** (each line is a single JSON object, no pretty-printing):
 
@@ -334,7 +333,7 @@ Report contents:
   - total failed-run count (number of distinct `run_timestamp` values)
   - the set of distinct `reason` strings across all JSONL lines for that `posting_id` (all runs, all attempts)
 
-  Postings that have failed in only one run are omitted. If no posting has ≥ 2 failed runs, render the section as `(none)`.
+  Postings that have failed in only one run are omitted. If no posting has ≥ 2 failed runs, render the section as `(none)`. Postings that have since classified successfully still appear here — `failures.jsonl` is append-only and records no success entries.
 - Per-posting summaries (`posting_id`, title, summary text)
 
 Note in the report that postings skipped on validation are not written and will be re-selected on the next non-`--force` run.
