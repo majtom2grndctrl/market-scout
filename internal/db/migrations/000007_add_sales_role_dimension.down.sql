@@ -1,8 +1,11 @@
 -- Removes the 'sales' role dimension.
+-- Deletes any row with slug='sales' regardless of provenance — see developer-guide §5 for migration discipline.
 -- If any canonical role has been mapped to 'sales', the RESTRICT FK
 -- (canonical_role_dimensions.dimension_id → role_dimensions.id ON DELETE RESTRICT)
 -- will block this delete. That block is intentional: historical provenance surfaces
--- rather than being silently dropped.
+-- rather than being silently dropped. On a database with batch-enrich history against
+-- sales postings, this error is expected — resolve canonical_role_dimensions references
+-- manually before retrying. On a fresh database with no enrichment history, the delete succeeds.
 -- To force removal: first delete rows from canonical_role_dimensions where
 -- dimension_id = (SELECT id FROM role_dimensions WHERE slug = 'sales'), then re-run.
 DELETE FROM role_dimensions WHERE slug = 'sales';

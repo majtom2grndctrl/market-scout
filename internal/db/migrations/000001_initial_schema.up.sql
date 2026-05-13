@@ -72,6 +72,7 @@ CREATE TABLE skills (
 -- Enforcement: batch-enrich preflight resolves every emitted dimension slug against the
 -- in-memory taxonomy map loaded at invocation start; any unknown slug aborts that posting's transaction.
 -- No created_at because membership is governed by migrations, not runtime inserts.
+-- The seed is distributed across migrations; read all up scripts to enumerate the full set.
 CREATE TABLE role_dimensions (
     id   bigserial PRIMARY KEY,
     slug text NOT NULL UNIQUE,
@@ -128,7 +129,7 @@ CREATE TABLE job_posting_skills (
 CREATE INDEX idx_posting_snapshots_posting_fetched ON posting_snapshots (job_posting_id, fetched_at DESC);
 CREATE INDEX idx_job_postings_cities ON job_postings USING GIN (cities);
 
--- Seed data: closed set of role dimensions, plus the General Application canonical role mapped to other.
+-- Initial seed data: base role dimensions (full set spans all migrations; see all up.sql files for the complete list), plus the General Application canonical role mapped to other.
 -- These rows live here because they must exist before any enrichment run; company and watchlist seeding belongs in internal/db/seeds/.
 INSERT INTO role_dimensions (slug, name) VALUES
     ('design', 'Design'),
