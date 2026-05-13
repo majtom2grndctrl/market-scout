@@ -7,8 +7,7 @@ description: >
   writes a classifications row per posting plus join rows keyed to that classification
   (provenance preserved across re-runs). Use to populate role/skill data during the
   enrichment design phase.
-disable-model-invocation: true
-allowed-tools: Read, Bash, Agent, Write
+allowed-tools: Read, Bash, Agent, Write, SendMessage
 argument-hint: "<count> [focus description] [--force]"
 ---
 
@@ -142,6 +141,8 @@ Agent config per call:
 - `model`: `haiku`
 - `description`: `Enrich posting <posting_id>`
 
+**Repair retry loop (per agent in the wave).** After each agent in the wave returns, attempt to parse its output as JSON. If parsing fails, issue a repair retry via `SendMessage` against the same agent (using the agent ID returned by the Agent tool call). The retry directive is short: "your previous output was invalid JSON, return only the corrected JSON" followed by the prior raw response. Cap retries at **3** (1 initial attempt + up to 3 retries = up to 4 total agent calls per posting). The first parseable response wins and proceeds to Phase A validation normally. If all retries are exhausted without a parseable response, mark the posting `json_failed` and log every attempt (see Step 8d). Repair retries reuse the same `PROMPT_VERSION` pinned at invocation start — the repair directive is not a versioned prompt change.
+
 ### 7. Agent contract
 
 Each Haiku agent receives one posting and returns one JSON object.
@@ -152,6 +153,8 @@ Each Haiku agent receives one posting and returns one JSON object.
 - Focus guidance (or omitted if empty)
 - The output schema below
 - Instruction: respond with JSON only, no prose, no code fences
+
+The Agent tool call returns both the agent's response and an **agent ID**. Retain this ID per posting — it is the address used to issue repair retries via `SendMessage` (see Step 6) when the agent's response is unparseable JSON. Repair retries continue the same agent session; they are not fresh dispatches.
 
 **Output schema:**
 
@@ -227,6 +230,8 @@ For each posting, in order:
 
 Pre-flight is the only place validation can fail. If a posting clears Phase A, Phase B can only fail on database errors.
 
+**Failure logging in Phase A.** At every rejection point above (missing seniority, slug validation failure, null byte rejection, empty/missing dimensions array, unknown dimension slug, etc.), before dropping the posting, append one `validation_failed` line to `agent-output/batch-enrich/failures.jsonl` (schema and semantics in Step 8d). Reuse the same `mkdir -p agent-output/batch-enrich` guard from the json_failed path. The `raw_response` field carries the agent's exact output string, not a re-serialization of the parsed object. `attempt` is the 1-based index of the last agent call made for the posting.
+
 #### 8c. Phase B — Transactional writeback
 
 Open one psql transaction per posting. Each posting runs in a single `psql` invocation wrapping one BEGIN…COMMIT block:
@@ -289,6 +294,32 @@ Drop fields with no storage column:
 
 On transaction failure for a posting (DB error only — validation already passed): skip it, continue the batch, log `posting_id` and error to the markdown report. That posting will be re-selected on the next non-`--force` run.
 
+#### 8d. Failure logging
+
+Every parse failure and every validation failure produces one append-only line in `agent-output/batch-enrich/failures.jsonl`. The file is the source of truth for recurring-failure detection across runs (see Step 9).
+
+- **File path:** `agent-output/batch-enrich/failures.jsonl`
+- **Append-only:** never truncated, never rewritten. Old runs' lines remain.
+- **Directory creation:** before the first append in a run, ensure the directory exists with `mkdir -p agent-output/batch-enrich`. Do not assume Step 9 has run — Step 9 may never run if the orchestrator aborts mid-batch.
+- **When to write:**
+  - One line per JSON parse failure, across every attempt. A posting that exhausts retries (1 initial + 3 retries) produces up to 4 lines, one per failed attempt. The `outcome` for each is `json_failed`.
+  - One line per Phase A validation failure, at the rejection point. `outcome` is `validation_failed`. Exactly one line per `validation_failed` posting (the last successful-parse attempt that then failed validation).
+- **A successful posting writes zero lines**, including one that succeeded only after one or more JSON repair retries.
+
+**Line schema** (each line is a single JSON object, no pretty-printing):
+
+| Field | Type | Notes |
+|---|---|---|
+| `run_timestamp` | string | Orchestrator invocation-start time, `YYYY-MM-DD-HHMM`. Captured **once** at run start and reused across every line in the run. Matches the report filename stem in Step 9. |
+| `posting_id` | int | Posting being processed. |
+| `attempt` | int | 1-based index of the agent call being logged. For `json_failed`: the attempt whose output failed to parse. For `validation_failed`: the last agent call made for that posting (the one whose output parsed but failed Phase A). |
+| `outcome` | string | Either `json_failed` or `validation_failed`. |
+| `reason` | string | Short reason. Examples: `unparseable JSON`, `seniority missing`, `unknown dimension slug`, `empty dimensions array`, `invalid slug format`, `null byte in name`. |
+| `raw_response` | string | The full text of the agent's exact output for the attempt being logged. For `validation_failed`, this is the exact agent output string, not a re-serialization of the parsed object. |
+| `prompt_version` | string | The `PROMPT_VERSION` pinned for the run. |
+| `model` | string | The `MODEL` pinned for the run. |
+| `attempted_at` | string | ISO-8601 timestamp of when the agent call returned. |
+
 ### 9. Report
 
 Write `agent-output/batch-enrich/<YYYY-MM-DD-HHMM>.md`. Create the directory if missing. `agent-output/` is gitignored.
@@ -298,6 +329,12 @@ Report contents:
 - Counts: selected, dispatched, enriched, JSON-failed, validation-failed, skipped-no-description, re-enriched (when force)
 - Validation-failed breakdown by reason: seniority missing, unknown dimension slug, empty dimensions array, invalid slug format
 - New taxonomy added (slug, name for roles; slug, name for specializations and skills; new canonical_role_dimensions pairs)
+- **Recurring failures.** Read `agent-output/batch-enrich/failures.jsonl` (tolerate a missing or empty file — if absent or empty, render the section as `(none)` and do not error). Group lines by `posting_id` and count the number of **distinct `run_timestamp` values** per posting. Render only postings with a count ≥ 2. For each such posting, include:
+  - `posting_id`
+  - total failed-run count (number of distinct `run_timestamp` values)
+  - the set of distinct `reason` strings across all JSONL lines for that `posting_id` (all runs, all attempts)
+
+  Postings that have failed in only one run are omitted. If no posting has ≥ 2 failed runs, render the section as `(none)`.
 - Per-posting summaries (`posting_id`, title, summary text)
 
 Note in the report that postings skipped on validation are not written and will be re-selected on the next non-`--force` run.
