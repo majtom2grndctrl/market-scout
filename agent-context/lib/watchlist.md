@@ -1,52 +1,57 @@
 # Company Watchlist
 
-> **Read this when:** adding or removing companies from the scrape run, or evaluating ATS coverage.
-> **Key invariant:** `internal/db/seeds/companies.sql` is the canonical source of truth for active companies. This file tracks integration status and the information needed to onboard new ones.
-> **Related:** `project.md` §ATS targets, `index.md`
+> **Read this when:** adding, removing, or sourcing companies for the scrape run, or evaluating ATS coverage.
+> **Key invariant:** The seed file is the canonical source of truth. Seeded fields: `name`, `ats`, `board_token`, `industry`.
+> **Related:** `project.md` §ATS targets, `index.md`, `internal/ats/`
 
 ---
 
-## Standard scrape run
+## New companies
 
-Companies currently seeded and included in every fetcher run.
+### What to capture
 
-| Company    | ATS        | Board token  | Notes                          |
-|------------|------------|--------------|--------------------------------|
-| Anthropic  | greenhouse | `anthropic`  | AI lab                         |
-| Stripe     | greenhouse | `stripe`     | Fintech, large eng org         |
-| Figma      | greenhouse | `figma`      | Design tools                   |
-| Scale AI   | greenhouse | `scaleai`    | AI data and infra              |
-| Glean      | greenhouse | `gleanwork`  | AI-powered enterprise search   |
-| Cognition  | ashby      | `cognition`  | AI coding agent (Devin)        |
-| Harvey     | ashby      | `harvey`     | AI for legal                   |
-| ElevenLabs | ashby      | `elevenlabs` | AI voice                       |
-| Linear     | ashby      | `linear`     | Dev tooling, product mgmt      |
-| Mistral    | lever      | `mistral`    | Open-weight AI models          |
+Required fields:
 
-To add a company: insert a row in `internal/db/seeds/companies.sql` (idempotent on re-run), then add it to this table.
+| Field | Description |
+|---|---|
+| `name` | Display name |
+| `ats` | One of: `greenhouse`, `lever`, `ashby` |
+| `board_token` | Company's slug on that ATS |
 
----
+`careers_page_url` is optional. Capture it when visible — it strengthens dedup.
 
-## Candidates — not yet integrated
+### Non-goals
 
-Companies of interest whose board token or ATS has not been verified, or that haven't been added to the seed yet.
+- Does not track unverified leads or a candidates pipeline
+- Companies on unsupported ATS platforms (Workday, Rippling, Jobvite, etc.) are discarded
+- Companies without a valid board token on a supported ATS are discarded
 
-| Company        | ATS (suspected) | Notes                                          |
-|----------------|-----------------|------------------------------------------------|
-| Perplexity     | Ashby           | AI search; slug likely `perplexity-ai` — unverified |
-| Cursor         | Ashby           | AI code editor; parent co Anysphere — slug unverified |
-| OpenAI         | Greenhouse      | Board token unverified                         |
-| Hugging Face   | Unknown         | ATS unconfirmed                                |
-| Cohere         | Unknown         | ATS unconfirmed                                |
-| Character.ai   | Unknown         | ATS unconfirmed                                |
-| Weights & Biases | Unknown       | ATS unconfirmed                                |
-| Runway ML      | Unknown         | ATS unconfirmed; video/image generation        |
-| Together AI    | Unknown         | ATS unconfirmed; AI infra and inference        |
+### Dedup
 
-To verify a candidate: check `jobs.ashbyhq.com/<slug>`, `api.lever.co/v0/postings/<slug>?mode=json`, or `boards-api.greenhouse.io/v1/boards/<token>/jobs`. Confirmed board tokens go into the standard scrape run table above and the seed file.
+Before visiting any careers pages, query the `companies` table for the candidate names first. Normalize both sides: strip punctuation and whitespace, lowercase, compare for equality. Substring matches are not duplicates.
 
----
+Return enough context to disambiguate: name, ATS, board token, industry, and careers page URL. Names collide across unrelated companies. Disambiguate using ATS board URL plus industry — the board URL is the strongest signal.
 
-## Adding a new ATS adapter
+Flag uncertain matches; never silently skip or crawl. Drop confirmed duplicates.
 
-Companies on ATS platforms without an adapter (Workday, Rippling, Jobvite, etc.) cannot be integrated until an adapter exists. See `project.md` §ATS targets and `internal/ats/` for the adapter interface.
+### Board token verification
+
+Probe the ATS endpoint directly:
+
+| ATS | URL pattern |
+|---|---|
+| Greenhouse | `https://boards-api.greenhouse.io/v1/boards/<token>/jobs` |
+| Ashby | `https://jobs.ashbyhq.com/<token>` |
+| Lever | `https://api.lever.co/v0/postings/<token>?mode=json` |
+
+Success signals:
+
+| ATS | Success signal |
+|---|---|
+| Greenhouse | HTTP 200; `jobs` array present (empty array = valid board, no openings — flag, don't discard) |
+| Ashby | HTTP 200; page renders job board (not Ashby's "board not found" page) |
+| Lever | HTTP 200; JSON array returned (empty array = valid board, no openings — flag, don't discard) |
+
+### Confirmed results
+
+Verified companies go directly into the seed file.
