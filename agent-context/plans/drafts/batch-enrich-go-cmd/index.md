@@ -10,12 +10,13 @@ Port the `batch-enrich` Claude skill's mechanical coordination into a `cmd/batch
 
 - New binary `cmd/batch-enrich` running the full coordination loop: select → strip → load taxonomy → dispatch agents in parallel waves → validate → retry → write back serially through sqlc → emit a structured run report on stdout.
 - Subprocess invocation of the official `claude` CLI (`claude -p <prompt> --output-format json --model haiku-4-5`) for per-posting classification. No `anthropic-sdk-go` or direct REST.
-- Validation rules matching the current skill (A: slug format, B: null byte / control character rejection — SQL-injection is now handled by sqlc parameters, C: null byte rejection on names and notes) plus a cross-table slug check: a slug emitted in one taxonomy slot must not collide with an existing slug in a sibling slot (skill vs. specialization vs. canonical_role).
-- Targeted retry: on validation failure, re-invoke the agent with the original prompt plus a structured hint (e.g. `slug X already exists as a skill — reuse it or pick a new name`). Up to 3 retries per posting (4 total agent calls).
+- Validation rules matching the current skill (A: slug format, B: null byte / control character rejection — SQL-injection is now handled by sqlc parameters, C: null byte rejection on names and notes) plus a cross-table slug check: a slug emitted in one taxonomy slot must not collide with an existing slug in a sibling slot (skill vs. specialization vs. canonical_role). `role_dimensions` is excluded from the cross-table check — closed-set validation already rejects unknown dimension slugs before writeback.
+- Targeted retry: on validation failure, re-invoke the agent with the original prompt plus a single structured hint bundling all simultaneous failures (e.g. `slug X already exists as a skill — reuse it or pick a new name`). Up to 3 retries per posting (4 total agent calls).
 - New SQL queries driving the binary: list-unclassified-postings (with optional focus filter and force toggle), list-canonical-roles, list-specializations, list-skills, list-role-dimensions, list-classified-posting-ids. Identified gaps land in `internal/db/queries/`; sqlc regenerated.
-- Boilerplate stripping via `exec.Command` on the existing `cmd/strip-boilerplate` binary, using the same `≥3 selected postings per company` threshold and JSON contract.
+- Boilerplate stripping via `exec.Command` on the prebuilt binary at `./bin/strip-boilerplate`, using the same `≥3 selected postings per company` threshold and JSON contract.
 - Run config: `PROMPT_VERSION`, `MODEL`, wave size, max retries, max parallelism, run-report format (`json|markdown`), force toggle, focus string, count — as flags or a small embedded constants block (single source of truth).
 - Structured run report to stdout (JSON by default, markdown on `--report-format=markdown`): run params, counts (selected / dispatched / enriched / json-failed / validation-failed / skipped-no-description / re-enriched), new taxonomy added (slug+name+source), per-posting summaries, failures list with reason and last raw response.
+- `failures.jsonl`: binary appends one line per posting failure (`json_failed`, `validation_failed`) to `agent-output/batch-enrich/failures.jsonl`. Same schema as the current skill. Required for observability under cron — without it the failure history vanishes between runs.
 - Logs to stderr via `slog` with the `[batch-enrich]` subsystem tag.
 - Non-zero exit on infrastructure failure (DB unreachable, claude CLI missing, abort condition). Exit 0 on a clean run, even if individual postings failed validation — those surface in the report.
 
@@ -26,7 +27,6 @@ Port the `batch-enrich` Claude skill's mechanical coordination into a `cmd/batch
 - Next.js / app-layer changes.
 - pgvector embedding of the summary field. Summary remains report-only.
 - `--force` reclassification beyond the skill's existing flag. Treat force as a flag that drops the `NOT EXISTS` filter on selection; no additional reclassification logic.
-- `failures.jsonl` append-only cross-run failure log. The binary's report covers the current run; persistent failure-history tracking is a follow-on.
 - Concurrent orchestration (two binaries running at once). Single-orchestrator assumption retained; writeback stays serial.
 - Embedding storage column for `skills[].requirement` — agent contract preserves the field; writeback drops it as today.
 
@@ -36,17 +36,18 @@ Port the `batch-enrich` Claude skill's mechanical coordination into a `cmd/batch
 - [ ] Running with `--count=N` selects up to N postings whose latest snapshot has a non-null `description_text` and that lack any existing `classifications` row, ordered by `job_postings.first_seen_at` ASC.
 - [ ] `--focus="<text>"` adds an ILIKE prefilter on the latest snapshot's `title` or `description_text` and is included in each agent's prompt.
 - [ ] `--force` drops only the unclassified filter; the description-non-null filter and ordering are preserved; a re-classify inserts a new `classifications` row rather than mutating any existing one.
-- [ ] For companies with ≥3 selected postings, the binary calls `cmd/strip-boilerplate` via stdin JSON and substitutes the returned `cleaned_text` into the per-posting prompt. Companies below threshold pass through unchanged. A non-zero exit from `cmd/strip-boilerplate` aborts the run with a non-zero exit and a structured error.
+- [ ] For companies with ≥3 selected postings, the binary calls `./bin/strip-boilerplate` via stdin JSON and substitutes the returned `cleaned_text` into the per-posting prompt. Companies below threshold pass through unchanged. A non-zero exit from `./bin/strip-boilerplate` aborts the run with a non-zero exit and a structured error.
 - [ ] Agents dispatch in parallel waves of configurable size (default 10); each wave completes before the next starts; the final wave may be smaller.
 - [ ] Each agent invocation runs `claude -p <prompt> --output-format json --model <MODEL>` as a subprocess and parses the resulting JSON envelope to extract the agent's textual response.
-- [ ] An agent response that fails JSON parsing, fails any validation rule (A/B/C, seniority closed set, non-empty dimensions, known dimension slug, cross-table slug uniqueness) triggers a retry with a structured hint appended to the original prompt. Retries cap at 3 (4 total calls).
-- [ ] Cross-table slug check: a slug emitted in `canonical_roles[].slug` that already exists in `skills` or `specializations` (or analogous sibling collisions) causes a rejection and retry with a targeted hint. Verified by a test using a fixture-driven faked subprocess and a seeded taxonomy.
+- [ ] An agent response that fails JSON parsing, fails any validation rule (A/B/C, seniority closed set, non-empty dimensions, known dimension slug, cross-table slug uniqueness) triggers a retry with a single structured hint bundling all simultaneous failures appended to the original prompt. Retries cap at 3 (4 total calls).
+- [ ] Cross-table slug check covers `canonical_roles`, `specializations`, and `skills` only — `role_dimensions` is excluded. A slug emitted in one of those slots that already exists in a sibling slot causes a rejection and retry with a targeted hint. Verified by a test using a fixture-driven faked subprocess and a seeded taxonomy.
 - [ ] All taxonomy upserts and join inserts run via existing sqlc functions (`GetOrCreateCanonicalRole`, `GetOrCreateSpecialization`, `GetOrCreateSkill`, `InsertCanonicalRoleDimension`, `InsertClassification`, `InsertJobPostingRole`, `InsertJobPostingSpecialization`, `InsertJobPostingSkill`). No raw INSERT/UPDATE SQL strings in the binary.
 - [ ] Writeback per posting runs in a single DB transaction. On any DB error the transaction rolls back, the posting is logged as `db_failed`, and the batch continues.
 - [ ] Writeback across postings is serial; only one posting's transaction is open at a time.
 - [ ] After each wave's writebacks, the in-memory canonical-roles list reloads from DB so subsequent waves' prompts include newly-introduced roles. Specializations and skills follow the same pattern.
-- [ ] On a clean run the process exits 0. On infrastructure failure (DB unreachable, missing `claude` binary, `cmd/strip-boilerplate` non-zero exit, invalid `PROMPT_VERSION`/`MODEL` strings) the process exits non-zero and writes a structured error to stderr.
+- [ ] On a clean run the process exits 0. On infrastructure failure (DB unreachable, missing `claude` binary, `./bin/strip-boilerplate` non-zero exit, invalid `PROMPT_VERSION`/`MODEL` strings) the process exits non-zero and writes a structured error to stderr.
 - [ ] The run report (JSON by default) is written to stdout exactly once at the end of the run: run params, counts, new-taxonomy list, per-posting summaries, failures list. Logs go to stderr. Stdout is parseable as a single JSON document.
+- [ ] After each run, the binary appends one JSON line per posting failure (`json_failed`, `validation_failed`) to `agent-output/batch-enrich/failures.jsonl`, using the same schema as the current skill. The file is created if absent; prior lines are never modified.
 
 ## Tasks
 
@@ -68,7 +69,7 @@ Implement the selection step: load `DATABASE_URL`, open the pool (pgx stdlib), i
 
 ### Task 4: Boilerplate stripping
 
-Group selected postings by `company_id`. For each company with ≥3 entries, build the `{company_id, selected_ids}` JSON, exec `cmd/strip-boilerplate` (resolve the path at runtime — see Open Questions), pipe stdin, capture stdout, parse the response, substitute `cleaned_text` into a per-posting working copy. Companies below threshold pass through unchanged. Non-zero exit from the child aborts the run.
+Group selected postings by `company_id`. For each company with ≥3 entries, build the `{company_id, selected_ids}` JSON, exec `./bin/strip-boilerplate`, pipe stdin, capture stdout, parse the response, substitute `cleaned_text` into a per-posting working copy. Companies below threshold pass through unchanged. Non-zero exit from the child aborts the run.
 
 ### Task 5: Prompt template
 
@@ -84,9 +85,9 @@ Retry loop sits inside each goroutine: on parse or validation failure, build the
 
 ### Task 7: Validation
 
-A `validate` file in `cmd/batch-enrich` exposes a single function: given a parsed classification, the in-memory taxonomy, and the in-memory cross-table slug index, return either a `ValidatedClassification` (ready for writeback) or a `ValidationFailure` with a `Reason` and `Hint` string. Reasons: invalid slug format, null byte in name/notes, seniority missing/invalid, empty dimensions array, unknown dimension slug, cross-table slug collision. The hint is appended to the retry prompt — write it as plain English the agent can act on.
+A `validate` file in `cmd/batch-enrich` exposes a single function: given a parsed classification, the in-memory taxonomy, and the in-memory cross-table slug index, return either a `ValidatedClassification` (ready for writeback) or a `ValidationFailure` with a `Reason` and `Hint` string. Reasons: invalid slug format, null byte in name/notes, seniority missing/invalid, empty dimensions array, unknown dimension slug, cross-table slug collision. All simultaneous failures are bundled into a single hint string appended to the retry prompt — write it as plain English the agent can act on.
 
-Build the cross-table slug index at startup as `map[string]string` (slug → owning table name). Update it incrementally after each wave's writebacks so newly-added slugs participate in subsequent validations.
+Build the cross-table slug index at startup as `map[string]string` (slug → owning table name) covering `canonical_roles`, `specializations`, and `skills`. `role_dimensions` is excluded — closed-set validation catches unknown dimension slugs before writeback, so no cross-table check is needed. Update the index incrementally after each wave's writebacks so newly-added slugs participate in subsequent validations.
 
 ### Task 8: Writeback
 
@@ -96,7 +97,9 @@ For each `ValidatedClassification`, open a DB transaction, run `db.New(tx).GetOr
 
 Aggregate per-posting outcomes into a `RunReport` struct. Marshal to stdout as JSON or render as markdown per `--report-format`. Include: run params block, counts block, new taxonomy block (slugs+names introduced this run, partitioned by table), per-posting list (`posting_id`, title, outcome, summary, last failure reason if any), failures block (non-`enriched` outcomes plus the last raw response).
 
-Exit codes: 0 on a completed run (regardless of per-posting failures). Non-zero on: DB open / ping failure, missing `claude` binary in PATH, `cmd/strip-boilerplate` non-zero exit, invalid `PROMPT_VERSION`/`MODEL`, context cancellation that prevented the report from being emitted.
+After emitting the report, append one JSON line per `json_failed` or `validation_failed` posting to `agent-output/batch-enrich/failures.jsonl`. Create the file if absent; never truncate prior lines.
+
+Exit codes: 0 on a completed run (regardless of per-posting failures). Non-zero on: DB open / ping failure, missing `claude` binary in PATH, `./bin/strip-boilerplate` non-zero exit, invalid `PROMPT_VERSION`/`MODEL`, context cancellation that prevented the report from being emitted.
 
 ### Task 10: Tests
 
@@ -133,7 +136,7 @@ DB plumbing: `cmd/batch-enrich` opens `sql.DB` exactly once (same pattern as `cm
 
 Subprocess plumbing: `exec.Command` is wrapped behind a small `agentRunner` interface (one method: `Run(ctx, prompt) (rawJSON []byte, err error)`) so tests can substitute a fake without touching `os/exec`. Default implementation runs `claude`; the test implementation returns canned fixtures.
 
-`cmd/strip-boilerplate` invocation: prefer the built binary at `./bin/strip-boilerplate` if present, falling back to `go run ./cmd/strip-boilerplate`. Decision deferred — see Open Questions.
+`cmd/strip-boilerplate` invocation: uses the prebuilt binary at `./bin/strip-boilerplate`. No fallback — cron deployments require the binary to exist.
 
 ## Boundary inventory
 
@@ -155,8 +158,4 @@ Subprocess plumbing: `exec.Command` is wrapped behind a small `agentRunner` inte
 ## Open questions
 
 1. **`claude -p --output-format json` envelope shape.** The exact field name carrying the agent's textual response inside the JSON envelope must be confirmed during implementation. Spec assumes one parse hop (`envelope.result` or similar) then a second JSON parse over the text. If the envelope returns the structured JSON directly (no inner string), the dispatcher simplifies — adjust then.
-2. **`cmd/strip-boilerplate` invocation path.** Two options: (a) require `bin/strip-boilerplate` to exist (faster startup, adds a build dep), (b) call `go run ./cmd/strip-boilerplate` (no extra build step, slower per-company). Pick at implementation; cron deployments probably want (a).
-3. **Specializations / skills cross-table check scope.** Cross-table collision rules are currently scoped to sibling taxonomy tables. Should `role_dimensions` participate (i.e. reject a skill slug that collides with a dimension slug)? Default: yes, all four tables share one slug namespace for this check.
-4. **Retry hint composition for multiple simultaneous failures.** If a single agent response fails two rules at once (e.g. one bad slug format and one cross-table collision), bundle both hints into a single retry, or surface only the first? Default: bundle. Implementer's call if bundled hints prove too noisy.
-5. **`failures.jsonl` cross-run log parity.** The skill writes one; the binary's report covers only the current run. Either the binary also appends to `failures.jsonl` (keeping parity), or it's dropped pending a separate persistent-failure-tracking ticket. Current scope marks it out-of-scope — flag the regression.
-6. **Skill deprecation timing.** `.claude/skills/batch-enrich/SKILL.md` continues in parallel until the binary is proven against at least one full batch. Deletion or rewrite is a follow-on once the binary is exercised in cron.
+2. **Skill deprecation timing.** `.claude/skills/batch-enrich/SKILL.md` continues in parallel until the binary is proven against at least one full batch. Deletion or rewrite is a follow-on once the binary is exercised in cron.
