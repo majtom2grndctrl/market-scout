@@ -217,22 +217,54 @@ func TestRunWave_ValidationFailure_ValidationFailed(t *testing.T) {
 	}
 }
 
-// TestRunWave_ContextCancellation verifies that when the parent context is
-// already cancelled before RunWave dispatches, every goroutine bails out at
-// the semaphore and stamps reasonCancelled. The fake runner panics if invoked,
-// which would surface as an OutcomeJSONFailed with a panic reason rather than
-// a clean "cancelled" — catching that regression is the point of the test.
-func TestRunWave_ContextCancellation(t *testing.T) {
+// TestRunWave_BatchValidationFailed_MaxRetriesZero verifies the terminal
+// classification when the batched call returns a parseable-but-invalid
+// response and MaxRetries=0 (totalBudget=1, no retry headroom). The seeded
+// OutcomeValidationFailed from the batched routing must survive: previously
+// the terminal block would mistakenly stamp OutcomeJSONFailed because the
+// retry-loop's local lastParsed was nil.
+func TestRunWave_BatchValidationFailed_MaxRetriesZero(t *testing.T) {
 	tax := newTestTaxonomy()
 	cfg := dispatchTestConfig()
-	// Throttle slot count so the cancel path through the semaphore select
-	// is the dominant exit even though all goroutines start concurrently.
-	cfg.MaxParallelAgents = 1
+	cfg.MaxRetries = 0 // totalBudget=1; only the batched call is allowed.
+
+	bad := validResponse()
+	bad.CanonicalRoles[0].Slug = "Bad_Slug" // parses cleanly but fails Validate.
+	rawStr := wrapBatched(t, bad)
 
 	runner := &fakeRunner{
 		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
-			t.Errorf("runner should not be invoked after context cancellation")
-			return "", "", nil
+			return rawStr, rawStr, nil
+		},
+	}
+
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner)
+	r := results[0]
+
+	if r.Outcome != OutcomeValidationFailed {
+		t.Errorf("outcome: want %q, got %q (reason=%q)", OutcomeValidationFailed, r.Outcome, r.LastReason)
+	}
+	if r.Attempts != 1 {
+		t.Errorf("attempts: want 1, got %d", r.Attempts)
+	}
+}
+
+// TestRunWave_ContextCancellation verifies the invariant that matters under
+// cancellation: no posting lands OutcomeEnriched and every posting carries
+// reasonCancelled. We can't assert the runner is never invoked — the
+// semaphore-acquire select has two ready cases when ctx is already cancelled
+// and Go picks pseudo-randomly, so a goroutine may legitimately call the
+// runner before the cancel branch wins. The runner returns a benign response
+// in that case; the key check is the terminal outcome and reason.
+func TestRunWave_ContextCancellation(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	cfg.MaxParallelAgents = 1
+
+	resp := validResponseJSON(t)
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			return resp, resp, nil
 		},
 	}
 
@@ -252,12 +284,13 @@ func TestRunWave_ContextCancellation(t *testing.T) {
 		t.Fatalf("want %d results, got %d", len(wave), len(results))
 	}
 	for i, r := range results {
+		if r.Outcome == OutcomeEnriched {
+			t.Errorf("result[%d]: posting should not enrich under a cancelled context (got reason=%q)",
+				i, r.LastReason)
+		}
 		if r.LastReason != reasonCancelled {
 			t.Errorf("result[%d]: want LastReason=%q, got %q (outcome=%q)",
 				i, reasonCancelled, r.LastReason, r.Outcome)
-		}
-		if r.Attempts != 0 {
-			t.Errorf("result[%d]: cancelled goroutine should have 0 attempts, got %d", i, r.Attempts)
 		}
 	}
 }

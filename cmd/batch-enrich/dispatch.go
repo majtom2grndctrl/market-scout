@@ -88,7 +88,7 @@ func newClaudeRunner(model string, timeout time.Duration) agentRunner {
 // errAgentFailure so callers can log it.
 //
 // errors.Is(err, context.Canceled) remains true through this wrap chain —
-// classifyOne relies on it to detect cancellation without re-executing.
+// classifyBatch relies on it to detect cancellation without charging an attempt.
 func (r *claudeRunner) Run(ctx context.Context, systemPrompt, userPrompt string) (string, string, error) {
 	// Per-call timeout when configured; otherwise the caller's ctx flows through
 	// unwrapped so we don't allocate a derived context per invocation.
@@ -131,8 +131,9 @@ func (r *claudeRunner) Run(ctx context.Context, systemPrompt, userPrompt string)
 // batched calls (so effective posting concurrency is MaxParallelAgents ×
 // BatchSize). Per-posting retries are always single-posting (batch size 1)
 // with a budget of cfg.MaxRetries + 1 total calls including the initial
-// batched call. Returns one PostingResult per posting in the original wave
-// order. Does not perform writeback.
+// batched call. The batched call counts as attempt 1; MaxRetries bounds the
+// per-posting single-posting calls that follow. Returns one PostingResult per
+// posting in the original wave order. Does not perform writeback.
 func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg Config, runner agentRunner) []PostingResult {
 	results := make([]PostingResult, len(wave))
 	if len(wave) == 0 {
@@ -161,7 +162,6 @@ func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg
 			end = len(wave)
 		}
 		batch := wave[start:end]
-		offset := start
 
 		wg.Add(1)
 		go func(offset int, batch []SelectedPosting) {
@@ -206,11 +206,11 @@ func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg
 				return
 			}
 
-			batchResults := classifyBatch(ctx, batch, taxonomy, cfg, runner, systemPrompt, nil)
+			batchResults := classifyBatch(ctx, batch, taxonomy, cfg, runner, systemPrompt)
 			for i, r := range batchResults {
 				results[offset+i] = r
 			}
-		}(offset, batch)
+		}(start, batch)
 	}
 	wg.Wait()
 	return results
@@ -240,12 +240,6 @@ func stripCodeFence(s string) string {
 //
 // The returned slice is ordered to match the input postings slice.
 //
-// seedHints, keyed by PostingID, are folded into the first retry for that
-// posting (e.g. when the caller already knows hints from a prior pass). A nil
-// or empty map means no seeded hints. In normal operation seedHints is nil;
-// it's plumbed through so recursive callers can preserve hints across the
-// batched → single-posting transition without re-running validation.
-//
 // Attempts accounting: a single completed runner.Run increments Attempts by 1
 // for every posting it addressed. Retries each charge 1 to the single posting
 // they target. Cancellation never charges an attempt.
@@ -256,7 +250,6 @@ func classifyBatch(
 	cfg Config,
 	runner agentRunner,
 	systemPrompt string,
-	seedHints map[int64][]string,
 ) []PostingResult {
 	results := make([]PostingResult, len(postings))
 	for i, p := range postings {
@@ -360,6 +353,12 @@ func classifyBatch(
 				if errors.As(vErr, &vf) {
 					results[idx].LastReason = vf.Error()
 					results[idx].Summary = resp.Summary
+					// Seed OutcomeValidationFailed: the batched call produced a
+					// parseable response, so terminal classification should reflect
+					// that even if the retry loop never runs (e.g. MaxRetries=0) or
+					// is cancelled before the first retry completes. A successful
+					// retry below overwrites this to OutcomeEnriched.
+					results[idx].Outcome = OutcomeValidationFailed
 					retryQueue = append(retryQueue, retryItem{posting: p, hints: vf.Hints})
 					continue
 				}
@@ -369,16 +368,6 @@ func classifyBatch(
 				// never forward a raw Go error string to the agent.
 				results[idx].LastReason = vErr.Error()
 				retryQueue = append(retryQueue, retryItem{posting: p, hints: []string{hintReturnJSONOnly}})
-			}
-		}
-	}
-
-	// Fold any caller-supplied seed hints into the queued retries. Seed hints
-	// override the hints chosen above only when the seed has entries.
-	if len(seedHints) > 0 {
-		for i, item := range retryQueue {
-			if h, ok := seedHints[item.posting.PostingID]; ok && len(h) > 0 {
-				retryQueue[i].hints = h
 			}
 		}
 	}
@@ -399,8 +388,8 @@ func classifyBatch(
 
 		for results[idx].Attempts < totalBudget {
 			if err := ctx.Err(); err != nil {
-				// Cancellation between retry calls: preserve whatever state
-				// the last completed call left behind, but stamp cancelled.
+				// Cancelled mid-retry: preserve prior outcome (set when entering
+				// retryQueue), stamp LastReason only.
 				results[idx].LastReason = reasonCancelled
 				break
 			}
@@ -410,7 +399,8 @@ func classifyBatch(
 
 			if retryErr != nil {
 				if ctx.Err() != nil || errors.Is(retryErr, context.Canceled) || errors.Is(retryErr, context.DeadlineExceeded) {
-					// Cancellation aborted this call: don't charge it.
+					// Cancelled mid-retry: preserve prior outcome (set when entering
+					// retryQueue), stamp LastReason only. Don't charge this call.
 					results[idx].LastReason = reasonCancelled
 					break
 				}
@@ -418,7 +408,9 @@ func classifyBatch(
 				results[idx].LastRawResponse = retryRaw
 				results[idx].LastReason = retryErr.Error()
 				hints = []string{hintReturnJSONOnly}
-				lastParsed = nil
+				// Do not reset lastParsed: it tracks whether we have *ever* seen
+				// a parseable response. A runner error on a later attempt must
+				// not erase the fact that an earlier attempt parsed cleanly.
 				continue
 			}
 
@@ -429,14 +421,14 @@ func classifyBatch(
 			if parseErr != nil {
 				results[idx].LastReason = fmt.Sprintf("json parse: %v", parseErr)
 				hints = []string{hintReturnJSONOnly}
-				lastParsed = nil
+				// Preserve lastParsed: see runner-error branch above.
 				continue
 			}
 			resp, present := parsedMap[item.posting.PostingID]
 			if !present {
 				results[idx].LastReason = "missing from batched response"
 				hints = []string{hintReturnJSONOnly}
-				lastParsed = nil
+				// Preserve lastParsed: see runner-error branch above.
 				continue
 			}
 			lastParsed = &resp
@@ -464,12 +456,14 @@ func classifyBatch(
 		}
 
 		// Terminal classification for this posting. Skip if we already landed
-		// on OutcomeEnriched or stamped reasonCancelled mid-loop.
-		if results[idx].Outcome == OutcomeEnriched {
-			continue
-		}
-		if results[idx].LastReason == reasonCancelled {
-			results[idx].Outcome = OutcomeJSONFailed
+		// on OutcomeEnriched, or if Outcome was seeded to OutcomeValidationFailed
+		// when the posting entered retryQueue from the batched call (a parseable
+		// but invalid response). The seeded outcome is correct even if the
+		// retry loop never ran (MaxRetries=0) or was cancelled before completing.
+		if results[idx].Outcome == OutcomeEnriched || results[idx].Outcome == OutcomeValidationFailed {
+			if results[idx].Outcome == OutcomeValidationFailed && lastParsed != nil {
+				results[idx].Summary = lastParsed.Summary
+			}
 			continue
 		}
 		if lastParsed == nil {

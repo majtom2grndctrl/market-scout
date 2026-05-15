@@ -44,7 +44,7 @@ var writeOneBackoffs = []time.Duration{50 * time.Millisecond, 100 * time.Millise
 func WriteBack(ctx context.Context, results []PostingResult, pool *sql.DB, cfg Config, taxonomy Taxonomy) []PostingResult {
 	for i := range results {
 		// On context cancellation, stamp any remaining OutcomeEnriched results
-		// as OutcomeDBFailed. classifyOne already marked them enriched, but
+		// as OutcomeDBFailed. classifyBatch already marked them enriched, but
 		// writeback never persisted them — leaving Outcome=enriched would make
 		// the report claim success for postings with no classification row.
 		// Because no classifications row was inserted, the selection query's

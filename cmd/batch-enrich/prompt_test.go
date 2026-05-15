@@ -232,42 +232,6 @@ func TestRenderSystemPrompt_TaxonomySectionOrder(t *testing.T) {
 	}
 }
 
-// TestRenderUserMessage_ContainsPostingHeaderAndDescription pins the user
-// message shape: a "# Posting <id>: <title>" heading and the description
-// body. Taxonomy and contract live in the system prompt and must not leak
-// into the user message — that would defeat prompt caching.
-func TestRenderUserMessage_ContainsPostingHeaderAndDescription(t *testing.T) {
-	posting := SelectedPosting{
-		PostingID:       42,
-		Title:           "Software Engineer",
-		DescriptionText: "We are looking for an experienced engineer.",
-	}
-
-	out := RenderUserMessage(posting)
-
-	if !strings.Contains(out, "# Posting 42: Software Engineer") {
-		t.Errorf("expected posting heading in user message, got %q", out)
-	}
-	if !strings.Contains(out, "## Description") {
-		t.Errorf("expected description heading in user message")
-	}
-	if !strings.Contains(out, posting.DescriptionText) {
-		t.Errorf("expected description body in user message")
-	}
-
-	// Taxonomy/contract content must not appear here.
-	mustNotContain := []string{
-		"## Canonical roles (existing)",
-		"## Role dimensions (closed set)",
-		"## Agent contract",
-	}
-	for _, s := range mustNotContain {
-		if strings.Contains(out, s) {
-			t.Errorf("user message should not contain %q (belongs in system prompt)", s)
-		}
-	}
-}
-
 // TestRenderBatchedUserMessage_SinglePosting verifies the batched renderer
 // produces the same per-posting block shape as the legacy single renderer
 // when given exactly one posting.

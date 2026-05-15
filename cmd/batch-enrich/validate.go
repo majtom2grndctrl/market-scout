@@ -31,8 +31,8 @@ type BatchedAgentResponse struct {
 // keyed by posting_id alongside the subset of expected IDs that were absent
 // from the response. Missing IDs are not an error: a partial batch is a
 // success for the IDs that landed, and the caller routes missing IDs to
-// single-posting retry. Unexpected IDs in the response are silently dropped
-// (debug-logged) so a hallucinated posting_id can't poison the batch.
+// single-posting retry. Unexpected IDs in the response are dropped with a
+// Warn-level log so hallucinated posting_ids surface at the default log level.
 func ParseBatchedResponse(agentText string, expected []int64) (results map[int64]AgentResponse, missing []int64, err error) {
 	var wrapper BatchedAgentResponse
 	if err := json.Unmarshal([]byte(agentText), &wrapper); err != nil {
@@ -47,7 +47,7 @@ func ParseBatchedResponse(agentText string, expected []int64) (results map[int64
 	results = make(map[int64]AgentResponse, len(wrapper.Results))
 	for _, r := range wrapper.Results {
 		if _, ok := expectedSet[r.PostingID]; !ok {
-			slog.Debug("[batch-enrich] dropping unexpected posting_id in batched response", "posting_id", r.PostingID)
+			slog.Warn("[batch-enrich] dropping unexpected posting_id in batched response", "posting_id", r.PostingID)
 			continue
 		}
 		results[r.PostingID] = r
@@ -286,6 +286,9 @@ func Validate(resp AgentResponse, taxonomy Taxonomy) (ValidatedClassification, e
 // checkSlug applies Rule A: slug must match slugPattern and not exceed
 // maxSlugLen. Returns zero or one hint.
 func checkSlug(slug string) []string {
+	if slug == "" {
+		return []string{"slug is missing or empty"}
+	}
 	if len(slug) > maxSlugLen || !slugPattern.MatchString(slug) {
 		return []string{FormatHint(FailInvalidSlug, slug)}
 	}

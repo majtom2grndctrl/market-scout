@@ -38,9 +38,7 @@ const (
 // holds the focus guidance, taxonomy sections, and the agent contract — all
 // content that is stable across every posting in the wave, so the Claude CLI
 // can reuse the prompt cache between calls. If focus is empty, the focus
-// guidance block is omitted. The closing block is the agent contract; the
-// SKILL.md file is deprecated for batched runs and this file is the source
-// of truth.
+// guidance block is omitted.
 func RenderSystemPrompt(taxonomy Taxonomy, focus string) string {
 	var b strings.Builder
 
@@ -87,21 +85,6 @@ func RenderBatchedUserMessage(postings []SelectedPosting) string {
 		b.WriteString(p.DescriptionText)
 		b.WriteString("\n")
 	}
-	return b.String()
-}
-
-// RenderUserMessage builds the per-posting user message: a posting heading
-// followed by the description body. Everything else (taxonomy, contract,
-// focus) lives in the system prompt so the cache stays warm between calls.
-//
-// Deprecated: use RenderBatchedUserMessage. This function will be deleted in
-// the dispatch refactor (Task 5).
-func RenderUserMessage(posting SelectedPosting) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "# Posting %d: %s\n\n", posting.PostingID, posting.Title)
-	b.WriteString("## Description\n\n")
-	b.WriteString(posting.DescriptionText)
-	b.WriteString("\n")
 	return b.String()
 }
 
@@ -229,9 +212,8 @@ func writeTaxonomyList(b *strings.Builder, entries map[string]TaxonomyEntry) {
 }
 
 // agentContract contains the Output schema, Classification discipline, Slug
-// discipline, Summary contract, and Batched output schema sections. The
-// SKILL.md file is deprecated for batched runs — this constant is the source
-// of truth. Bump PromptVersion when the contract changes.
+// discipline, Summary contract, and Batched output schema sections. Bump
+// PromptVersion when the contract changes.
 const agentContract = "## Agent contract\n" +
 	"\n" +
 	"Return JSON only. No prose. No code fences.\n" +

@@ -243,6 +243,17 @@ func TestValidate_SlugTooLong(t *testing.T) {
 	}
 }
 
+func TestValidate_EmptySlug(t *testing.T) {
+	tax := newTestTaxonomy()
+	resp := validResponse()
+	resp.CanonicalRoles[0].Slug = ""
+	_, err := Validate(resp, tax)
+	vf := asValidationFailure(t, err)
+	if !hintsContain(vf.Hints, "missing or empty") {
+		t.Fatalf("expected empty-slug hint, got %v", vf.Hints)
+	}
+}
+
 func TestValidate_NotesTooLong_ClassificationNotes(t *testing.T) {
 	tax := newTestTaxonomy()
 	resp := validResponse()
