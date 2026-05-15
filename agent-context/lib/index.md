@@ -12,6 +12,7 @@
 - **Settled architecture decisions** → `agent-context/lib/project.md` §Settled architecture
 - **Writing / editing `agent-context/` files** → `agent-context/lib/style-guide.md`
 - **Dev setup, Go conventions, logging, comments** → `agent-context/lib/developer-guide.md`
+- **Inspecting enrichment / classification data quality** → `agent-context/lib/developer-guide.md` §6.2
 - **Test strategy, patterns, running tests** → `agent-context/lib/testing-guide.md`
 - **Go fetcher (structure, conventions)** → `agent-context/lib/project.md` §Settled architecture
 - **ATS adapter (adding or modifying)** → `agent-context/lib/project.md` §ATS targets

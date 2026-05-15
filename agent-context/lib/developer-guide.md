@@ -137,6 +137,7 @@ The connection string lives in `.env.local` as `DATABASE_URL`. The fetcher and m
 Primary debugging surfaces:
 
 - **TablePlus** — GUI client. Connect using `DATABASE_URL`. Inspect tables, run ad-hoc queries, browse schema.
+- **`psql`** — `docker exec -it market-scout-db psql` drops into a shell using the container's credentials. Port 5432 is also exposed to localhost, so a host-side `psql $DATABASE_URL` works if `psql` is installed.
 - **Ad-hoc Go scripts** — write a `.go` file to the project root, run with `go run <script>.go`, then delete it. Scripts must live at the project root: Go modules require `go.mod` to resolve imports (`github.com/jackc/pgx/v5/stdlib`, `github.com/joho/godotenv`, etc.). Running from `/tmp` or any directory without `go.mod` fails with "no required module provides package."
 
 ### Schema Migrations
@@ -336,6 +337,16 @@ Workflow: change the source → `sqlc generate` → review the diff → commit i
 - `go test -v ./...` — verbose test output, the primary first-line debugging tool.
 - **TablePlus** or an ad-hoc Go script (see §2 Database Access) — inspect snapshot rows, vector embeddings, and migration state directly.
 - `slog` output goes to stderr by default. Pipe through `jq` if you switch the handler to JSON for richer filtering.
+
+**Enrichment / classification output.** The `classifications` table is the primary data quality surface. Current classification per posting is the latest row by `classified_at` — the `DISTINCT ON` pattern in `internal/db/queries/classifications.sql` is the canonical query shape; read it before writing ad-hoc inspection queries.
+
+Key invariants:
+
+- `created_at` on `canonical_roles`, `specializations`, and `skills` distinguishes emergent (agent-minted at runtime) from seeded (migration-installed) taxonomy entries.
+- Slug collisions across `specializations` and `skills` are expected — the taxonomy deduplicates by slug at load time, first-owner wins. Logged as warnings at run start, not errors.
+- `prompt_version` on each `classifications` row identifies which agent contract produced it — the primary audit key across contract changes.
+- `failures.jsonl` at `agent-output/batch-enrich/failures.jsonl` is append-only history for operator review. The binary never reads it; it does not drive post-failure behavior.
+- `--force` re-classifies postings that already have a `classifications` row. Without it, the binary skips them. Useful for re-running a corrected contract against already-processed postings.
 
 ### 6.3 Where logs come from
 
