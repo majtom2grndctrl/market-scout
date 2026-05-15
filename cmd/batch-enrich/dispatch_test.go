@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -293,6 +294,327 @@ func TestRunWave_RetryThenSucceed_Enriched(t *testing.T) {
 // valid response. This is the more delicate retry branch — it exercises
 // RenderRetryPrompt and the ValidationFailure hint path, not just the
 // JSON-parse fallback.
+// makeBatchPostings returns n SelectedPostings with sequential PostingIDs
+// starting at 1, matching the slug "software-engineer" in newTestTaxonomy()
+// so canned responses cleanly validate.
+func makeBatchPostings(n int) []SelectedPosting {
+	postings := make([]SelectedPosting, n)
+	for i := 0; i < n; i++ {
+		postings[i] = SelectedPosting{
+			PostingID:       int64(i + 1),
+			CompanyID:       100,
+			Title:           "Software Engineer",
+			DescriptionText: "We need an engineer.",
+		}
+	}
+	return postings
+}
+
+// validResponseFor builds a validResponse() with PostingID overridden so the
+// batched envelope can carry one entry per posting in the wave.
+func validResponseFor(postingID int64) AgentResponse {
+	r := validResponse()
+	r.PostingID = postingID
+	return r
+}
+
+// TestRunWave_BatchAllSucceed verifies the happy-path batched call: a single
+// runner invocation covers every posting in the batch, each posting lands
+// OutcomeEnriched with Attempts==1.
+func TestRunWave_BatchAllSucceed(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	cfg.BatchSize = 3
+	cfg.WaveSize = 3
+
+	postings := makeBatchPostings(3)
+	resp := wrapBatched(t, validResponseFor(1), validResponseFor(2), validResponseFor(3))
+
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			return resp, resp, nil
+		},
+	}
+
+	results := RunWave(context.Background(), postings, tax, cfg, runner)
+
+	if got := atomic.LoadInt32(&runner.calls); got != 1 {
+		t.Errorf("expected 1 runner call, got %d", got)
+	}
+	if len(results) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(results))
+	}
+	for i, r := range results {
+		if r.Outcome != OutcomeEnriched {
+			t.Errorf("result[%d]: want %q, got %q (reason=%q)", i, OutcomeEnriched, r.Outcome, r.LastReason)
+		}
+		if r.Attempts != 1 {
+			t.Errorf("result[%d]: want Attempts=1, got %d", i, r.Attempts)
+		}
+		if r.Classification == nil {
+			t.Errorf("result[%d]: expected non-nil Classification", i)
+		}
+	}
+}
+
+// TestRunWave_BatchOneFailsValidation verifies that when one posting in the
+// batched response fails Phase A validation, only that posting enters the
+// single-posting retry path. The retry succeeds on the first try, so the
+// retried posting lands OutcomeEnriched with Attempts==2; the others stay at
+// Attempts==1.
+func TestRunWave_BatchOneFailsValidation(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	cfg.BatchSize = 3
+	cfg.WaveSize = 3
+
+	postings := makeBatchPostings(3)
+
+	good1 := validResponseFor(1)
+	bad2 := validResponseFor(2)
+	bad2.CanonicalRoles[0].Slug = "Bad_Slug" // parses but fails validation
+	good3 := validResponseFor(3)
+	batchedResp := wrapBatched(t, good1, bad2, good3)
+
+	// Single-posting retry payload for posting 2.
+	retryResp := wrapBatched(t, validResponseFor(2))
+
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			if attempt == 1 {
+				return batchedResp, batchedResp, nil
+			}
+			return retryResp, retryResp, nil
+		},
+	}
+
+	results := RunWave(context.Background(), postings, tax, cfg, runner)
+
+	if got := atomic.LoadInt32(&runner.calls); got != 2 {
+		t.Errorf("expected 2 runner calls (1 batched + 1 retry), got %d", got)
+	}
+	for i, r := range results {
+		if r.Outcome != OutcomeEnriched {
+			t.Errorf("result[%d] (posting %d): want %q, got %q (reason=%q)",
+				i, r.PostingID, OutcomeEnriched, r.Outcome, r.LastReason)
+		}
+	}
+	// Posting 1 and 3 succeeded on the batched call; posting 2 needed a retry.
+	if a := results[0].Attempts; a != 1 {
+		t.Errorf("posting 1: want Attempts=1, got %d", a)
+	}
+	if a := results[1].Attempts; a != 2 {
+		t.Errorf("posting 2 (retried): want Attempts=2, got %d", a)
+	}
+	if a := results[2].Attempts; a != 1 {
+		t.Errorf("posting 3: want Attempts=1, got %d", a)
+	}
+}
+
+// TestRunWave_BatchMissingPostingID verifies that when the batched response
+// omits one posting, that posting alone enters the single-posting retry
+// path. The other postings are unaffected.
+func TestRunWave_BatchMissingPostingID(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	cfg.BatchSize = 3
+	cfg.WaveSize = 3
+
+	postings := makeBatchPostings(3)
+
+	// Posting 2 missing from the batched response.
+	batchedResp := wrapBatched(t, validResponseFor(1), validResponseFor(3))
+	retryResp := wrapBatched(t, validResponseFor(2))
+
+	var retryUserPrompts []string
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			if attempt == 1 {
+				return batchedResp, batchedResp, nil
+			}
+			retryUserPrompts = append(retryUserPrompts, userPrompt)
+			return retryResp, retryResp, nil
+		},
+	}
+
+	results := RunWave(context.Background(), postings, tax, cfg, runner)
+
+	if got := atomic.LoadInt32(&runner.calls); got != 2 {
+		t.Errorf("expected 2 runner calls (1 batched + 1 retry for missing posting), got %d", got)
+	}
+	if len(retryUserPrompts) != 1 {
+		t.Fatalf("expected 1 retry prompt, got %d", len(retryUserPrompts))
+	}
+	// The retry prompt should target posting 2 only.
+	if !strings.Contains(retryUserPrompts[0], "# Posting 2:") {
+		t.Errorf("retry prompt should target posting 2, got: %s", retryUserPrompts[0])
+	}
+	if strings.Contains(retryUserPrompts[0], "# Posting 1:") || strings.Contains(retryUserPrompts[0], "# Posting 3:") {
+		t.Errorf("retry prompt should not include postings 1 or 3, got: %s", retryUserPrompts[0])
+	}
+
+	for i, r := range results {
+		if r.Outcome != OutcomeEnriched {
+			t.Errorf("result[%d] (posting %d): want %q, got %q (reason=%q)",
+				i, r.PostingID, OutcomeEnriched, r.Outcome, r.LastReason)
+		}
+	}
+	if a := results[0].Attempts; a != 1 {
+		t.Errorf("posting 1: want Attempts=1, got %d", a)
+	}
+	if a := results[1].Attempts; a != 2 {
+		t.Errorf("posting 2 (retried): want Attempts=2, got %d", a)
+	}
+	if a := results[2].Attempts; a != 1 {
+		t.Errorf("posting 3: want Attempts=1, got %d", a)
+	}
+}
+
+// TestRunWave_BatchJSONParseFailureFansOutToSingleRetries verifies that when
+// the batched call returns unparseable JSON, every posting in the batch enters
+// the single-posting retry path. With a clean retry response, each posting
+// lands OutcomeEnriched with Attempts==2.
+func TestRunWave_BatchJSONParseFailureFansOutToSingleRetries(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	cfg.BatchSize = 3
+	cfg.WaveSize = 3
+	cfg.MaxParallelAgents = 1 // serialise retries so call accounting is deterministic
+
+	postings := makeBatchPostings(3)
+
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			if attempt == 1 {
+				// Garbage on the batched call.
+				return "not json", "not json", nil
+			}
+			// Each retry targets a single posting; figure out which by parsing
+			// the heading we rendered, and respond with the matching JSON.
+			for _, p := range postings {
+				marker := "# Posting " + itoa(p.PostingID) + ":"
+				if strings.Contains(userPrompt, marker) {
+					payload := wrapBatched(t, validResponseFor(p.PostingID))
+					return payload, payload, nil
+				}
+			}
+			t.Errorf("retry prompt did not match any expected posting heading: %s", userPrompt)
+			return "", "", nil
+		},
+	}
+
+	results := RunWave(context.Background(), postings, tax, cfg, runner)
+
+	// 1 batched call + 3 single-posting retries.
+	if got := atomic.LoadInt32(&runner.calls); got != 4 {
+		t.Errorf("expected 4 runner calls (1 batched + 3 retries), got %d", got)
+	}
+	for i, r := range results {
+		if r.Outcome != OutcomeEnriched {
+			t.Errorf("result[%d] (posting %d): want %q, got %q (reason=%q)",
+				i, r.PostingID, OutcomeEnriched, r.Outcome, r.LastReason)
+		}
+		if r.Attempts != 2 {
+			t.Errorf("result[%d] (posting %d): want Attempts=2, got %d", i, r.PostingID, r.Attempts)
+		}
+	}
+}
+
+// TestRunWave_TwoBatchesHappyPath verifies that a wave of 2N postings with
+// BatchSize N produces exactly 2 batched runner calls on the happy path.
+func TestRunWave_TwoBatchesHappyPath(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	cfg.BatchSize = 2
+	cfg.WaveSize = 4
+	cfg.MaxParallelAgents = 2
+
+	postings := makeBatchPostings(4)
+
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			// Inspect the user prompt to figure out which postings this batch
+			// addressed, and respond with matching JSON. This decouples the
+			// response from goroutine scheduling order.
+			var responses []AgentResponse
+			for _, p := range postings {
+				marker := "# Posting " + itoa(p.PostingID) + ":"
+				if strings.Contains(userPrompt, marker) {
+					responses = append(responses, validResponseFor(p.PostingID))
+				}
+			}
+			payload := wrapBatched(t, responses...)
+			return payload, payload, nil
+		},
+	}
+
+	results := RunWave(context.Background(), postings, tax, cfg, runner)
+
+	if got := atomic.LoadInt32(&runner.calls); got != 2 {
+		t.Errorf("expected 2 batched runner calls, got %d", got)
+	}
+	if len(results) != 4 {
+		t.Fatalf("expected 4 results, got %d", len(results))
+	}
+	for i, r := range results {
+		if r.Outcome != OutcomeEnriched {
+			t.Errorf("result[%d] (posting %d): want %q, got %q (reason=%q)",
+				i, r.PostingID, OutcomeEnriched, r.Outcome, r.LastReason)
+		}
+		if r.Attempts != 1 {
+			t.Errorf("result[%d] (posting %d): want Attempts=1, got %d", i, r.PostingID, r.Attempts)
+		}
+	}
+}
+
+// TestRunWave_BatchSizeOne verifies the regression case: with BatchSize==1,
+// a wave of N postings produces N runner calls (one per posting) on the happy
+// path.
+func TestRunWave_BatchSizeOne(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	cfg.BatchSize = 1
+	cfg.WaveSize = 3
+	cfg.MaxParallelAgents = 1
+
+	postings := makeBatchPostings(3)
+
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			for _, p := range postings {
+				marker := "# Posting " + itoa(p.PostingID) + ":"
+				if strings.Contains(userPrompt, marker) {
+					payload := wrapBatched(t, validResponseFor(p.PostingID))
+					return payload, payload, nil
+				}
+			}
+			t.Errorf("prompt did not match any expected posting heading: %s", userPrompt)
+			return "", "", nil
+		},
+	}
+
+	results := RunWave(context.Background(), postings, tax, cfg, runner)
+
+	if got := atomic.LoadInt32(&runner.calls); got != 3 {
+		t.Errorf("expected 3 runner calls (one per posting), got %d", got)
+	}
+	for i, r := range results {
+		if r.Outcome != OutcomeEnriched {
+			t.Errorf("result[%d] (posting %d): want %q, got %q (reason=%q)",
+				i, r.PostingID, OutcomeEnriched, r.Outcome, r.LastReason)
+		}
+		if r.Attempts != 1 {
+			t.Errorf("result[%d] (posting %d): want Attempts=1, got %d", i, r.PostingID, r.Attempts)
+		}
+	}
+}
+
+// itoa is a small int64→string helper used by batch tests to build the
+// "# Posting <id>:" heading marker they grep for in user prompts.
+func itoa(n int64) string {
+	return strconv.FormatInt(n, 10)
+}
+
 func TestRunWave_ValidationFailThenSucceed_Enriched(t *testing.T) {
 	tax := newTestTaxonomy()
 	cfg := dispatchTestConfig()
