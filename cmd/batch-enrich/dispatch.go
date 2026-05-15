@@ -53,6 +53,12 @@ var errAgentFailure = errors.New("agent subprocess reported failure")
 // json.Unmarshal failure.
 const hintReturnJSONOnly = "Previous response could not be parsed as JSON. Return the schema-conformant JSON object only — no prose, no code fences."
 
+// hintMissingWrapper is the retry hint used when a response parsed as JSON
+// but the posting was absent from the `{"results": [...]}` envelope — the
+// typical symptom of the agent emitting a bare single-posting object. Tells
+// the agent exactly what was missing so it can re-emit with the wrapper.
+const hintMissingWrapper = "Your response was not wrapped in {\"results\": [...]}. Every response must use the envelope {\"results\": [{\"posting_id\": N, ...}]} — even for a single posting. Re-emit with the wrapper."
+
 // reasonCancelled is the LastReason value stamped by RunWave on goroutines
 // that exit early due to context cancellation before acquiring a semaphore
 // slot. BuildReport and AppendFailures match this sentinel to suppress
@@ -336,7 +342,7 @@ func classifyBatch(
 					// Missing from response: charge the batched attempt and
 					// queue for single-posting retry with the generic hint.
 					results[idx].LastReason = "missing from batched response"
-					retryQueue = append(retryQueue, retryItem{posting: p, hints: []string{hintReturnJSONOnly}})
+					retryQueue = append(retryQueue, retryItem{posting: p, hints: []string{hintMissingWrapper}})
 					continue
 				}
 
@@ -427,7 +433,7 @@ func classifyBatch(
 			resp, present := parsedMap[item.posting.PostingID]
 			if !present {
 				results[idx].LastReason = "missing from batched response"
-				hints = []string{hintReturnJSONOnly}
+				hints = []string{hintMissingWrapper}
 				// Preserve lastParsed: see runner-error branch above.
 				continue
 			}

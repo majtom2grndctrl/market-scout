@@ -13,11 +13,12 @@ import (
 // table. Since these are compile-time constants, runtime format validation
 // is unnecessary — the literal itself enforces the constraint.
 //
-// batch-enrich-v3 marks the batched contract: the agent returns a
-// {"results": [...]} wrapper carrying one entry per input posting_id.
-// Earlier versions returned a single-posting object per call.
+// batch-enrich-v4 makes the {"results": [...]} envelope unconditional — the
+// agent must wrap every response in it, including single-posting retries.
+// v3 left the envelope conditional on multiple postings, which caused
+// well-formed single-posting retries to be rejected by the parser.
 const (
-	PromptVersion = "batch-enrich-v3"
+	PromptVersion = "batch-enrich-v4"
 	Model         = "claude-haiku-4-5-20251001"
 )
 

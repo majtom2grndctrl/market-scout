@@ -172,7 +172,7 @@ func TestRenderSystemPrompt_ContainsTaxonomyAndContract(t *testing.T) {
 		}
 	}
 
-	// Agent contract block (copied verbatim from SKILL.md §7).
+	// Agent contract block — content comes from the agentContract constant in prompt.go.
 	wantContract := []string{
 		"## Agent contract",
 		"Return JSON only",
@@ -285,6 +285,43 @@ func TestRenderBatchedUserMessage_MultiplePostings(t *testing.T) {
 	}
 	if !(idx1 < idx2 && idx2 < idx3) {
 		t.Errorf("postings out of order: idx1=%d idx2=%d idx3=%d", idx1, idx2, idx3)
+	}
+}
+
+// TestRenderSystemPrompt_ContractRequiresWrapper asserts that the system
+// prompt's agent contract unconditionally requires the {"results": [...]}
+// envelope — even for a single posting — and does not contain any conditional
+// phrasing (e.g. "when multiple postings are provided") that would permit the
+// bare single-posting format.
+func TestRenderSystemPrompt_ContractRequiresWrapper(t *testing.T) {
+	tax := newPromptTaxonomy()
+
+	out := RenderSystemPrompt(tax, "")
+
+	// The contract must require the wrapper unconditionally.
+	mustContain := []string{
+		`{"results":`,
+		"even for a single posting",
+		"The bare single-posting object is not accepted",
+	}
+	for _, s := range mustContain {
+		if !strings.Contains(out, s) {
+			t.Errorf("system prompt missing required wrapper language %q", s)
+		}
+	}
+
+	// The contract must not contain conditional phrasing that would permit the
+	// bare format for single postings.
+	mustNotContain := []string{
+		"when multiple postings are provided",
+		"if multiple postings",
+		"only when multiple",
+		"for multiple postings",
+	}
+	for _, s := range mustNotContain {
+		if strings.Contains(out, s) {
+			t.Errorf("system prompt contains conditional wrapper phrasing %q — wrapper must be unconditional", s)
+		}
 	}
 }
 

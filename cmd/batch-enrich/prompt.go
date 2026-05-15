@@ -271,8 +271,6 @@ const agentContract = "## Agent contract\n" +
 	"\n" +
 	"**Batched output schema:**\n" +
 	"\n" +
-	"When multiple postings are provided, wrap all results in a top-level object:\n" +
-	"\n" +
-	"{\"results\": [<per-posting object>, ...]}\n" +
-	"\n" +
+	"Always wrap results in a top-level `{\"results\": [<per-posting object>, ...]}` envelope, even for a single posting.\n" +
+	"The bare single-posting object is not accepted — every response must use the envelope.\n" +
 	"Each entry in \"results\" matches the single-posting schema above and must carry its own \"posting_id\". Emit exactly one entry per input posting_id — no extras, no omissions. The \"posting_id\" must echo back the value from the input unchanged.\n"
