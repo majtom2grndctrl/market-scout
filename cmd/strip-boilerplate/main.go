@@ -1,8 +1,8 @@
 // Command strip-boilerplate reads a company id and a list of selected posting
 // ids on stdin, fetches the company's full description corpus, runs the
 // boilerplate stripper across it, and writes cleaned text for the selected
-// postings to stdout. Invoked by the batch-enrich skill, one process per
-// company with >=3 selected postings — boilerplate.Strip requires at least
+// postings to stdout. Invoked by cmd/batch-enrich —
+// one process per company with >=3 selected postings — boilerplate.Strip requires at least
 // minSamples inputs to make a prevalence determination.
 // See: agent-context/lib/project.md
 package main

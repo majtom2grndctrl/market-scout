@@ -138,6 +138,44 @@ Integration tests (`//go:build integration`, requires live DB):
 - Selection: `force=false` skips classified postings; `force=true` includes them; focus filter applies; ordering by `first_seen_at` ASC.
 - Writeback: taxonomy upserts, classification insert, all three join inserts, single-open-transaction ordering across postings.
 
+### Integration test implementation guidance
+
+**Pattern:** Match `internal/db/snapshot_integration_test.go`. Read `DATABASE_URL` from the environment; `t.Skip` if absent. Seed via raw SQL in the test body using unique tokens to avoid collision with real data (e.g. `board_token := "be-integ-" + t.Name() + time.Now().UTC().Format("20060102T150405.000000000")`). Clean up with `t.Cleanup` DELETE statements (or wrap the whole test in a transaction and rollback).
+
+**File:** `cmd/batch-enrich/integration_test.go`, `package main`, build tag `//go:build integration`.
+
+**DB connection:** use `OpenDB(ctx)` (from `select.go`) — it reads `.env.local` and `DATABASE_URL`. Pass the returned `*sql.DB` pool to functions under test.
+
+**Seeding schema:** relevant tables are `companies`, `job_postings`, `posting_snapshots`, `classifications`, `canonical_roles`, `specializations`, `skills`, `role_dimensions`, `job_posting_roles`, `job_posting_specializations`, `job_posting_skills`. Read `internal/db/migrations/` for exact column names and constraints before writing seed SQL.
+
+**Selection tests** (`TestSelectPostings_*`):
+
+Seed: one company, three job_postings (each with one posting_snapshot containing non-null `description_text`). Insert one `classifications` row for the second posting only. Set `first_seen_at` at distinct timestamps (t+0, t+1, t+2).
+
+Cases:
+1. `force=false`: `SelectPostings` returns only the two postings without classifications, in `first_seen_at ASC` order.
+2. `force=true`: returns all three postings; `alreadyClassified` contains exactly the ID of the second posting (the one with an existing classification). Verify the `ListClassifiedAmong` sqlc path works at runtime with the live pgx driver.
+3. Focus filter: seed one posting whose title matches "golang" and one that does not. `SelectPostings` with `focus="golang"` returns only the matching one.
+4. Null-description exclusion: seed a posting whose latest snapshot has `description_text = NULL`. Verify it is never returned regardless of `force`.
+
+**Writeback tests** (`TestWriteBack_*`):
+
+Seed: one company, one job_posting, one posting_snapshot with non-null description. Pre-populate `role_dimensions` with at least two dimension slugs (direct INSERT or check if already present via upsert). Build a `ValidatedClassification` directly in Go (no subprocess needed) containing one canonical role referencing those dimension slugs, one specialization, one skill.
+
+Cases:
+1. Happy path: call `WriteBack(ctx, []PostingResult{{Outcome: OutcomeEnriched, Classification: &vc, PostingID: id, ...}}, pool, cfg, taxonomy)`. Assert:
+   - One row in `classifications` with correct `posting_id`, `model`, `prompt_version`, `seniority`.
+   - One row in `job_posting_roles` referencing the classification and the canonical role.
+   - One row in `job_posting_specializations`.
+   - One row in `job_posting_skills`.
+   - One row in `canonical_role_dimensions` for each dimension slug.
+   - The canonical role slug now exists in `canonical_roles`.
+   - Returned `PostingResult.Outcome == OutcomeEnriched`.
+2. Idempotent taxonomy upsert: call `WriteBack` with a second posting that references the same canonical role slug. Assert the `canonical_roles` table still has exactly one row for that slug (ON CONFLICT DO NOTHING); a second `classifications` row is inserted; a second `job_posting_roles` row is inserted.
+3. Failed transaction (simulate by passing a cancelled context): assert the posting is downgraded to `OutcomeDBFailed` and no partial rows were written.
+
+**Non-goal:** `StripBoilerplate` integration test requires `./bin/strip-boilerplate` to be pre-built; skip for now — it is adequately covered by the unit seam (fake runner pattern) and is straightforward end-to-end validation if the binary exists.
+
 ## Sequencing
 
 **Phase 1 (sequential):** Task 1 — SQL queries and sqlc regen block every consumer.
@@ -192,6 +230,34 @@ Subprocess plumbing: `exec.Command` is wrapped behind a small `agentRunner` inte
 | Dimension slugs (per role) | `Dimensions` (in AgentResponse role object) | `"dimensions"` | `role_dimensions.slug` |
 | Attempts (total; for report and failures.jsonl) | `Attempts` (on `PostingResult`); `Attempt` (on `FailureLine`) | `"attempts"` (report), `"attempt"` (failures.jsonl, SKILL.md §8d schema compat) | — |
 | Last raw response | `LastRawResponse` (sourced from runner's `rawStdout` — full subprocess stdout envelope, not parsed `agentText`) | `"last_raw_response"` (failures.jsonl only) | — |
+
+## Follow-on reliability improvements
+
+Identified in post-implementation review. Not blocking the initial working binary; each item is independently shippable.
+
+### Task 11: Subprocess timeouts (~2 hours)
+
+Add `AgentTimeout time.Duration` and `StripTimeout time.Duration` fields to `Config` in `config.go`. Expose as CLI flags `--agent-timeout` and `--strip-timeout` (default 0 = no timeout; accept Go duration strings via `flag.Duration`).
+
+In `claudeRunner.Run` (`dispatch.go`): when `cfg.AgentTimeout > 0`, wrap the incoming `ctx` with `context.WithTimeout` before passing to `exec.CommandContext`. Cancel the derived context after the call completes.
+
+In `runStripBoilerplate` (`boilerplate.go`): same pattern using `cfg.StripTimeout`.
+
+Additional test coverage to add alongside this task:
+
+- `dispatch_test.go`: explicit test for `RunWave` cancellation — cancel the context mid-wave and assert all in-flight goroutines exit and the returned results carry the expected error state. Currently only covered implicitly.
+- `report_test.go`: unit tests for `diffTaxonomy` and `EmitReport` (both untested today).
+
+### Task 12: DB transient error retry (~3 hours)
+
+In `writeOne` (or the equivalent writeback helper in `writeback.go`): wrap the transaction-open-and-commit sequence in a retry loop. Retry up to 3 attempts with short exponential backoff (e.g. 50 ms, 100 ms, 200 ms) on:
+
+- PostgreSQL error codes `40001` (serialization failure) and `40P01` (deadlock detected).
+- Transient network errors (connection reset, EOF before response).
+
+Non-retryable errors (constraint violations, type mismatches, context cancellation) fall through immediately and mark the posting `db_failed` as today. Only attempt-count and final error are surfaced in the run report; per-attempt detail is not logged (consistent with the Task 9 simplification for failures.jsonl).
+
+Add a test for the DB error retry path — either in `writeback_test.go` (preferred, fake the DB at the `db.Querier` interface seam) or in a new `retry_test.go`. The test should verify: (a) a transient error on the first attempt triggers a retry and succeeds on the second; (b) three consecutive transient errors exhaust the budget and return `db_failed`; (c) a non-retryable error does not retry.
 
 ## Settled decisions
 

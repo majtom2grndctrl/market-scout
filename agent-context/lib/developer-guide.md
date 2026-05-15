@@ -132,16 +132,12 @@ The fetcher is intended to run on a cron schedule. For local development, invoke
 
 ### Database Access
 
-```bash
-# Open a psql shell against the dev database
-docker compose exec db psql -U market_scout -d market_scout
+The connection string lives in `.env.local` as `DATABASE_URL`. The fetcher and migration runner load it via `godotenv` at startup; no separate shell session is needed.
 
-# Tail recent snapshots
-docker compose exec db psql -U market_scout -d market_scout \
-  -c "select fetched_at, company, count(*) from posting_snapshots group by 1,2 order by 1 desc limit 20;"
-```
+Primary debugging surfaces:
 
-Direct DB inspection via `psql` is the primary debugging surface — there is no admin UI.
+- **TablePlus** — GUI client. Connect using `DATABASE_URL`. Inspect tables, run ad-hoc queries, browse schema.
+- **Ad-hoc Go scripts** — write a `.go` file to the project root, run with `go run <script>.go`, then delete it. Scripts must live at the project root: Go modules require `go.mod` to resolve imports (`github.com/jackc/pgx/v5/stdlib`, `github.com/joho/godotenv`, etc.). Running from `/tmp` or any directory without `go.mod` fails with "no required module provides package."
 
 ### Schema Migrations
 
@@ -338,7 +334,7 @@ Workflow: change the source → `sqlc generate` → review the diff → commit i
 ### 6.2 Inspecting state
 
 - `go test -v ./...` — verbose test output, the primary first-line debugging tool.
-- `psql` against the dev database — see §2 for connection. Inspect snapshots, vector embeddings, and migration state directly.
+- **TablePlus** or an ad-hoc Go script (see §2 Database Access) — inspect snapshot rows, vector embeddings, and migration state directly.
 - `slog` output goes to stderr by default. Pipe through `jq` if you switch the handler to JSON for richer filtering.
 
 ### 6.3 Where logs come from

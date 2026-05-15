@@ -50,10 +50,6 @@ type GetOrCreateCanonicalRoleParams struct {
 // Only `slug` is SET (a no-op), so `created_at` and `name` on the existing row are preserved.
 // created_at is the emergent-vs-seeded discriminant across canonical_roles, specializations,
 // and skills — do not change this to SET name or created_at.
-//
-// Note: the raw-psql writeback in `.claude/skills/batch-enrich/SKILL.md` uses
-// `ON CONFLICT (slug) DO NOTHING; SELECT id…` instead — no row lock. Transitional
-// divergence; align when a Go caller takes over.
 func (q *Queries) GetOrCreateCanonicalRole(ctx context.Context, arg GetOrCreateCanonicalRoleParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, getOrCreateCanonicalRole, arg.Slug, arg.Name)
 	var id int64
