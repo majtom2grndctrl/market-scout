@@ -126,13 +126,18 @@ func (r *claudeRunner) Run(ctx context.Context, systemPrompt, userPrompt string)
 	return env.Result, raw, nil
 }
 
-// RunWave dispatches a wave of postings concurrently, bounded by
-// cfg.MaxParallelAgents. Each posting gets up to cfg.MaxRetries + 1
-// agent invocations: an initial attempt followed by retry rounds that
-// fold validator hints back into the prompt. Returns one PostingResult
-// per posting in the original wave order. Does not perform writeback.
+// RunWave dispatches a wave of postings as batches of cfg.BatchSize, each
+// batch run as a single agent call. cfg.MaxParallelAgents bounds concurrent
+// batched calls (so effective posting concurrency is MaxParallelAgents ×
+// BatchSize). Per-posting retries are always single-posting (batch size 1)
+// with a budget of cfg.MaxRetries + 1 total calls including the initial
+// batched call. Returns one PostingResult per posting in the original wave
+// order. Does not perform writeback.
 func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg Config, runner agentRunner) []PostingResult {
 	results := make([]PostingResult, len(wave))
+	if len(wave) == 0 {
+		return results
+	}
 
 	slots := cfg.MaxParallelAgents
 	if slots < 1 {
@@ -140,19 +145,41 @@ func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg
 	}
 	sem := make(chan struct{}, slots)
 
+	batchSize := cfg.BatchSize
+	if batchSize < 1 {
+		batchSize = 1
+	}
+
+	// Hoist system prompt: stable across the wave so the prompt cache stays
+	// warm and we don't re-render it per batch or per posting.
+	systemPrompt := RenderSystemPrompt(taxonomy, cfg.Focus)
+
 	var wg sync.WaitGroup
-	for i, posting := range wave {
+	for start := 0; start < len(wave); start += batchSize {
+		end := start + batchSize
+		if end > len(wave) {
+			end = len(wave)
+		}
+		batch := wave[start:end]
+		offset := start
+
 		wg.Add(1)
-		go func(idx int, p SelectedPosting) {
+		go func(offset int, batch []SelectedPosting) {
 			defer wg.Done()
 			defer func() {
 				if r := recover(); r != nil {
-					results[idx] = PostingResult{
-						PostingID:  p.PostingID,
-						CompanyID:  p.CompanyID,
-						Title:      p.Title,
-						Outcome:    OutcomeJSONFailed,
-						LastReason: fmt.Sprintf("panic: %v", r),
+					for i, p := range batch {
+						// Only stamp slots that weren't already populated by
+						// classifyBatch before the panic.
+						if results[offset+i].PostingID == 0 {
+							results[offset+i] = PostingResult{
+								PostingID:  p.PostingID,
+								CompanyID:  p.CompanyID,
+								Title:      p.Title,
+								Outcome:    OutcomeJSONFailed,
+								LastReason: fmt.Sprintf("panic: %v", r),
+							}
+						}
 					}
 				}
 			}()
@@ -166,20 +193,24 @@ func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg
 				// OutcomeCancelled exists). Cancelled goroutines never reached the agent,
 				// so their LastReason is set to reasonCancelled — AppendFailures and
 				// BuildReport filter on that sentinel to exclude them from counts and
-				// the failures log. Adding an OutcomeCancelled variant would require
-				// updating those filters; the sentinel approach avoids the new outcome type.
-				results[idx] = PostingResult{
-					PostingID:  p.PostingID,
-					CompanyID:  p.CompanyID,
-					Title:      p.Title,
-					Outcome:    OutcomeJSONFailed,
-					LastReason: reasonCancelled,
+				// the failures log.
+				for i, p := range batch {
+					results[offset+i] = PostingResult{
+						PostingID:  p.PostingID,
+						CompanyID:  p.CompanyID,
+						Title:      p.Title,
+						Outcome:    OutcomeJSONFailed,
+						LastReason: reasonCancelled,
+					}
 				}
 				return
 			}
 
-			results[idx] = classifyOne(ctx, p, taxonomy, cfg, runner)
-		}(i, posting)
+			batchResults := classifyBatch(ctx, batch, taxonomy, cfg, runner, systemPrompt, nil)
+			for i, r := range batchResults {
+				results[offset+i] = r
+			}
+		}(offset, batch)
 	}
 	wg.Wait()
 	return results
@@ -203,98 +234,252 @@ func stripCodeFence(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// classifyOne runs the parse → validate → retry cycle for a single posting.
-// The retry loop budget is cfg.MaxRetries additional attempts after the
-// initial call, capped at cfg.MaxRetries + 1 total. The function returns
-// as soon as validation succeeds or the budget is exhausted.
-func classifyOne(ctx context.Context, posting SelectedPosting, taxonomy Taxonomy, cfg Config, runner agentRunner) PostingResult {
-	result := PostingResult{
-		PostingID: posting.PostingID,
-		CompanyID: posting.CompanyID,
-		Title:     posting.Title,
+// classifyBatch runs one batched agent call across the supplied postings, then
+// drops to single-posting retries for any posting that failed validation, came
+// back missing from the response, or was lost to a runner/parse failure.
+//
+// The returned slice is ordered to match the input postings slice.
+//
+// seedHints, keyed by PostingID, are folded into the first retry for that
+// posting (e.g. when the caller already knows hints from a prior pass). A nil
+// or empty map means no seeded hints. In normal operation seedHints is nil;
+// it's plumbed through so recursive callers can preserve hints across the
+// batched → single-posting transition without re-running validation.
+//
+// Attempts accounting: a single completed runner.Run increments Attempts by 1
+// for every posting it addressed. Retries each charge 1 to the single posting
+// they target. Cancellation never charges an attempt.
+func classifyBatch(
+	ctx context.Context,
+	postings []SelectedPosting,
+	taxonomy Taxonomy,
+	cfg Config,
+	runner agentRunner,
+	systemPrompt string,
+	seedHints map[int64][]string,
+) []PostingResult {
+	results := make([]PostingResult, len(postings))
+	for i, p := range postings {
+		results[i] = PostingResult{
+			PostingID: p.PostingID,
+			CompanyID: p.CompanyID,
+			Title:     p.Title,
+		}
 	}
 
-	// systemPrompt is built once per posting and reused unchanged across
-	// retries so the Claude CLI keeps a warm prompt cache. The userPrompt
-	// starts as the bare posting message and gets retry guidance appended
-	// each time the agent fails validation or returns unparseable output.
-	systemPrompt := RenderSystemPrompt(taxonomy, cfg.Focus)
-	originalUserMessage := RenderUserMessage(posting)
-	userPrompt := originalUserMessage
+	// idxOf maps PostingID → index in results so retry bookkeeping can find
+	// the slot regardless of input order.
+	idxOf := make(map[int64]int, len(postings))
+	expectedIDs := make([]int64, len(postings))
+	for i, p := range postings {
+		idxOf[p.PostingID] = i
+		expectedIDs[i] = p.PostingID
+	}
 
-	totalAttempts := cfg.MaxRetries + 1
-	var lastParsed *AgentResponse
+	// retryQueue tracks postings that need single-posting follow-up after the
+	// batched call. Hints carry forward the most recent validator guidance (or
+	// hintReturnJSONOnly for parse/runner failures).
+	type retryItem struct {
+		posting SelectedPosting
+		hints   []string
+	}
+	var retryQueue []retryItem
 
-	for attempt := 0; attempt < totalAttempts; attempt++ {
-		if err := ctx.Err(); err != nil {
-			result.Outcome = OutcomeJSONFailed
-			result.LastReason = reasonCancelled
-			return result
+	// Bail out cleanly if cancellation beat us to the batched call. Every
+	// posting in this batch reports reasonCancelled with zero attempts.
+	if err := ctx.Err(); err != nil {
+		for i := range results {
+			results[i].Outcome = OutcomeJSONFailed
+			results[i].LastReason = reasonCancelled
+		}
+		return results
+	}
+
+	userMessage := RenderBatchedUserMessage(postings)
+	agentText, rawStdout, runErr := runner.Run(ctx, systemPrompt, userMessage)
+
+	switch {
+	case runErr != nil && (ctx.Err() != nil || errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded)):
+		// Cancellation during the batched call: never reached a usable result.
+		// Don't increment Attempts; stamp cancelled and stop.
+		for i := range results {
+			results[i].Outcome = OutcomeJSONFailed
+			results[i].LastReason = reasonCancelled
+		}
+		return results
+
+	case runErr != nil:
+		// Non-cancellation runner failure: charge 1 attempt to each posting in
+		// the batch and queue every posting for single-posting retry with the
+		// generic "return JSON only" hint.
+		for i, p := range postings {
+			results[i].Attempts++
+			results[i].LastRawResponse = rawStdout
+			results[i].LastReason = runErr.Error()
+			retryQueue = append(retryQueue, retryItem{posting: p, hints: []string{hintReturnJSONOnly}})
 		}
 
-		agentText, rawStdout, runErr := runner.Run(ctx, systemPrompt, userPrompt)
-
-		if runErr != nil {
-			// Subprocess interruption via ctx cancellation: don't count the
-			// aborted attempt or capture its partial stdout. Exit immediately
-			// so the result reflects the cancellation cleanly.
-			if ctx.Err() != nil || errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) {
-				result.Outcome = OutcomeJSONFailed
-				result.LastReason = reasonCancelled
-				return result
+	default:
+		// Runner succeeded. Parse the batched envelope.
+		parsed, _, parseErr := ParseBatchedResponse(stripCodeFence(agentText), expectedIDs)
+		if parseErr != nil {
+			// JSON parse failure on the batched envelope: same treatment as
+			// runner failure — charge 1 to each posting, retry each as single.
+			for i, p := range postings {
+				results[i].Attempts++
+				results[i].LastRawResponse = rawStdout
+				results[i].LastReason = fmt.Sprintf("json parse: %v", parseErr)
+				retryQueue = append(retryQueue, retryItem{posting: p, hints: []string{hintReturnJSONOnly}})
 			}
-			result.Attempts++
-			result.LastRawResponse = rawStdout
-			result.LastReason = runErr.Error()
-			userPrompt = RenderRetryPrompt(originalUserMessage, []string{hintReturnJSONOnly})
-			lastParsed = nil
-			continue
+		} else {
+			// Per-posting routing from the parsed batch response.
+			for _, p := range postings {
+				idx := idxOf[p.PostingID]
+				results[idx].LastRawResponse = rawStdout
+				results[idx].Attempts++
+
+				resp, present := parsed[p.PostingID]
+				if !present {
+					// Missing from response: charge the batched attempt and
+					// queue for single-posting retry with the generic hint.
+					results[idx].LastReason = "missing from batched response"
+					retryQueue = append(retryQueue, retryItem{posting: p, hints: []string{hintReturnJSONOnly}})
+					continue
+				}
+
+				validated, vErr := Validate(resp, taxonomy)
+				if vErr == nil {
+					results[idx].Outcome = OutcomeEnriched
+					results[idx].Summary = resp.Summary
+					results[idx].LastReason = ""
+					results[idx].Classification = &validated
+					continue
+				}
+
+				var vf ValidationFailure
+				if errors.As(vErr, &vf) {
+					results[idx].LastReason = vf.Error()
+					results[idx].Summary = resp.Summary
+					retryQueue = append(retryQueue, retryItem{posting: p, hints: vf.Hints})
+					continue
+				}
+
+				// Contract regression: Validate returned a non-ValidationFailure
+				// error. Treat as parse miss and retry with the generic hint —
+				// never forward a raw Go error string to the agent.
+				results[idx].LastReason = vErr.Error()
+				retryQueue = append(retryQueue, retryItem{posting: p, hints: []string{hintReturnJSONOnly}})
+			}
 		}
-
-		result.Attempts++
-		result.LastRawResponse = rawStdout
-
-		var parsed AgentResponse
-		if err := json.Unmarshal([]byte(stripCodeFence(agentText)), &parsed); err != nil {
-			result.LastReason = fmt.Sprintf("json parse: %v", err)
-			userPrompt = RenderRetryPrompt(originalUserMessage, []string{hintReturnJSONOnly})
-			lastParsed = nil
-			continue
-		}
-		lastParsed = &parsed
-
-		validated, err := Validate(parsed, taxonomy)
-		if err == nil {
-			result.Outcome = OutcomeEnriched
-			result.Summary = parsed.Summary
-			result.LastReason = ""
-			result.Classification = &validated
-			return result
-		}
-
-		var vf ValidationFailure
-		if errors.As(err, &vf) {
-			result.LastReason = vf.Error()
-			userPrompt = RenderRetryPrompt(originalUserMessage, vf.Hints)
-			continue
-		}
-
-		// Validate only returns ValidationFailure or nil; reaching here means
-		// a contract regression. Treat it as a parse miss and retry with the
-		// generic "return JSON only" hint — never forward a raw Go error
-		// string to the agent.
-		result.LastReason = err.Error()
-		userPrompt = RenderRetryPrompt(originalUserMessage, []string{hintReturnJSONOnly})
 	}
 
-	// Budget exhausted. Distinguish a parse miss (never got a valid
-	// AgentResponse) from a validation miss (parsed but never passed rules).
-	if lastParsed == nil {
-		result.Outcome = OutcomeJSONFailed
-	} else {
-		result.Outcome = OutcomeValidationFailed
-		result.Summary = lastParsed.Summary
+	// Fold any caller-supplied seed hints into the queued retries. Seed hints
+	// override the hints chosen above only when the seed has entries.
+	if len(seedHints) > 0 {
+		for i, item := range retryQueue {
+			if h, ok := seedHints[item.posting.PostingID]; ok && len(h) > 0 {
+				retryQueue[i].hints = h
+			}
+		}
 	}
-	return result
+
+	// Single-posting retry loop. Budget per posting is cfg.MaxRetries + 1
+	// total calls including the initial batched call (already charged above).
+	totalBudget := cfg.MaxRetries + 1
+	for _, item := range retryQueue {
+		idx := idxOf[item.posting.PostingID]
+		hints := item.hints
+		// lastParsed tracks whether we've ever seen a parseable response for
+		// this posting during the retry loop, so terminal classification can
+		// distinguish OutcomeJSONFailed (never parsed) from
+		// OutcomeValidationFailed (parsed but never validated).
+		var lastParsed *AgentResponse
+
+		baseUserMessage := RenderBatchedUserMessage([]SelectedPosting{item.posting})
+
+		for results[idx].Attempts < totalBudget {
+			if err := ctx.Err(); err != nil {
+				// Cancellation between retry calls: preserve whatever state
+				// the last completed call left behind, but stamp cancelled.
+				results[idx].LastReason = reasonCancelled
+				break
+			}
+
+			retryUserMessage := RenderRetryPrompt(baseUserMessage, hints)
+			retryText, retryRaw, retryErr := runner.Run(ctx, systemPrompt, retryUserMessage)
+
+			if retryErr != nil {
+				if ctx.Err() != nil || errors.Is(retryErr, context.Canceled) || errors.Is(retryErr, context.DeadlineExceeded) {
+					// Cancellation aborted this call: don't charge it.
+					results[idx].LastReason = reasonCancelled
+					break
+				}
+				results[idx].Attempts++
+				results[idx].LastRawResponse = retryRaw
+				results[idx].LastReason = retryErr.Error()
+				hints = []string{hintReturnJSONOnly}
+				lastParsed = nil
+				continue
+			}
+
+			results[idx].Attempts++
+			results[idx].LastRawResponse = retryRaw
+
+			parsedMap, _, parseErr := ParseBatchedResponse(stripCodeFence(retryText), []int64{item.posting.PostingID})
+			if parseErr != nil {
+				results[idx].LastReason = fmt.Sprintf("json parse: %v", parseErr)
+				hints = []string{hintReturnJSONOnly}
+				lastParsed = nil
+				continue
+			}
+			resp, present := parsedMap[item.posting.PostingID]
+			if !present {
+				results[idx].LastReason = "missing from batched response"
+				hints = []string{hintReturnJSONOnly}
+				lastParsed = nil
+				continue
+			}
+			lastParsed = &resp
+
+			validated, vErr := Validate(resp, taxonomy)
+			if vErr == nil {
+				results[idx].Outcome = OutcomeEnriched
+				results[idx].Summary = resp.Summary
+				results[idx].LastReason = ""
+				results[idx].Classification = &validated
+				break
+			}
+
+			var vf ValidationFailure
+			if errors.As(vErr, &vf) {
+				results[idx].LastReason = vf.Error()
+				results[idx].Summary = resp.Summary
+				hints = vf.Hints
+				continue
+			}
+
+			// Contract regression — fall back to the generic hint.
+			results[idx].LastReason = vErr.Error()
+			hints = []string{hintReturnJSONOnly}
+		}
+
+		// Terminal classification for this posting. Skip if we already landed
+		// on OutcomeEnriched or stamped reasonCancelled mid-loop.
+		if results[idx].Outcome == OutcomeEnriched {
+			continue
+		}
+		if results[idx].LastReason == reasonCancelled {
+			results[idx].Outcome = OutcomeJSONFailed
+			continue
+		}
+		if lastParsed == nil {
+			results[idx].Outcome = OutcomeJSONFailed
+		} else {
+			results[idx].Outcome = OutcomeValidationFailed
+			results[idx].Summary = lastParsed.Summary
+		}
+	}
+
+	return results
 }
 

@@ -23,14 +23,23 @@ func (f *fakeRunner) Run(_ context.Context, systemPrompt, userPrompt string) (st
 	return f.responder(int(n), systemPrompt, userPrompt)
 }
 
-// validResponseJSON marshals validResponse (from validate_test.go) so the
-// dispatch tests can hand a real, schema-conformant payload back to the
-// orchestrator.
+// validResponseJSON marshals validResponse (from validate_test.go) wrapped in
+// the batched {"results":[...]} envelope so the dispatch tests can hand a
+// real, schema-conformant payload back to the orchestrator.
 func validResponseJSON(t *testing.T) string {
 	t.Helper()
-	raw, err := json.Marshal(validResponse())
+	return wrapBatched(t, validResponse())
+}
+
+// wrapBatched wraps one or more AgentResponse values in the batched
+// {"results":[...]} envelope. Dispatch parses batched responses via
+// ParseBatchedResponse, so test payloads must use this shape even for
+// single-posting waves.
+func wrapBatched(t *testing.T, responses ...AgentResponse) string {
+	t.Helper()
+	raw, err := json.Marshal(BatchedAgentResponse{Results: responses})
 	if err != nil {
-		t.Fatalf("marshal valid response: %v", err)
+		t.Fatalf("marshal batched response: %v", err)
 	}
 	return string(raw)
 }
@@ -51,6 +60,7 @@ func dispatchTestConfig() Config {
 		PromptVersion:     PromptVersion,
 		Model:             Model,
 		WaveSize:          1,
+		BatchSize:         1,
 		MaxRetries:        2, // 3 total attempts
 		MaxParallelAgents: 1,
 		ReportFormat:      "json",
@@ -184,11 +194,7 @@ func TestRunWave_ValidationFailure_ValidationFailed(t *testing.T) {
 	// land on OutcomeValidationFailed (parsed but never validated).
 	resp := validResponse()
 	resp.CanonicalRoles[0].Slug = "Bad_Slug"
-	raw, err := json.Marshal(resp)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	rawStr := string(raw)
+	rawStr := wrapBatched(t, resp)
 
 	runner := &fakeRunner{
 		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
@@ -296,10 +302,7 @@ func TestRunWave_ValidationFailThenSucceed_Enriched(t *testing.T) {
 	// slugPattern, so Validate rejects it with a FailInvalidSlug hint.
 	bad := validResponse()
 	bad.CanonicalRoles[0].Slug = "bad slug!"
-	badJSON, err := json.Marshal(bad)
-	if err != nil {
-		t.Fatalf("marshal bad response: %v", err)
-	}
+	badJSON := wrapBatched(t, bad)
 
 	good := validResponseJSON(t)
 
@@ -307,7 +310,7 @@ func TestRunWave_ValidationFailThenSucceed_Enriched(t *testing.T) {
 	runner := &fakeRunner{
 		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
 			if attempt == 1 {
-				return string(badJSON), string(badJSON), nil
+				return badJSON, badJSON, nil
 			}
 			secondPrompt = userPrompt
 			return good, good, nil
