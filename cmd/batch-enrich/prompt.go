@@ -22,12 +22,12 @@ import (
 type ValidationFailureKind string
 
 const (
-	FailInvalidSlug         ValidationFailureKind = "invalid_slug"
-	FailNullByte            ValidationFailureKind = "null_byte"
-	FailSeniorityInvalid    ValidationFailureKind = "seniority_invalid"
-	FailSeniorityMissing    ValidationFailureKind = "seniority_missing"
-	FailEmptyDimensions     ValidationFailureKind = "empty_dimensions"
-	FailUnknownDimension    ValidationFailureKind = "unknown_dimension"
+	FailInvalidSlug              ValidationFailureKind = "invalid_slug"
+	FailNullByte                 ValidationFailureKind = "null_byte"
+	FailSeniorityInvalid         ValidationFailureKind = "seniority_invalid"
+	FailSeniorityMissing         ValidationFailureKind = "seniority_missing"
+	FailEmptyDimensions          ValidationFailureKind = "empty_dimensions"
+	FailUnknownDimension         ValidationFailureKind = "unknown_dimension"
 	FailCrossTableCollision      ValidationFailureKind = "cross_table_collision"
 	FailWithinResponseCrossTable ValidationFailureKind = "within_response_cross_table"
 	FailNotesTooLong             ValidationFailureKind = "notes_too_long"

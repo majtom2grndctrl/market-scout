@@ -354,8 +354,8 @@ func TestDiffTaxonomy_CapturesNewSlugs(t *testing.T) {
 	}
 	after := Taxonomy{
 		CanonicalRoles: map[string]TaxonomyEntry{
-			"software-engineer":  {ID: 1, Name: "Software Engineer"}, // pre-existing
-			"design-engineer":    {ID: 2, Name: "Design Engineer"},   // new
+			"software-engineer": {ID: 1, Name: "Software Engineer"}, // pre-existing
+			"design-engineer":   {ID: 2, Name: "Design Engineer"},   // new
 		},
 		Specializations: map[string]TaxonomyEntry{},
 		Skills: map[string]TaxonomyEntry{
