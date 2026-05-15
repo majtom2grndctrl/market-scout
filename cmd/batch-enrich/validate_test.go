@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -339,6 +340,116 @@ func TestValidate_WithinResponseCrossTable_RoleAndSkill(t *testing.T) {
 		!hintsContain(vf.Hints, "canonical_roles") ||
 		!hintsContain(vf.Hints, "skills") {
 		t.Fatalf("expected FailWithinResponseCrossTable hint for distributed-training, got %v", vf.Hints)
+	}
+}
+
+// batchedJSON marshals resps into the wire shape ParseBatchedResponse expects:
+// {"results": [...]}. Keeps the round-trip tests honest — if the wrapper key
+// drifts the marshal/unmarshal pair stops agreeing.
+func batchedJSON(t *testing.T, resps ...AgentResponse) string {
+	t.Helper()
+	b, err := json.Marshal(BatchedAgentResponse{Results: resps})
+	if err != nil {
+		t.Fatalf("marshaling batched response: %v", err)
+	}
+	return string(b)
+}
+
+func TestParseBatchedResponse_RoundTrip_AllPresent(t *testing.T) {
+	r1 := validResponse()
+	r1.PostingID = 1
+	r2 := validResponse()
+	r2.PostingID = 2
+	agentText := batchedJSON(t, r1, r2)
+
+	results, missing, err := ParseBatchedResponse(agentText, []int64{1, 2})
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("expected no missing IDs, got %v", missing)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if got, ok := results[1]; !ok || got.PostingID != 1 {
+		t.Fatalf("expected result for posting_id 1, got %+v (ok=%v)", got, ok)
+	}
+	if got, ok := results[2]; !ok || got.PostingID != 2 {
+		t.Fatalf("expected result for posting_id 2, got %+v (ok=%v)", got, ok)
+	}
+}
+
+func TestParseBatchedResponse_MissingPostingID(t *testing.T) {
+	r1 := validResponse()
+	r1.PostingID = 1
+	r3 := validResponse()
+	r3.PostingID = 3
+	// Expect 1, 2, 3 — agent only returned 1 and 3.
+	agentText := batchedJSON(t, r1, r3)
+
+	results, missing, err := ParseBatchedResponse(agentText, []int64{1, 2, 3})
+	if err != nil {
+		t.Fatalf("expected nil error on partial parse, got: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(results))
+	}
+	if len(missing) != 1 || missing[0] != 2 {
+		t.Fatalf("expected missing=[2], got %v", missing)
+	}
+}
+
+func TestParseBatchedResponse_MissingSorted(t *testing.T) {
+	// No results at all — every expected ID is missing. Verify ascending order.
+	agentText := batchedJSON(t)
+	_, missing, err := ParseBatchedResponse(agentText, []int64{30, 10, 20})
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	want := []int64{10, 20, 30}
+	if len(missing) != len(want) {
+		t.Fatalf("expected missing=%v, got %v", want, missing)
+	}
+	for i, v := range want {
+		if missing[i] != v {
+			t.Fatalf("expected missing[%d]=%d, got %d (full: %v)", i, v, missing[i], missing)
+		}
+	}
+}
+
+func TestParseBatchedResponse_UnexpectedPostingID_Dropped(t *testing.T) {
+	r1 := validResponse()
+	r1.PostingID = 1
+	rGhost := validResponse()
+	rGhost.PostingID = 999 // not in expected
+	agentText := batchedJSON(t, r1, rGhost)
+
+	results, missing, err := ParseBatchedResponse(agentText, []int64{1})
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("expected no missing IDs, got %v", missing)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (ghost dropped), got %d: %+v", len(results), results)
+	}
+	if _, ok := results[999]; ok {
+		t.Fatalf("expected ghost posting_id 999 to be dropped")
+	}
+}
+
+func TestParseBatchedResponse_JSONParseFailure(t *testing.T) {
+	results, missing, err := ParseBatchedResponse("not-json", []int64{1, 2})
+	if err == nil {
+		t.Fatalf("expected non-nil error on JSON parse failure")
+	}
+	if results != nil {
+		t.Fatalf("expected nil results on parse failure, got %v", results)
+	}
+	if missing != nil {
+		t.Fatalf("expected nil missing on parse failure, got %v", missing)
 	}
 }
 

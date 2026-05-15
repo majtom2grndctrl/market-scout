@@ -1,15 +1,19 @@
 ---
 name: batch-enrich
 description: >
-  Classifies unenriched job postings via parallel Haiku subagents. Each subagent
-  reads one description and emits canonical roles (with role dimension mappings),
-  specializations, skills, and a summary. Orchestrator dispatches in waves of 10,
-  writes a classifications row per posting plus join rows keyed to that classification
-  (provenance preserved across re-runs). Use to enrich job postings in bulk during
-  active data collection.
+  DEPRECATED — the active implementation is the Go binary at cmd/batch-enrich.
+  This skill is retained for reference only. Classifies unenriched job postings
+  via parallel Haiku subagents. Each subagent reads one description and emits
+  canonical roles (with role dimension mappings), specializations, skills, and
+  a summary. Orchestrator dispatches in waves of 10, writes a classifications
+  row per posting plus join rows keyed to that classification (provenance
+  preserved across re-runs). Use to enrich job postings in bulk during active
+  data collection.
 allowed-tools: Read, Bash, Agent, Write, SendMessage
 argument-hint: "<count> [focus description] [--force]"
 ---
+
+> **Deprecated:** the active implementation is the Go binary at `cmd/batch-enrich`. This skill is retained for reference only.
 
 ```classification-pins
 PROMPT_VERSION=batch-enrich-v2

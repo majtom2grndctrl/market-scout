@@ -267,3 +267,88 @@ func TestRenderUserMessage_ContainsPostingHeaderAndDescription(t *testing.T) {
 		}
 	}
 }
+
+// TestRenderBatchedUserMessage_SinglePosting verifies the batched renderer
+// produces the same per-posting block shape as the legacy single renderer
+// when given exactly one posting.
+func TestRenderBatchedUserMessage_SinglePosting(t *testing.T) {
+	postings := []SelectedPosting{
+		{PostingID: 42, Title: "Software Engineer", DescriptionText: "We are looking for an experienced engineer."},
+	}
+
+	out := RenderBatchedUserMessage(postings)
+
+	if !strings.Contains(out, "# Posting 42: Software Engineer") {
+		t.Errorf("expected posting heading in batched user message, got %q", out)
+	}
+	if !strings.Contains(out, "## Description") {
+		t.Errorf("expected description heading in batched user message")
+	}
+	if !strings.Contains(out, postings[0].DescriptionText) {
+		t.Errorf("expected description body in batched user message")
+	}
+}
+
+// TestRenderBatchedUserMessage_MultiplePostings verifies each posting's
+// heading and description appear, and that input order is preserved.
+func TestRenderBatchedUserMessage_MultiplePostings(t *testing.T) {
+	postings := []SelectedPosting{
+		{PostingID: 1, Title: "Frontend Engineer", DescriptionText: "FRONTEND_BODY"},
+		{PostingID: 2, Title: "Backend Engineer", DescriptionText: "BACKEND_BODY"},
+		{PostingID: 3, Title: "Product Designer", DescriptionText: "DESIGN_BODY"},
+	}
+
+	out := RenderBatchedUserMessage(postings)
+
+	// Every heading and description must appear.
+	wantSubstrings := []string{
+		"# Posting 1: Frontend Engineer", "FRONTEND_BODY",
+		"# Posting 2: Backend Engineer", "BACKEND_BODY",
+		"# Posting 3: Product Designer", "DESIGN_BODY",
+	}
+	for _, s := range wantSubstrings {
+		if !strings.Contains(out, s) {
+			t.Errorf("expected %q in batched user message", s)
+		}
+	}
+
+	// Input order is preserved.
+	idx1 := strings.Index(out, "# Posting 1:")
+	idx2 := strings.Index(out, "# Posting 2:")
+	idx3 := strings.Index(out, "# Posting 3:")
+	if idx1 < 0 || idx2 < 0 || idx3 < 0 {
+		t.Fatalf("missing posting heading: idx1=%d idx2=%d idx3=%d", idx1, idx2, idx3)
+	}
+	if !(idx1 < idx2 && idx2 < idx3) {
+		t.Errorf("postings out of order: idx1=%d idx2=%d idx3=%d", idx1, idx2, idx3)
+	}
+}
+
+// TestRenderBatchedUserMessage_NoTaxonomyOrContract pins that taxonomy and
+// contract content does not leak into the batched user message — that would
+// defeat prompt caching.
+func TestRenderBatchedUserMessage_NoTaxonomyOrContract(t *testing.T) {
+	postings := []SelectedPosting{
+		{PostingID: 1, Title: "Frontend Engineer", DescriptionText: "body one"},
+		{PostingID: 2, Title: "Backend Engineer", DescriptionText: "body two"},
+	}
+
+	out := RenderBatchedUserMessage(postings)
+
+	mustNotContain := []string{
+		"## Canonical roles (existing)",
+		"## Role dimensions (closed set)",
+		"## Specializations (existing)",
+		"## Skills (existing)",
+		"## Agent contract",
+		"Classification discipline:",
+		"Slug discipline:",
+		"Summary contract:",
+		"Batched output schema:",
+	}
+	for _, s := range mustNotContain {
+		if strings.Contains(out, s) {
+			t.Errorf("batched user message should not contain %q (belongs in system prompt)", s)
+		}
+	}
+}

@@ -13,11 +13,11 @@ import (
 // table. Since these are compile-time constants, runtime format validation
 // is unnecessary — the literal itself enforces the constraint.
 //
-// batch-enrich-v2 is intentionally reused from the Claude skill — the binary
-// is a direct port, not a new prompt version. Keeping the same label avoids
-// a spurious partition boundary in the classifications table.
+// batch-enrich-v3 marks the batched contract: the agent returns a
+// {"results": [...]} wrapper carrying one entry per input posting_id.
+// Earlier versions returned a single-posting object per call.
 const (
-	PromptVersion = "batch-enrich-v2"
+	PromptVersion = "batch-enrich-v3"
 	Model         = "claude-haiku-4-5-20251001"
 )
 

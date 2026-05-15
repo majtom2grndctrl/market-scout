@@ -5,10 +5,63 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
 )
+
+// BatchedAgentResponse is the top-level wrapper the Haiku agent emits when
+// processing multiple postings in a single call.
+type BatchedAgentResponse struct {
+	Results []AgentResponse `json:"results"`
+}
+
+// ParseBatchedResponse unmarshals a batched agent response and routes each
+// per-posting result by posting_id. agentText must already be stripped of any
+// fenced-code markers — callers in dispatch.go handle that step.
+//
+// On JSON parse failure the function returns a wrapped error and no partial
+// results; this is the signal callers use to retry the whole batch in
+// single-posting mode.
+//
+// On parse success, the function returns the slice of per-posting results
+// keyed by posting_id alongside the subset of expected IDs that were absent
+// from the response. Missing IDs are not an error: a partial batch is a
+// success for the IDs that landed, and the caller routes missing IDs to
+// single-posting retry. Unexpected IDs in the response are silently dropped
+// (debug-logged) so a hallucinated posting_id can't poison the batch.
+func ParseBatchedResponse(agentText string, expected []int64) (results map[int64]AgentResponse, missing []int64, err error) {
+	var wrapper BatchedAgentResponse
+	if err := json.Unmarshal([]byte(agentText), &wrapper); err != nil {
+		return nil, nil, fmt.Errorf("parsing batched agent response: %w", err)
+	}
+
+	expectedSet := make(map[int64]struct{}, len(expected))
+	for _, id := range expected {
+		expectedSet[id] = struct{}{}
+	}
+
+	results = make(map[int64]AgentResponse, len(wrapper.Results))
+	for _, r := range wrapper.Results {
+		if _, ok := expectedSet[r.PostingID]; !ok {
+			slog.Debug("[batch-enrich] dropping unexpected posting_id in batched response", "posting_id", r.PostingID)
+			continue
+		}
+		results[r.PostingID] = r
+	}
+
+	for _, id := range expected {
+		if _, ok := results[id]; !ok {
+			missing = append(missing, id)
+		}
+	}
+	sort.Slice(missing, func(i, j int) bool { return missing[i] < missing[j] })
+
+	return results, missing, nil
+}
 
 // AgentResponse mirrors the JSON schema the Haiku classifier emits per
 // posting. The skills[].requirement field is parsed but not persisted — no

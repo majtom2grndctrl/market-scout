@@ -1,12 +1,12 @@
 // Prompt rendering for the Haiku classifier agent. RenderSystemPrompt builds
 // the cache-friendly system prompt (taxonomy + agent contract) shared across
-// every posting in a wave; RenderUserMessage builds the per-posting user
-// message; RenderRetryPrompt appends targeted hints when Phase A validation
-// rejects a parsed response. The agent contract block below is reproduced
-// from .claude/skills/batch-enrich/SKILL.md, §7 Agent contract — keep them in
-// sync while the skill is active. When the skill is retired, this file
-// becomes the sole source of truth for the agent contract; update
-// agentContract directly and bump PromptVersion.
+// every posting in a wave; RenderBatchedUserMessage builds the user message
+// for a batch of postings; RenderRetryPrompt appends targeted hints when
+// Phase A validation rejects a parsed response. The skill at
+// .claude/skills/batch-enrich/SKILL.md is deprecated for batched runs — this
+// file is now the source of truth for the agent contract. Update
+// agentContract directly here and bump PromptVersion when the contract
+// changes.
 package main
 
 import (
@@ -38,9 +38,9 @@ const (
 // holds the focus guidance, taxonomy sections, and the agent contract — all
 // content that is stable across every posting in the wave, so the Claude CLI
 // can reuse the prompt cache between calls. If focus is empty, the focus
-// guidance block is omitted. The closing block is the agent contract
-// reproduced from SKILL.md, §7 Agent contract — keep in sync with the skill
-// while it is active.
+// guidance block is omitted. The closing block is the agent contract; the
+// SKILL.md file is deprecated for batched runs and this file is the source
+// of truth.
 func RenderSystemPrompt(taxonomy Taxonomy, focus string) string {
 	var b strings.Builder
 
@@ -71,9 +71,31 @@ func RenderSystemPrompt(taxonomy Taxonomy, focus string) string {
 	return b.String()
 }
 
+// RenderBatchedUserMessage builds the user message for a batch of postings.
+// Each posting is rendered as a posting heading followed by its description
+// body, in input order, with a blank line between postings. Everything else
+// (taxonomy, contract, focus) lives in the system prompt so the cache stays
+// warm between calls.
+func RenderBatchedUserMessage(postings []SelectedPosting) string {
+	var b strings.Builder
+	for i, p := range postings {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		fmt.Fprintf(&b, "# Posting %d: %s\n\n", p.PostingID, p.Title)
+		b.WriteString("## Description\n\n")
+		b.WriteString(p.DescriptionText)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // RenderUserMessage builds the per-posting user message: a posting heading
 // followed by the description body. Everything else (taxonomy, contract,
 // focus) lives in the system prompt so the cache stays warm between calls.
+//
+// Deprecated: use RenderBatchedUserMessage. This function will be deleted in
+// the dispatch refactor (Task 5).
 func RenderUserMessage(posting SelectedPosting) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Posting %d: %s\n\n", posting.PostingID, posting.Title)
@@ -207,8 +229,9 @@ func writeTaxonomyList(b *strings.Builder, entries map[string]TaxonomyEntry) {
 }
 
 // agentContract contains the Output schema, Classification discipline, Slug
-// discipline, and Summary contract sections reproduced from the agent contract
-// in SKILL.md, §7 Agent contract. See file header for sync policy.
+// discipline, Summary contract, and Batched output schema sections. The
+// SKILL.md file is deprecated for batched runs — this constant is the source
+// of truth. Bump PromptVersion when the contract changes.
 const agentContract = "## Agent contract\n" +
 	"\n" +
 	"Return JSON only. No prose. No code fences.\n" +
@@ -262,4 +285,12 @@ const agentContract = "## Agent contract\n" +
 	"- 100–200 tokens.\n" +
 	"- Cover: role, seniority, required skills, preferred skills, domain, role type (IC vs lead, full-time vs contract).\n" +
 	"- No marketing fluff. No company-specific framing.\n" +
-	"- This text gets embedded. Write for semantic similarity, not human reading.\n"
+	"- This text gets embedded. Write for semantic similarity, not human reading.\n" +
+	"\n" +
+	"**Batched output schema:**\n" +
+	"\n" +
+	"When multiple postings are provided, wrap all results in a top-level object:\n" +
+	"\n" +
+	"{\"results\": [<per-posting object>, ...]}\n" +
+	"\n" +
+	"Each entry in \"results\" matches the single-posting schema above and must carry its own \"posting_id\". Emit exactly one entry per input posting_id — no extras, no omissions. The \"posting_id\" must echo back the value from the input unchanged.\n"
