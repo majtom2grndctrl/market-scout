@@ -15,12 +15,12 @@ import (
 // succeeds" sequences without coordinating shared state across goroutines.
 type fakeRunner struct {
 	calls     int32
-	responder func(attempt int, prompt string) (agentText string, rawStdout string, err error)
+	responder func(attempt int, systemPrompt, userPrompt string) (agentText string, rawStdout string, err error)
 }
 
-func (f *fakeRunner) Run(_ context.Context, prompt string) (string, string, error) {
+func (f *fakeRunner) Run(_ context.Context, systemPrompt, userPrompt string) (string, string, error) {
 	n := atomic.AddInt32(&f.calls, 1)
-	return f.responder(int(n), prompt)
+	return f.responder(int(n), systemPrompt, userPrompt)
 }
 
 // validResponseJSON marshals validResponse (from validate_test.go) so the
@@ -106,7 +106,7 @@ func TestRunWave_FirstAttemptSuccess_Enriched(t *testing.T) {
 	resp := validResponseJSON(t)
 
 	runner := &fakeRunner{
-		responder: func(attempt int, prompt string) (string, string, error) {
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
 			return resp, resp, nil
 		},
 	}
@@ -133,7 +133,7 @@ func TestRunWave_AlwaysError_JSONFailed(t *testing.T) {
 	cfg := dispatchTestConfig()
 
 	runner := &fakeRunner{
-		responder: func(attempt int, prompt string) (string, string, error) {
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
 			return "", "raw subprocess output", errors.New("subprocess exploded")
 		},
 	}
@@ -158,7 +158,7 @@ func TestRunWave_InvalidJSON_JSONFailed(t *testing.T) {
 	cfg := dispatchTestConfig()
 
 	runner := &fakeRunner{
-		responder: func(attempt int, prompt string) (string, string, error) {
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
 			// Non-JSON text — parse will fail every attempt.
 			return "not json at all", "envelope raw", nil
 		},
@@ -191,7 +191,7 @@ func TestRunWave_ValidationFailure_ValidationFailed(t *testing.T) {
 	rawStr := string(raw)
 
 	runner := &fakeRunner{
-		responder: func(attempt int, prompt string) (string, string, error) {
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
 			return rawStr, rawStr, nil
 		},
 	}
@@ -223,7 +223,7 @@ func TestRunWave_ContextCancellation(t *testing.T) {
 	cfg.MaxParallelAgents = 1
 
 	runner := &fakeRunner{
-		responder: func(attempt int, prompt string) (string, string, error) {
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
 			t.Errorf("runner should not be invoked after context cancellation")
 			return "", "", nil
 		},
@@ -261,7 +261,7 @@ func TestRunWave_RetryThenSucceed_Enriched(t *testing.T) {
 	good := validResponseJSON(t)
 
 	runner := &fakeRunner{
-		responder: func(attempt int, prompt string) (string, string, error) {
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
 			if attempt == 1 {
 				return "garbage", "garbage", nil
 			}
@@ -305,11 +305,11 @@ func TestRunWave_ValidationFailThenSucceed_Enriched(t *testing.T) {
 
 	var secondPrompt string
 	runner := &fakeRunner{
-		responder: func(attempt int, prompt string) (string, string, error) {
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
 			if attempt == 1 {
 				return string(badJSON), string(badJSON), nil
 			}
-			secondPrompt = prompt
+			secondPrompt = userPrompt
 			return good, good, nil
 		},
 	}

@@ -35,8 +35,11 @@ type PostingResult struct {
 }
 
 // agentRunner abstracts subprocess invocation so tests can substitute a fake.
+// systemPrompt carries the cache-friendly taxonomy + contract block (stable
+// across a wave); userPrompt carries the per-posting message plus any retry
+// guidance appended on the current attempt.
 type agentRunner interface {
-	Run(ctx context.Context, prompt string) (agentText string, rawStdout string, err error)
+	Run(ctx context.Context, systemPrompt, userPrompt string) (agentText string, rawStdout string, err error)
 }
 
 // errAgentFailure is the sentinel returned by a runner when the subprocess
@@ -76,13 +79,17 @@ func newClaudeRunner(model string, timeout time.Duration) agentRunner {
 	return &claudeRunner{model: model, timeout: timeout}
 }
 
-// Run invokes `claude -p --output-format json --model <model>`, captures
-// stdout, and unwraps the envelope. On non-zero exit or is_error=true the
-// raw stdout is returned alongside errAgentFailure so callers can log it.
+// Run invokes `claude -p --output-format json --model <model> --system-prompt
+// <systemPrompt>`, pipes the user prompt over stdin, captures stdout, and
+// unwraps the envelope. The split keeps taxonomy + contract in --system-prompt
+// (cache-friendly across a wave) and the per-posting body on stdin.
+//
+// On non-zero exit or is_error=true the raw stdout is returned alongside
+// errAgentFailure so callers can log it.
 //
 // errors.Is(err, context.Canceled) remains true through this wrap chain —
 // classifyOne relies on it to detect cancellation without re-executing.
-func (r *claudeRunner) Run(ctx context.Context, prompt string) (string, string, error) {
+func (r *claudeRunner) Run(ctx context.Context, systemPrompt, userPrompt string) (string, string, error) {
 	// Per-call timeout when configured; otherwise the caller's ctx flows through
 	// unwrapped so we don't allocate a derived context per invocation.
 	if r.timeout > 0 {
@@ -90,8 +97,8 @@ func (r *claudeRunner) Run(ctx context.Context, prompt string) (string, string, 
 		ctx, cancel = context.WithTimeout(ctx, r.timeout)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "json", "--model", r.model)
-	cmd.Stdin = bytes.NewReader([]byte(prompt))
+	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "json", "--model", r.model, "--system-prompt", systemPrompt)
+	cmd.Stdin = bytes.NewReader([]byte(userPrompt))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -207,8 +214,13 @@ func classifyOne(ctx context.Context, posting SelectedPosting, taxonomy Taxonomy
 		Title:     posting.Title,
 	}
 
-	originalPrompt := RenderPrompt(posting, taxonomy, cfg.Focus)
-	prompt := originalPrompt
+	// systemPrompt is built once per posting and reused unchanged across
+	// retries so the Claude CLI keeps a warm prompt cache. The userPrompt
+	// starts as the bare posting message and gets retry guidance appended
+	// each time the agent fails validation or returns unparseable output.
+	systemPrompt := RenderSystemPrompt(taxonomy, cfg.Focus)
+	originalUserMessage := RenderUserMessage(posting)
+	userPrompt := originalUserMessage
 
 	totalAttempts := cfg.MaxRetries + 1
 	var lastParsed *AgentResponse
@@ -220,7 +232,7 @@ func classifyOne(ctx context.Context, posting SelectedPosting, taxonomy Taxonomy
 			return result
 		}
 
-		agentText, rawStdout, runErr := runner.Run(ctx, prompt)
+		agentText, rawStdout, runErr := runner.Run(ctx, systemPrompt, userPrompt)
 
 		if runErr != nil {
 			// Subprocess interruption via ctx cancellation: don't count the
@@ -234,7 +246,7 @@ func classifyOne(ctx context.Context, posting SelectedPosting, taxonomy Taxonomy
 			result.Attempts++
 			result.LastRawResponse = rawStdout
 			result.LastReason = runErr.Error()
-			prompt = RenderRetryPrompt(originalPrompt, []string{hintReturnJSONOnly})
+			userPrompt = RenderRetryPrompt(originalUserMessage, []string{hintReturnJSONOnly})
 			lastParsed = nil
 			continue
 		}
@@ -245,7 +257,7 @@ func classifyOne(ctx context.Context, posting SelectedPosting, taxonomy Taxonomy
 		var parsed AgentResponse
 		if err := json.Unmarshal([]byte(stripCodeFence(agentText)), &parsed); err != nil {
 			result.LastReason = fmt.Sprintf("json parse: %v", err)
-			prompt = RenderRetryPrompt(originalPrompt, []string{hintReturnJSONOnly})
+			userPrompt = RenderRetryPrompt(originalUserMessage, []string{hintReturnJSONOnly})
 			lastParsed = nil
 			continue
 		}
@@ -263,7 +275,7 @@ func classifyOne(ctx context.Context, posting SelectedPosting, taxonomy Taxonomy
 		var vf ValidationFailure
 		if errors.As(err, &vf) {
 			result.LastReason = vf.Error()
-			prompt = RenderRetryPrompt(originalPrompt, vf.Hints)
+			userPrompt = RenderRetryPrompt(originalUserMessage, vf.Hints)
 			continue
 		}
 
@@ -272,7 +284,7 @@ func classifyOne(ctx context.Context, posting SelectedPosting, taxonomy Taxonomy
 		// generic "return JSON only" hint — never forward a raw Go error
 		// string to the agent.
 		result.LastReason = err.Error()
-		prompt = RenderRetryPrompt(originalPrompt, []string{hintReturnJSONOnly})
+		userPrompt = RenderRetryPrompt(originalUserMessage, []string{hintReturnJSONOnly})
 	}
 
 	// Budget exhausted. Distinguish a parse miss (never got a valid

@@ -141,26 +141,10 @@ func newPromptTaxonomy() Taxonomy {
 	return t
 }
 
-func TestRenderPrompt_ContainsPostingTaxonomyAndContract(t *testing.T) {
-	posting := SelectedPosting{
-		PostingID:       42,
-		Title:           "Software Engineer",
-		DescriptionText: "We are looking for an experienced engineer.",
-	}
+func TestRenderSystemPrompt_ContainsTaxonomyAndContract(t *testing.T) {
 	tax := newPromptTaxonomy()
 
-	out := RenderPrompt(posting, tax, "")
-
-	// Posting ID and title appear in the heading.
-	if !strings.Contains(out, "42") {
-		t.Errorf("expected posting ID 42 in prompt, got %q", out)
-	}
-	if !strings.Contains(out, "Software Engineer") {
-		t.Errorf("expected posting title in prompt")
-	}
-	if !strings.Contains(out, posting.DescriptionText) {
-		t.Errorf("expected description body in prompt")
-	}
+	out := RenderSystemPrompt(tax, "")
 
 	// Role dimensions heading and each section heading.
 	wantHeadings := []string{
@@ -171,7 +155,7 @@ func TestRenderPrompt_ContainsPostingTaxonomyAndContract(t *testing.T) {
 	}
 	for _, h := range wantHeadings {
 		if !strings.Contains(out, h) {
-			t.Errorf("expected heading %q in prompt", h)
+			t.Errorf("expected heading %q in system prompt", h)
 		}
 	}
 
@@ -184,7 +168,7 @@ func TestRenderPrompt_ContainsPostingTaxonomyAndContract(t *testing.T) {
 	}
 	for _, slug := range allSlugs {
 		if !strings.Contains(out, slug) {
-			t.Errorf("expected slug %q in prompt", slug)
+			t.Errorf("expected slug %q in system prompt", slug)
 		}
 	}
 
@@ -198,51 +182,41 @@ func TestRenderPrompt_ContainsPostingTaxonomyAndContract(t *testing.T) {
 	}
 	for _, c := range wantContract {
 		if !strings.Contains(out, c) {
-			t.Errorf("expected contract marker %q in prompt", c)
+			t.Errorf("expected contract marker %q in system prompt", c)
 		}
 	}
 }
 
-func TestRenderPrompt_FocusBlockPresenceTracksFocus(t *testing.T) {
-	posting := SelectedPosting{
-		PostingID:       1,
-		Title:           "Engineer",
-		DescriptionText: "body",
-	}
+func TestRenderSystemPrompt_FocusBlockPresenceTracksFocus(t *testing.T) {
 	tax := newPromptTaxonomy()
 
-	withFocus := RenderPrompt(posting, tax, "golang")
+	withFocus := RenderSystemPrompt(tax, "golang")
 	if !strings.Contains(withFocus, "## Focus guidance") {
 		t.Errorf("expected focus guidance heading when focus is set")
 	}
 	if !strings.Contains(withFocus, "golang") {
-		t.Errorf("expected focus token 'golang' in prompt")
+		t.Errorf("expected focus token 'golang' in system prompt")
 	}
 
-	withoutFocus := RenderPrompt(posting, tax, "")
+	withoutFocus := RenderSystemPrompt(tax, "")
 	if strings.Contains(withoutFocus, "## Focus guidance") {
 		t.Errorf("expected focus block to be absent when focus is empty")
 	}
 
-	// Whitespace-only focus also suppresses the block (per RenderPrompt impl).
-	withWhitespace := RenderPrompt(posting, tax, "   ")
+	// Whitespace-only focus also suppresses the block (per RenderSystemPrompt impl).
+	withWhitespace := RenderSystemPrompt(tax, "   ")
 	if strings.Contains(withWhitespace, "## Focus guidance") {
 		t.Errorf("expected focus block to be absent for whitespace-only focus")
 	}
 }
 
-// TestRenderPrompt_TaxonomySectionOrder verifies that taxonomy sections appear
-// in the canonical layout agents are tuned to. Reordering sections would break
-// agents without failing any content-presence test.
-func TestRenderPrompt_TaxonomySectionOrder(t *testing.T) {
-	posting := SelectedPosting{
-		PostingID:       1,
-		Title:           "Engineer",
-		DescriptionText: "body",
-	}
+// TestRenderSystemPrompt_TaxonomySectionOrder verifies that taxonomy sections
+// appear in the canonical layout agents are tuned to. Reordering sections
+// would break agents without failing any content-presence test.
+func TestRenderSystemPrompt_TaxonomySectionOrder(t *testing.T) {
 	tax := newPromptTaxonomy()
 
-	rendered := RenderPrompt(posting, tax, "")
+	rendered := RenderSystemPrompt(tax, "")
 
 	rolesIdx := strings.Index(rendered, "## Canonical roles (existing)")
 	dimsIdx := strings.Index(rendered, "## Role dimensions (closed set)")
@@ -255,5 +229,41 @@ func TestRenderPrompt_TaxonomySectionOrder(t *testing.T) {
 	if !(rolesIdx < dimsIdx && dimsIdx < specsIdx && specsIdx < skillsIdx) {
 		t.Errorf("taxonomy sections out of order: roles=%d dims=%d specs=%d skills=%d",
 			rolesIdx, dimsIdx, specsIdx, skillsIdx)
+	}
+}
+
+// TestRenderUserMessage_ContainsPostingHeaderAndDescription pins the user
+// message shape: a "# Posting <id>: <title>" heading and the description
+// body. Taxonomy and contract live in the system prompt and must not leak
+// into the user message — that would defeat prompt caching.
+func TestRenderUserMessage_ContainsPostingHeaderAndDescription(t *testing.T) {
+	posting := SelectedPosting{
+		PostingID:       42,
+		Title:           "Software Engineer",
+		DescriptionText: "We are looking for an experienced engineer.",
+	}
+
+	out := RenderUserMessage(posting)
+
+	if !strings.Contains(out, "# Posting 42: Software Engineer") {
+		t.Errorf("expected posting heading in user message, got %q", out)
+	}
+	if !strings.Contains(out, "## Description") {
+		t.Errorf("expected description heading in user message")
+	}
+	if !strings.Contains(out, posting.DescriptionText) {
+		t.Errorf("expected description body in user message")
+	}
+
+	// Taxonomy/contract content must not appear here.
+	mustNotContain := []string{
+		"## Canonical roles (existing)",
+		"## Role dimensions (closed set)",
+		"## Agent contract",
+	}
+	for _, s := range mustNotContain {
+		if strings.Contains(out, s) {
+			t.Errorf("user message should not contain %q (belongs in system prompt)", s)
+		}
 	}
 }

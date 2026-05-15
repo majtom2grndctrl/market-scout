@@ -1,8 +1,10 @@
-// Prompt rendering for the Haiku classifier agent. RenderPrompt builds the
-// per-posting prompt; RenderRetryPrompt appends targeted hints when Phase A
-// validation rejects a parsed response. The agent contract block below is
-// reproduced from .claude/skills/batch-enrich/SKILL.md, §7 Agent contract — keep them
-// in sync while the skill is active. When the skill is retired, this file
+// Prompt rendering for the Haiku classifier agent. RenderSystemPrompt builds
+// the cache-friendly system prompt (taxonomy + agent contract) shared across
+// every posting in a wave; RenderUserMessage builds the per-posting user
+// message; RenderRetryPrompt appends targeted hints when Phase A validation
+// rejects a parsed response. The agent contract block below is reproduced
+// from .claude/skills/batch-enrich/SKILL.md, §7 Agent contract — keep them in
+// sync while the skill is active. When the skill is retired, this file
 // becomes the sole source of truth for the agent contract; update
 // agentContract directly and bump PromptVersion.
 package main
@@ -32,17 +34,15 @@ const (
 	FailDuplicateSlug            ValidationFailureKind = "duplicate_slug"
 )
 
-// RenderPrompt builds the classification prompt for a single posting. If
-// focus is empty, the focus guidance block is omitted. The closing block
-// is the agent contract reproduced from SKILL.md, §7 Agent contract — keep in sync with
-// the skill while it is active.
-func RenderPrompt(posting SelectedPosting, taxonomy Taxonomy, focus string) string {
+// RenderSystemPrompt builds the cache-friendly system prompt for a wave. It
+// holds the focus guidance, taxonomy sections, and the agent contract — all
+// content that is stable across every posting in the wave, so the Claude CLI
+// can reuse the prompt cache between calls. If focus is empty, the focus
+// guidance block is omitted. The closing block is the agent contract
+// reproduced from SKILL.md, §7 Agent contract — keep in sync with the skill
+// while it is active.
+func RenderSystemPrompt(taxonomy Taxonomy, focus string) string {
 	var b strings.Builder
-
-	fmt.Fprintf(&b, "# Posting %d: %s\n\n", posting.PostingID, posting.Title)
-	b.WriteString("## Description\n\n")
-	b.WriteString(posting.DescriptionText)
-	b.WriteString("\n\n")
 
 	if strings.TrimSpace(focus) != "" {
 		b.WriteString("## Focus guidance\n\n")
@@ -71,13 +71,27 @@ func RenderPrompt(posting SelectedPosting, taxonomy Taxonomy, focus string) stri
 	return b.String()
 }
 
-// RenderRetryPrompt appends a retry-guidance block listing every hint to
-// the original prompt. The agent sees the full original prompt plus the
-// new block so it can correct its previous output without losing context.
-func RenderRetryPrompt(originalPrompt string, hints []string) string {
+// RenderUserMessage builds the per-posting user message: a posting heading
+// followed by the description body. Everything else (taxonomy, contract,
+// focus) lives in the system prompt so the cache stays warm between calls.
+func RenderUserMessage(posting SelectedPosting) string {
 	var b strings.Builder
-	b.WriteString(originalPrompt)
-	if !strings.HasSuffix(originalPrompt, "\n") {
+	fmt.Fprintf(&b, "# Posting %d: %s\n\n", posting.PostingID, posting.Title)
+	b.WriteString("## Description\n\n")
+	b.WriteString(posting.DescriptionText)
+	b.WriteString("\n")
+	return b.String()
+}
+
+// RenderRetryPrompt appends a retry-guidance block listing every hint to the
+// original user message. The agent sees the full original user message plus
+// the new block so it can correct its previous output without losing context.
+// The system prompt (taxonomy + contract) is unchanged across retries so the
+// prompt cache stays warm.
+func RenderRetryPrompt(originalUserMessage string, hints []string) string {
+	var b strings.Builder
+	b.WriteString(originalUserMessage)
+	if !strings.HasSuffix(originalUserMessage, "\n") {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n## Retry guidance\n\n")
