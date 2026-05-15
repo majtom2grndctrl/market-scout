@@ -50,8 +50,10 @@ func run() int {
 		"force", cfg.Force,
 		"report_format", cfg.ReportFormat,
 		"wave_size", cfg.WaveSize,
+		"batch_size", cfg.BatchSize,
 		"max_retries", cfg.MaxRetries,
 		"max_parallel", cfg.MaxParallelAgents,
+		"effective_concurrency", cfg.MaxParallelAgents*cfg.BatchSize,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

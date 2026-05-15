@@ -30,6 +30,7 @@ type Config struct {
 
 	// Flag-derived knobs.
 	WaveSize          int
+	BatchSize         int
 	MaxRetries        int
 	MaxParallelAgents int
 	ReportFormat      string
@@ -66,6 +67,7 @@ func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 	fs.StringVar(&cfg.ReportFormat, "report-format", "json",
 		"Report output format: json|markdown.")
 	fs.IntVar(&cfg.WaveSize, "wave-size", 10, "Number of postings dispatched per wave.")
+	fs.IntVar(&cfg.BatchSize, "batch-size", 5, "Number of postings classified per agent invocation.")
 	fs.IntVar(&cfg.MaxRetries, "max-retries", 3, "Retry cap per posting.")
 	fs.IntVar(&cfg.MaxParallelAgents, "max-parallel", 10, "Max parallel classification agents in flight.")
 	fs.DurationVar(&cfg.AgentTimeout, "agent-timeout", 0,
@@ -94,6 +96,9 @@ func (c Config) Validate() error {
 	}
 	if c.WaveSize < 1 {
 		return fmt.Errorf("invalid --wave-size %d: must be >= 1", c.WaveSize)
+	}
+	if c.BatchSize < 1 {
+		return fmt.Errorf("invalid --batch-size %d: must be >= 1", c.BatchSize)
 	}
 	if c.MaxRetries < 0 {
 		return fmt.Errorf("invalid --max-retries %d: must be >= 0", c.MaxRetries)

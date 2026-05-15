@@ -37,6 +37,7 @@ func validConfig() Config {
 		Model:             Model,
 		Count:             10,
 		WaveSize:          10,
+		BatchSize:         5,
 		MaxRetries:        3,
 		MaxParallelAgents: 10,
 		ReportFormat:      "json",
@@ -82,6 +83,32 @@ func TestConfig_Validate_WaveSizeZero(t *testing.T) {
 	err := cfg.Validate()
 	if err == nil || !strings.Contains(err.Error(), "--wave-size") {
 		t.Fatalf("expected --wave-size error, got: %v", err)
+	}
+}
+
+func TestConfig_Validate_BatchSizeZero(t *testing.T) {
+	cfg := validConfig()
+	cfg.BatchSize = 0
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "--batch-size") {
+		t.Fatalf("expected --batch-size error, got: %v", err)
+	}
+}
+
+func TestConfig_Validate_BatchSizeNegative(t *testing.T) {
+	cfg := validConfig()
+	cfg.BatchSize = -1
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "--batch-size") {
+		t.Fatalf("expected --batch-size error, got: %v", err)
+	}
+}
+
+func TestConfig_Validate_BatchSizeOne_Valid(t *testing.T) {
+	cfg := validConfig()
+	cfg.BatchSize = 1
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected no error for BatchSize=1, got: %v", err)
 	}
 }
 
