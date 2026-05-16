@@ -23,6 +23,7 @@ coverage.html
 /cmd/fetcher/fetcher
 /fetcher
 /strip-boilerplate
+/batch-enrich
 
 # --- Go module / tooling caches ---
 # vendor/ is intentionally NOT ignored — uncomment if you adopt vendoring later.
