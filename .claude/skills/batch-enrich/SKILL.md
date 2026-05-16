@@ -16,7 +16,7 @@ argument-hint: "<count> [focus description] [--force]"
 > **Deprecated:** the active implementation is the Go binary at `cmd/batch-enrich`. This skill is retained for reference only.
 
 ```classification-pins
-PROMPT_VERSION=batch-enrich-v2
+PROMPT_VERSION=batch-enrich-v4
 MODEL=claude-haiku-4-5-20251001
 ```
 
