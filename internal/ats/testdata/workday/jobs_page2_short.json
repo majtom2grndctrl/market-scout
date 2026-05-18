@@ -1,0 +1,55 @@
+{
+  "total": 25,
+  "jobPostings": [
+    {
+      "title": "Engineer 21",
+      "externalPath": "/job/loc/req-21",
+      "locationsText": "Santa Clara, CA",
+      "postedOn": "2024-04-25",
+      "externalUrl": "https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/loc/req-21",
+      "bulletFields": [
+        "JR21"
+      ]
+    },
+    {
+      "title": "Engineer 22",
+      "externalPath": "/job/loc/req-22",
+      "locationsText": "Santa Clara, CA",
+      "postedOn": "2024-04-25",
+      "externalUrl": "https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/loc/req-22",
+      "bulletFields": [
+        "JR22"
+      ]
+    },
+    {
+      "title": "Engineer 23",
+      "externalPath": "/job/loc/req-23",
+      "locationsText": "Santa Clara, CA",
+      "postedOn": "2024-04-25",
+      "externalUrl": "https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/loc/req-23",
+      "bulletFields": [
+        "JR23"
+      ]
+    },
+    {
+      "title": "Engineer 24",
+      "externalPath": "/job/loc/req-24",
+      "locationsText": "Santa Clara, CA",
+      "postedOn": "2024-04-25",
+      "externalUrl": "https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/loc/req-24",
+      "bulletFields": [
+        "JR24"
+      ]
+    },
+    {
+      "title": "Engineer 25",
+      "externalPath": "/job/loc/req-25",
+      "locationsText": "Santa Clara, CA",
+      "postedOn": "2024-04-25",
+      "externalUrl": "https://nvidia.wd5.myworkdayjobs.com/en-US/NVIDIAExternalCareerSite/job/loc/req-25",
+      "bulletFields": [
+        "JR25"
+      ]
+    }
+  ]
+}

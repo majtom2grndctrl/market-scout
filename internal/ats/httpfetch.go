@@ -57,3 +57,46 @@ func httpFetch(ctx context.Context, client *http.Client, url string) ([]byte, er
 
 	return body, nil
 }
+
+// httpPost issues a POST against url with the given JSON body, validates the
+// response status, and returns the response body up to maxResponseBytes.
+// Errors are wrapped with a "httppost: ..." prefix and include the URL but no
+// caller-domain context; callers re-wrap with their own subsystem prefix.
+func httpPost(ctx context.Context, client *http.Client, url string, body []byte) ([]byte, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("httppost: building request for %s: %w", url, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	// Some job-board CDNs (Cloudflare) reset connections from Go's default UA.
+	req.Header.Set("User-Agent", "market-scout/0.1 (job board fetcher; +https://github.com/majtom2grndctrl/market-scout)")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("httppost: requesting %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBodyBytes)) // body read error is non-actionable; status code is the signal
+		return nil, fmt.Errorf("httppost: unexpected status %d for %s: %s", resp.StatusCode, url, strconv.Quote(string(bytes.TrimSpace(snippet))))
+	}
+
+	// Read up to maxResponseBytes+1 so we can detect truncation by overflow:
+	// reading exactly maxResponseBytes back is a legitimate response at the cap,
+	// but maxResponseBytes+1 means the upstream had more to send.
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("httppost: reading response body for %s: %w", url, err)
+	}
+	if len(respBody) > maxResponseBytes {
+		return nil, fmt.Errorf("httppost: response body for %s exceeded %d bytes (got %d)", url, maxResponseBytes, len(respBody))
+	}
+
+	return respBody, nil
+}

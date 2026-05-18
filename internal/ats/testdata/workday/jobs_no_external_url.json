@@ -1,0 +1,13 @@
+{
+  "total": 1,
+  "jobPostings": [
+    {
+      "title": "Backend Engineer",
+      "externalPath": "/req/12345/some-job",
+      "locationsText": "Remote",
+      "postedOn": "2024-04-25",
+      "externalUrl": "",
+      "bulletFields": []
+    }
+  ]
+}

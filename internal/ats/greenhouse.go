@@ -1,4 +1,4 @@
-// Package ats hosts ATS adapter implementations: Greenhouse, Lever, and Ashby.
+// Package ats hosts ATS adapter implementations: Greenhouse, Lever, Ashby, and Workday.
 // Adapters return domain.Posting from internal/domain.
 // The consumer-side interface (atsAdapter) lives in cmd/fetcher — concrete
 // adapters satisfy it implicitly via Go structural typing.

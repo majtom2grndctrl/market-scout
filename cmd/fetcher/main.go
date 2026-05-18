@@ -91,11 +91,12 @@ func run() error {
 		"greenhouse": ats.NewGreenhouse(httpClient),
 		"lever":      ats.NewLever(httpClient),
 		"ashby":      ats.NewAshby(httpClient),
+		"workday":    ats.NewWorkday(httpClient),
 	}
 
 	// Partition companies up front so unknown ATS values are reported once
 	// per distinct value rather than once per company. Unsupported companies
-	// are expected gaps (e.g. ats='lever' before a Lever adapter ships), not
+	// are expected gaps (e.g. ats='rippling' before a Rippling adapter ships), not
 	// failures, so they don't enter the success/failure tally.
 	var supported []db.Company
 	unsupportedByATS := make(map[string]int)

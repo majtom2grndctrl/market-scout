@@ -191,7 +191,9 @@ market-scout/
 │   ├── ats/                 # ATS adapter implementations (interface lives in cmd/fetcher per §5.3)
 │   │   ├── greenhouse.go    # Greenhouse implementation
 │   │   ├── lever.go         # Lever implementation
-│   │   └── ashby.go         # Ashby implementation
+│   │   ├── ashby.go         # Ashby implementation
+│   │   ├── workday.go       # Workday implementation
+│   │   └── httpfetch.go     # Shared HTTP helpers (GET and POST)
 │   └── db/
 │       ├── migrations/      # Numbered migration files (source of truth for schema)
 │       ├── queries/         # Hand-written SQL for sqlc
@@ -267,7 +269,7 @@ In Go, prefer **multiple files in the same package** over new packages. New pack
 
 ### 5.3 Interfaces at boundaries
 
-- Define interfaces in the package that **consumes** them, not the package that implements them. Idiomatic Go: `cmd/fetcher` declares what it needs from an ATS adapter; `internal/ats/greenhouse.go` implements it.
+- Define interfaces in the package that **consumes** them, not the package that implements them. Idiomatic Go: `cmd/fetcher` declares what it needs from an ATS adapter; implementations in `internal/ats/` satisfy it implicitly.
 - Keep interfaces small. The ATS adapter interface should be the minimum the fetcher needs to call (e.g. `FetchPostings(ctx, company) ([]domain.Posting, error)`, where `domain.Posting` lives in `internal/domain` so producers and consumers share it without depending on each other).
 - Validate external responses at the adapter boundary. Decode JSON into typed structs; reject malformed payloads with a wrapped error rather than passing `map[string]any` upward.
 

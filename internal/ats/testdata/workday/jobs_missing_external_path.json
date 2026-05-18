@@ -1,0 +1,13 @@
+{
+  "total": 1,
+  "jobPostings": [
+    {
+      "title": "Broken Job",
+      "externalPath": "",
+      "locationsText": "Remote",
+      "postedOn": "2024-04-25",
+      "externalUrl": "https://example.com/x",
+      "bulletFields": []
+    }
+  ]
+}

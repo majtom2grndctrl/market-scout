@@ -44,9 +44,18 @@ Classification runs on its own cadence. The classifier selects unclassified post
 
 ## ATS targets
 
-Three adapters are live: Greenhouse, Lever, and Ashby. Each ATS is a separate file in `internal/ats`; all adapters return `domain.Posting` from `internal/domain`.
+Four adapters are live: Greenhouse, Lever, Ashby, and Workday. Each ATS is a separate file in `internal/ats`; all adapters return `domain.Posting` from `internal/domain`.
+
+| Platform | `board_token` format | API type |
+|---|---|---|
+| Greenhouse | `<slug>` | GET (Job Board API) |
+| Lever | `<slug>` | GET (public postings JSON) |
+| Ashby | `<slug>` | GET (public board) |
+| Workday | `{host}/{site}` (e.g. `nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite`) | POST (Workday CXS public `/jobs` endpoint) |
 
 Greenhouse does not expose structured pay data on the public Job Board API for any board in the current watchlist; compensation appears only in description HTML. Lever is the structured compensation source.
+
+Workday adapter v1 returns the listing-level fields only; per-posting description fetch (the CXS `/job/{id}` endpoint) is deferred to a v1 follow-up. Workday tenants gated behind `wday_vps_cookie` session cookies are unsupported in v1 and surface as fetch errors.
 
 ## The database as AI agent knowledge store
 
