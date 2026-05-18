@@ -122,7 +122,7 @@ func TestRunWave_FirstAttemptSuccess_Enriched(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner)
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
 
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
@@ -149,7 +149,7 @@ func TestRunWave_AlwaysError_JSONFailed(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner)
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
 	r := results[0]
 
 	if r.Outcome != OutcomeJSONFailed {
@@ -175,7 +175,7 @@ func TestRunWave_InvalidJSON_JSONFailed(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner)
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
 	r := results[0]
 
 	if r.Outcome != OutcomeJSONFailed {
@@ -203,7 +203,7 @@ func TestRunWave_ValidationFailure_ValidationFailed(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner)
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
 	r := results[0]
 
 	if r.Outcome != OutcomeValidationFailed {
@@ -238,7 +238,7 @@ func TestRunWave_BatchValidationFailed_MaxRetriesZero(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner)
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
 	r := results[0]
 
 	if r.Outcome != OutcomeValidationFailed {
@@ -278,7 +278,7 @@ func TestRunWave_ContextCancellation(t *testing.T) {
 		{PostingID: 4, CompanyID: 100, Title: "D", DescriptionText: "x"},
 	}
 
-	results := RunWave(ctx, wave, tax, cfg, runner)
+	results := RunWave(ctx, wave, tax, cfg, runner, nil)
 
 	if len(results) != len(wave) {
 		t.Fatalf("want %d results, got %d", len(wave), len(results))
@@ -309,7 +309,7 @@ func TestRunWave_RetryThenSucceed_Enriched(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner)
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
 	r := results[0]
 
 	if r.Outcome != OutcomeEnriched {
@@ -369,7 +369,7 @@ func TestRunWave_BatchAllSucceed(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), postings, tax, cfg, runner)
+	results := RunWave(context.Background(), postings, tax, cfg, runner, nil)
 
 	if got := atomic.LoadInt32(&runner.calls); got != 1 {
 		t.Errorf("expected 1 runner call, got %d", got)
@@ -421,7 +421,7 @@ func TestRunWave_BatchOneFailsValidation(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), postings, tax, cfg, runner)
+	results := RunWave(context.Background(), postings, tax, cfg, runner, nil)
 
 	if got := atomic.LoadInt32(&runner.calls); got != 2 {
 		t.Errorf("expected 2 runner calls (1 batched + 1 retry), got %d", got)
@@ -470,7 +470,7 @@ func TestRunWave_BatchMissingPostingID(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), postings, tax, cfg, runner)
+	results := RunWave(context.Background(), postings, tax, cfg, runner, nil)
 
 	if got := atomic.LoadInt32(&runner.calls); got != 2 {
 		t.Errorf("expected 2 runner calls (1 batched + 1 retry for missing posting), got %d", got)
@@ -536,7 +536,7 @@ func TestRunWave_BatchJSONParseFailureFansOutToSingleRetries(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), postings, tax, cfg, runner)
+	results := RunWave(context.Background(), postings, tax, cfg, runner, nil)
 
 	// 1 batched call + 3 single-posting retries.
 	if got := atomic.LoadInt32(&runner.calls); got != 4 {
@@ -581,7 +581,7 @@ func TestRunWave_TwoBatchesHappyPath(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), postings, tax, cfg, runner)
+	results := RunWave(context.Background(), postings, tax, cfg, runner, nil)
 
 	if got := atomic.LoadInt32(&runner.calls); got != 2 {
 		t.Errorf("expected 2 batched runner calls, got %d", got)
@@ -626,7 +626,7 @@ func TestRunWave_BatchSizeOne(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), postings, tax, cfg, runner)
+	results := RunWave(context.Background(), postings, tax, cfg, runner, nil)
 
 	if got := atomic.LoadInt32(&runner.calls); got != 3 {
 		t.Errorf("expected 3 runner calls (one per posting), got %d", got)
@@ -672,7 +672,7 @@ func TestRunWave_ValidationFailThenSucceed_Enriched(t *testing.T) {
 		},
 	}
 
-	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner)
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
 	r := results[0]
 
 	if r.Outcome != OutcomeEnriched {

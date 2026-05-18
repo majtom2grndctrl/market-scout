@@ -140,7 +140,7 @@ func (r *claudeRunner) Run(ctx context.Context, systemPrompt, userPrompt string)
 // batched call. The batched call counts as attempt 1; MaxRetries bounds the
 // per-posting single-posting calls that follow. Returns one PostingResult per
 // posting in the original wave order. Does not perform writeback.
-func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg Config, runner agentRunner) []PostingResult {
+func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg Config, runner agentRunner, tracker *ProgressTracker) []PostingResult {
 	results := make([]PostingResult, len(wave))
 	if len(wave) == 0 {
 		return results
@@ -194,6 +194,13 @@ func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg
 			select {
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
+				// Order matters: register BatchFinished AFTER semaphore
+				// acquisition so LIFO ordering fires it before the panic
+				// recovery defer (registered above). Cancelled batches that
+				// never acquire a slot don't call BatchStarted, so they must
+				// not call BatchFinished either.
+				tracker.BatchStarted()
+				defer tracker.BatchFinished()
 			case <-ctx.Done():
 				// OutcomeJSONFailed is reused for cancelled goroutines (no separate
 				// OutcomeCancelled exists). Cancelled goroutines never reached the agent,

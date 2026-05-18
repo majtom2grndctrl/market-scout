@@ -43,6 +43,10 @@ type Config struct {
 	// Zero means no per-call timeout.
 	StripTimeout time.Duration
 
+	// ProgressInterval is how often the progress reporter emits an update
+	// to stderr. Zero disables progress output entirely.
+	ProgressInterval time.Duration
+
 	// CLI flags.
 	Count int
 	Focus string
@@ -75,6 +79,8 @@ func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 		"Per-invocation timeout for the `claude` subprocess (e.g. 90s). 0 disables the per-call cap.")
 	fs.DurationVar(&cfg.StripTimeout, "strip-timeout", 0,
 		"Per-invocation timeout for the `strip-boilerplate` subprocess (e.g. 30s). 0 disables the per-call cap.")
+	fs.DurationVar(&cfg.ProgressInterval, "progress-interval", 2*time.Second,
+		"How often to emit progress to stderr. 0 disables progress output.")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -112,6 +118,9 @@ func (c Config) Validate() error {
 	}
 	if c.StripTimeout < 0 {
 		return fmt.Errorf("invalid --strip-timeout %s: must be >= 0", c.StripTimeout)
+	}
+	if c.ProgressInterval < 0 {
+		return fmt.Errorf("invalid --progress-interval %s: must be >= 0", c.ProgressInterval)
 	}
 	switch c.ReportFormat {
 	case "json", "markdown":

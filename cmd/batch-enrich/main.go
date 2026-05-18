@@ -14,8 +14,11 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // runTimestampFormat is the compact timestamp embedded in each failures.jsonl
@@ -54,6 +57,7 @@ func run() int {
 		"max_retries", cfg.MaxRetries,
 		"max_parallel", cfg.MaxParallelAgents,
 		"effective_concurrency", cfg.MaxParallelAgents*cfg.BatchSize,
+		"progress_interval", cfg.ProgressInterval,
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -121,6 +125,35 @@ func run() int {
 		return 1
 	}
 
+	// Progress reporting: pre-compute the total batch count up front so the
+	// reporter can show done/total throughout the run. The reporter is
+	// derived from ctx, so SIGINT/SIGTERM stops it naturally — cancellation
+	// paths below don't need to cancel it separately.
+	totalBatches := countBatches(len(stripped), cfg.WaveSize, cfg.BatchSize)
+	tracker := &ProgressTracker{total: totalBatches, startedAt: time.Now()}
+	var reporter *Reporter
+	var reporterCtx context.Context
+	var reporterCancel context.CancelFunc
+	var reporterWG sync.WaitGroup
+	if cfg.ProgressInterval > 0 {
+		reporter = NewReporter(tracker, cfg.ProgressInterval, os.Stderr)
+		reporterCtx, reporterCancel = context.WithCancel(ctx)
+		reporterWG.Add(1)
+		go func() {
+			defer reporterWG.Done()
+			reporter.Run(reporterCtx)
+		}()
+	} else {
+		// Provide a no-op cancel so the normal-exit drain block can call
+		// it unconditionally without a nil check.
+		reporterCancel = func() {}
+	}
+	// Ensure the reporter context is cancelled on every return path. The
+	// normal-exit drain below also calls reporterCancel before EmitReport
+	// (so the final progress line doesn't race the report write); this
+	// defer covers the cancellation-path returns.
+	defer reporterCancel()
+
 	// Wave loop: dispatch → writeback → reload taxonomy, repeated per wave.
 	// Reload taxonomy between waves so newly minted slugs from wave N's writeback
 	// appear in wave N+1's prompt. Without this, a slug coined in wave 1 would
@@ -137,7 +170,7 @@ func run() int {
 		}
 		wave := stripped[start:end]
 
-		waveResults := RunWave(ctx, wave, taxonomy, cfg, runner)
+		waveResults := RunWave(ctx, wave, taxonomy, cfg, runner, tracker)
 		// WriteBack uses the current taxonomy snapshot for the role_dimensions
 		// lookup; role_dimensions is a closed set never minted by agents, so
 		// any reload-era snapshot is sufficient. Newly minted roles/specs/skills
@@ -172,6 +205,20 @@ func run() int {
 	if err := ctx.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "[batch-enrich] run cancelled: %v\n", err)
 		return 130
+	}
+
+	// Stop the progress reporter on the normal-exit path and emit a final
+	// summary line. Cancellation paths above let the reporter drain
+	// naturally via ctx — no summary on cancel.
+	reporterCancel()
+	reporterWG.Wait()
+	if cfg.ProgressInterval > 0 {
+		elapsedS := int(time.Since(tracker.startedAt).Seconds())
+		if term.IsTerminal(int(os.Stderr.Fd())) {
+			fmt.Fprintf(os.Stderr, "[batch-enrich] done: classified %d batches in %ds\n", totalBatches, elapsedS)
+		} else {
+			slog.Info("[batch-enrich] done", "batches", totalBatches, "elapsed_s", elapsedS)
+		}
 	}
 
 	// Reload after the final wave so any slugs writeback minted in the last
