@@ -17,8 +17,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"golang.org/x/term"
 )
 
 // runTimestampFormat is the compact timestamp embedded in each failures.jsonl
@@ -148,10 +146,10 @@ func run() int {
 		// it unconditionally without a nil check.
 		reporterCancel = func() {}
 	}
-	// Ensure the reporter context is cancelled on every return path. The
-	// normal-exit drain below also calls reporterCancel before EmitReport
-	// (so the final progress line doesn't race the report write); this
-	// defer covers the cancellation-path returns.
+	// Ensure the reporter goroutine is always stopped. The normal-exit path
+	// below calls reporterCancel explicitly before EmitReport so the final
+	// progress line clears before the report writes; this defer covers the
+	// error-return and SIGTERM paths where that explicit cancel is never reached.
 	defer reporterCancel()
 
 	// Wave loop: dispatch → writeback → reload taxonomy, repeated per wave.
@@ -179,6 +177,8 @@ func run() int {
 		results = append(results, waveResults...)
 
 		if err := ctx.Err(); err != nil {
+			reporterCancel()
+			reporterWG.Wait()
 			fmt.Fprintf(os.Stderr, "[batch-enrich] run cancelled: %v\n", err)
 			return 130
 		}
@@ -189,6 +189,8 @@ func run() int {
 			reloaded, err := LoadTaxonomy(ctx, pool)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+					reporterCancel()
+					reporterWG.Wait()
 					fmt.Fprintf(os.Stderr, "[batch-enrich] run cancelled: %v\n", err)
 					return 130
 				}
@@ -203,6 +205,8 @@ func run() int {
 	// returned but before the report block. The spec requires no report on
 	// cancellation and a non-zero exit.
 	if err := ctx.Err(); err != nil {
+		reporterCancel()
+		reporterWG.Wait()
 		fmt.Fprintf(os.Stderr, "[batch-enrich] run cancelled: %v\n", err)
 		return 130
 	}
@@ -213,12 +217,7 @@ func run() int {
 	reporterCancel()
 	reporterWG.Wait()
 	if cfg.ProgressInterval > 0 {
-		elapsedS := int(time.Since(tracker.startedAt).Seconds())
-		if term.IsTerminal(int(os.Stderr.Fd())) {
-			fmt.Fprintf(os.Stderr, "[batch-enrich] done: classified %d batches in %ds\n", totalBatches, elapsedS)
-		} else {
-			slog.Info("[batch-enrich] done", "batches", totalBatches, "elapsed_s", elapsedS)
-		}
+		reporter.EmitSummary(totalBatches, time.Since(tracker.startedAt))
 	}
 
 	// Reload after the final wave so any slugs writeback minted in the last

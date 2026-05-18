@@ -51,9 +51,8 @@ type RunParams struct {
 // RunCounts is the per-outcome tally for one run. SkippedNoDescription is
 // always zero in this implementation — the selection query filters with
 // WHERE description_text IS NOT NULL, so NULL-description postings never
-// reach the dispatcher. The field is kept in the report schema for
-// compatibility with the SKILL.md Report section (step 9) and to make the zero
-// explicit rather than absent.
+// reach the dispatcher. The field is kept to make the zero explicit for JSON
+// consumers rather than absent.
 type RunCounts struct {
 	Selected             int `json:"selected"`
 	Dispatched           int `json:"dispatched"`

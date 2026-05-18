@@ -194,19 +194,12 @@ func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg
 			select {
 			case sem <- struct{}{}:
 				defer func() { <-sem }()
-				// Order matters: register BatchFinished AFTER semaphore
-				// acquisition so LIFO ordering fires it before the panic
-				// recovery defer (registered above). Cancelled batches that
-				// never acquire a slot don't call BatchStarted, so they must
-				// not call BatchFinished either.
+				// BatchStarted/BatchFinished must be paired and only called for goroutines
+				// that acquired a slot. Placing them here ensures cancelled goroutines that
+				// exit via ctx.Done() (without acquiring the semaphore) skip both calls.
 				tracker.BatchStarted()
 				defer tracker.BatchFinished()
 			case <-ctx.Done():
-				// OutcomeJSONFailed is reused for cancelled goroutines (no separate
-				// OutcomeCancelled exists). Cancelled goroutines never reached the agent,
-				// so their LastReason is set to reasonCancelled — AppendFailures and
-				// BuildReport filter on that sentinel to exclude them from counts and
-				// the failures log.
 				for i, p := range batch {
 					results[offset+i] = PostingResult{
 						PostingID:  p.PostingID,

@@ -320,13 +320,6 @@ func TestRunWave_RetryThenSucceed_Enriched(t *testing.T) {
 	}
 }
 
-// TestRunWave_ValidationFailThenSucceed_Enriched exercises the validation-
-// recovery path: the first attempt returns well-formed JSON that fails Phase A
-// (bad slug format), causing the orchestrator to build a hint and append a
-// "Retry guidance" block before re-invoking. The second attempt returns a
-// valid response. This is the more delicate retry branch — it exercises
-// RenderRetryPrompt and the ValidationFailure hint path, not just the
-// JSON-parse fallback.
 // makeBatchPostings returns n SelectedPostings with sequential PostingIDs
 // starting at 1, matching the slug "software-engineer" in newTestTaxonomy()
 // so canned responses cleanly validate.
@@ -648,6 +641,13 @@ func itoa(n int64) string {
 	return strconv.FormatInt(n, 10)
 }
 
+// TestRunWave_ValidationFailThenSucceed_Enriched exercises the validation-
+// recovery path: the first attempt returns well-formed JSON that fails Phase A
+// (bad slug format), causing the orchestrator to build a hint and append a
+// "Retry guidance" block before re-invoking. The second attempt returns a
+// valid response. This is the more delicate retry branch — it exercises
+// RenderRetryPrompt and the ValidationFailure hint path, not just the
+// JSON-parse fallback.
 func TestRunWave_ValidationFailThenSucceed_Enriched(t *testing.T) {
 	tax := newTestTaxonomy()
 	cfg := dispatchTestConfig()

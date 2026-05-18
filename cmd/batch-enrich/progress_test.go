@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -92,8 +91,10 @@ func TestProgressTracker_NilReceiverIsNoop(t *testing.T) {
 // asserted without timing-sensitive stderr scraping.
 type fakeEmitter struct {
 	mu        sync.Mutex
-	emits     int32
-	finalized int32
+	once      sync.Once
+	firstEmit chan struct{}
+	emits     int
+	finalized int
 	lastDone  int
 	lastTotal int
 }
@@ -101,18 +102,31 @@ type fakeEmitter struct {
 func (f *fakeEmitter) emit(inFlight, done, total int, elapsed time.Duration) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	atomic.AddInt32(&f.emits, 1)
+	f.emits++
 	f.lastDone = done
 	f.lastTotal = total
+	if f.firstEmit != nil {
+		f.once.Do(func() { close(f.firstEmit) })
+	}
 }
 
 func (f *fakeEmitter) finalLine() {
-	atomic.AddInt32(&f.finalized, 1)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.finalized++
+}
+
+func (f *fakeEmitter) emitSummary(totalBatches int, elapsed time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastDone = totalBatches
+	f.lastTotal = totalBatches
 }
 
 func TestReporter_TicksAndStopsOnCancel(t *testing.T) {
 	tracker := &ProgressTracker{total: 5, startedAt: time.Now()}
-	emitter := &fakeEmitter{}
+	firstEmit := make(chan struct{})
+	emitter := &fakeEmitter{firstEmit: firstEmit}
 	reporter := newReporterWithEmitter(tracker, 5*time.Millisecond, emitter)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -122,8 +136,12 @@ func TestReporter_TicksAndStopsOnCancel(t *testing.T) {
 		close(done)
 	}()
 
-	// Let the ticker fire a few times.
-	time.Sleep(30 * time.Millisecond)
+	// Wait until at least one tick fires, then cancel.
+	select {
+	case <-firstEmit:
+	case <-time.After(time.Second):
+		t.Fatalf("reporter did not emit after 1s")
+	}
 	cancel()
 
 	select {
@@ -132,11 +150,16 @@ func TestReporter_TicksAndStopsOnCancel(t *testing.T) {
 		t.Fatalf("reporter did not return after cancellation")
 	}
 
-	if got := atomic.LoadInt32(&emitter.emits); got < 1 {
-		t.Errorf("expected at least 1 emit, got %d", got)
+	emitter.mu.Lock()
+	emits := emitter.emits
+	finalized := emitter.finalized
+	emitter.mu.Unlock()
+
+	if emits < 1 {
+		t.Errorf("expected at least 1 emit, got %d", emits)
 	}
-	if got := atomic.LoadInt32(&emitter.finalized); got != 1 {
-		t.Errorf("expected finalLine to be called once, got %d", got)
+	if finalized != 1 {
+		t.Errorf("expected finalLine to be called once, got %d", finalized)
 	}
 }
 
@@ -174,5 +197,33 @@ func TestRunWave_NilTrackerDoesNotPanic(t *testing.T) {
 	}
 
 	// nil tracker passed through.
-	_ = RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
+	if len(results) != 1 {
+		t.Errorf("expected 1 result, got %d", len(results))
+	}
+}
+
+// TestRunWave_TrackerCountsCompletedBatches verifies that a non-nil tracker
+// lands at done==1, inFlight==0 after a single-posting wave with batch size 1.
+func TestRunWave_TrackerCountsCompletedBatches(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	tracker := &ProgressTracker{total: 1, startedAt: time.Now()}
+
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			return "", "raw", errors.New("boom")
+		},
+	}
+
+	_ = RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, tracker)
+
+	_, done, _, _ := tracker.Snapshot()
+	if done != 1 {
+		t.Errorf("expected done=1 after 1-posting wave, got %d", done)
+	}
+	inFlight, _, _, _ := tracker.Snapshot()
+	if inFlight != 0 {
+		t.Errorf("expected inFlight=0 after wave, got %d", inFlight)
+	}
 }

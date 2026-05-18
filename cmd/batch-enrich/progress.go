@@ -1,10 +1,6 @@
-// Progress reporting for batch-enrich runs. Emits periodic stderr updates so
-// an operator can see in-flight/done/total batch counts during a multi-wave
-// run. ProgressTracker is the shared counter (safe for concurrent use across
-// dispatch goroutines); Reporter pulls snapshots on a fixed interval and
-// hands them to an emitter chosen by TTY detection. countBatches is the
-// shared formula used both for the pre-calculated total and for keeping
-// dispatch-side wave slicing aligned with what the reporter advertises.
+// Progress reporting for batch-enrich runs. Owns ProgressTracker (shared
+// batch counters), Reporter (fixed-interval emitter), and countBatches
+// (the batch-total formula shared with the dispatch loop).
 package main
 
 import (
@@ -46,8 +42,8 @@ func (p *ProgressTracker) BatchFinished() {
 	if p == nil {
 		return
 	}
-	p.inFlight.Add(-1)
 	p.done.Add(1)
+	p.inFlight.Add(-1)
 }
 
 // Snapshot returns a point-in-time view of the counters plus elapsed time
@@ -69,6 +65,7 @@ func (p *ProgressTracker) Snapshot() (inFlight, done, total int, elapsed time.Du
 type progressEmitter interface {
 	emit(inFlight, done, total int, elapsed time.Duration)
 	finalLine()
+	emitSummary(totalBatches int, elapsed time.Duration)
 }
 
 // ttyEmitter renders progress as a single-line, carriage-return-prefixed
@@ -86,6 +83,10 @@ func (e *ttyEmitter) emit(inFlight, done, total int, elapsed time.Duration) {
 
 func (e *ttyEmitter) finalLine() {
 	fmt.Fprint(e.w, "\n")
+}
+
+func (e *ttyEmitter) emitSummary(totalBatches int, elapsed time.Duration) {
+	fmt.Fprintf(e.w, "[batch-enrich] done: classified %d batches in %ds\n", totalBatches, int(elapsed.Seconds()))
 }
 
 // plainEmitter renders progress as discrete structured log lines. Used
@@ -106,6 +107,10 @@ func (e *plainEmitter) emit(inFlight, done, total int, elapsed time.Duration) {
 
 func (e *plainEmitter) finalLine() {}
 
+func (e *plainEmitter) emitSummary(totalBatches int, elapsed time.Duration) {
+	e.logger.Info("[batch-enrich] done", "batches", totalBatches, "elapsed_s", int(elapsed.Seconds()))
+}
+
 // Reporter emits progress on a fixed interval until its context is
 // cancelled. Construct one via NewReporter and run it as a goroutine
 // alongside the wave loop.
@@ -118,10 +123,10 @@ type Reporter struct {
 // NewReporter picks a TTY or plain emitter based on whether stderr is a
 // terminal. The caller owns the lifetime of stderr; Reporter never closes
 // it.
-func NewReporter(tracker *ProgressTracker, interval time.Duration, stderr *os.File) *Reporter {
+func NewReporter(tracker *ProgressTracker, interval time.Duration, stderrFile *os.File) *Reporter {
 	var emitter progressEmitter
-	if stderr != nil && term.IsTerminal(int(stderr.Fd())) {
-		emitter = &ttyEmitter{w: stderr}
+	if stderrFile != nil && term.IsTerminal(int(stderrFile.Fd())) {
+		emitter = &ttyEmitter{w: stderrFile}
 	} else {
 		emitter = &plainEmitter{logger: slog.Default()}
 	}
@@ -142,23 +147,39 @@ func newReporterWithEmitter(tracker *ProgressTracker, interval time.Duration, em
 // Run blocks until ctx is cancelled. On each tick it pulls a snapshot from
 // the tracker and hands it to the emitter; on cancellation it calls
 // finalLine so the next stderr write (the summary, or a shell prompt)
-// starts on its own line.
+// starts on its own line. finalLine is skipped if no tick fired, so a
+// ttyEmitter does not write a bare newline when the run finishes before
+// the first interval elapses.
 func (r *Reporter) Run(ctx context.Context) {
 	if r.interval <= 0 {
 		return
 	}
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
+	var emitted bool
 	for {
 		select {
 		case <-ctx.Done():
-			r.emitter.finalLine()
+			if emitted {
+				r.emitter.finalLine()
+			}
 			return
 		case <-ticker.C:
 			inFlight, done, total, elapsed := r.tracker.Snapshot()
 			r.emitter.emit(inFlight, done, total, elapsed)
+			emitted = true
 		}
 	}
+}
+
+// EmitSummary writes the final "done" line through the same emitter the
+// periodic ticks use, so the summary's format (TTY plain text vs. structured
+// slog line) stays in lock-step with the ticks even if stderr is rewired.
+// The dedicated emitSummary path uses keys ("batches", "elapsed_s") distinct
+// from the in-progress tick fields so log consumers can tell the terminal
+// summary apart from mid-run ticks.
+func (r *Reporter) EmitSummary(totalBatches int, elapsed time.Duration) {
+	r.emitter.emitSummary(totalBatches, elapsed)
 }
 
 // countBatches returns the total number of classifyBatch calls a run will
