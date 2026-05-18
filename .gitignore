@@ -22,6 +22,7 @@ coverage.html
 # Common output paths for Go binaries built at the repo root
 /cmd/fetcher/fetcher
 /fetcher
+/migrate
 /strip-boilerplate
 /batch-enrich
 
