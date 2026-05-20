@@ -89,10 +89,10 @@ type leverJob struct {
 // leverSalaryRange is Lever's structured compensation block. Pointer on the
 // parent so a wire-absent field stays distinct from a zero-valued struct.
 type leverSalaryRange struct {
-	Min      int64  `json:"min"`
-	Max      int64  `json:"max"`
-	Currency string `json:"currency"`
-	Interval string `json:"interval"`
+	Min      float64 `json:"min"`
+	Max      float64 `json:"max"`
+	Currency string  `json:"currency"`
+	Interval string  `json:"interval"`
 }
 
 // leverIntervalAliases maps Lever's wire `salaryRange.interval` values to the
@@ -333,7 +333,7 @@ func normalizeLeverSalary(s *leverSalaryRange) (min int64, max int64, currency s
 		slog.Warn("[lever] invalid salary range", "min", s.Min, "max", s.Max)
 		return 0, 0, "", "", false
 	}
-	return s.Min, s.Max, currency, period, true
+	return int64(s.Min), int64(s.Max), currency, period, true
 }
 
 // isThreeUpperLetters reports whether s is exactly three ASCII uppercase

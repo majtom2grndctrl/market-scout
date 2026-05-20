@@ -159,3 +159,21 @@ ON CONFLICT (ats, board_token) DO NOTHING;
 INSERT INTO companies (name, ats, board_token, industry) VALUES
     ('Remitly', 'workday', 'remitly.wd5.myworkdayjobs.com/Remitly_Careers', 'Financial Services')
 ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (May 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Helion', 'ashby', 'helion', 'Renewable Energy Power Generation'),
+    ('Hiya', 'ashby', 'hiya', 'Software Development'),
+    ('Qumulo', 'ashby', 'qumulo', 'Software Development'),
+    ('Polly', 'ashby', 'polly', 'Software Development')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Workday (May 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Tinuiti', 'workday', 'tinuiti.wd12.myworkdayjobs.com/Tinuiti', 'Marketing Services')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Lever (May 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Ridwell', 'lever', 'Ridwell', 'Consumer Services')
+ON CONFLICT (ats, board_token) DO NOTHING;
