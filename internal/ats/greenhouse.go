@@ -1,7 +1,7 @@
-// Package ats hosts ATS adapter implementations: Greenhouse, Lever, Ashby, and Workday.
+// Package ats hosts ATS adapter implementations: Greenhouse, Lever, Ashby, Workday, and Workable.
 // Adapters return domain.Posting from internal/domain.
-// The consumer-side interface (atsAdapter) lives in cmd/fetcher — concrete
-// adapters satisfy it implicitly via Go structural typing.
+// Each consumer declares its own minimal interface; adapters satisfy them
+// implicitly via Go structural typing.
 // See: agent-context/lib/project.md
 package ats
 

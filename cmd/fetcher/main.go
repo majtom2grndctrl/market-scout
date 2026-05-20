@@ -92,6 +92,7 @@ func run() error {
 		"lever":      ats.NewLever(httpClient),
 		"ashby":      ats.NewAshby(httpClient),
 		"workday":    ats.NewWorkday(httpClient),
+		"workable":   ats.NewWorkable(httpClient),
 	}
 
 	// Partition companies up front so unknown ATS values are reported once

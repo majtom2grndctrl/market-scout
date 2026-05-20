@@ -1,0 +1,15 @@
+{
+  "name": "Acme Robotics",
+  "jobs": [
+    {
+      "title": "Customer Success",
+      "shortcode": "CS001",
+      "url": "",
+      "application_url": "https://apply.workable.com/acme-robotics/j/CS001/apply/",
+      "country": "Canada",
+      "city": "Toronto",
+      "state": "ON",
+      "published_on": "2024-05-10"
+    }
+  ]
+}

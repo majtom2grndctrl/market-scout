@@ -207,10 +207,10 @@ type ListUnclassifiedPostingsRow struct {
 	DescriptionText sql.NullString
 }
 
-// Queries that drive the batch-enrich Go command. Selection mirrors the
-// batch-enrich skill (.claude/skills/batch-enrich/SKILL.md §3): latest snapshot
-// per posting via LATERAL, optional ILIKE focus prefilter, oldest-first ordering.
-// The `Forced` variant drops the NOT EXISTS classifications guard so already-
+// Queries that drive the batch-enrich Go command. Selection uses a LATERAL join
+// to the latest posting_snapshots row per job_posting, an optional ILIKE focus
+// prefilter, and oldest-first ordering to process the backlog in stable priority.
+// The Forced variant drops the NOT EXISTS classifications guard so already-
 // classified postings are eligible for re-enrichment under --force.
 //
 // @row_limit is named (not `limit`) because `limit` is a reserved word in

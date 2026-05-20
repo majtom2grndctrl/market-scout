@@ -1,0 +1,35 @@
+{
+  "name": "Seeq",
+  "description": "Industrial analytics.",
+  "jobs": [
+    {
+      "title": "Analytics Engineer",
+      "shortcode": "66FF2331A3",
+      "code": null,
+      "employment_type": "Full-time",
+      "telecommuting": true,
+      "department": "Analytics Engineering",
+      "url": "https://apply.workable.com/j/66FF2331A3",
+      "shortlink": "https://apply.workable.com/j/66FF2331A3",
+      "application_url": "https://apply.workable.com/j/66FF2331A3/apply",
+      "published_on": "2026-04-03",
+      "created_at": "2026-03-30",
+      "country": "United States",
+      "city": "",
+      "state": "",
+      "education": "Bachelor's Degree",
+      "experience": "Mid-Senior level",
+      "function": "Engineering",
+      "industry": "Computer Software",
+      "locations": [
+        {
+          "country": "United States",
+          "countryCode": "US",
+          "city": "",
+          "region": null,
+          "hidden": false
+        }
+      ]
+    }
+  ]
+}

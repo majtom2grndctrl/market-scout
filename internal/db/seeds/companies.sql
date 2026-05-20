@@ -1,5 +1,8 @@
--- Watchlist companies for dev/test runs. Re-run safely: ON CONFLICT DO NOTHING.
--- See agent-context/lib/watchlist.md for context on adding companies.
+-- Canonical company seed file. Hand-edit for one-off additions;
+-- cmd/onboard appends verified records from research sidecars.
+-- Re-run safely: ON CONFLICT (ats, board_token) DO NOTHING.
+-- See agent-context/lib/watchlist.md for context on adding companies
+-- and the verification workflow.
 
 INSERT INTO companies (name, ats, board_token, industry) VALUES
     -- Greenhouse
@@ -44,6 +47,28 @@ INSERT INTO companies (name, ats, board_token, industry) VALUES
     ('Spice AI',    'lever', 'spiceai',    'developer tooling'),
     ('Revefi',      'lever', 'revefi',     'AI data observability'),
     ('Avante',      'lever', 'avante',     'AI HR'),
-    ('Conversica',  'lever', 'conversica', 'AI sales')
+    ('Conversica',  'lever', 'conversica', 'AI sales'),
 
+    -- Ashby (GeekWire funding tracker, May 2026)
+    ('Cascade',  'ashby', 'cascade', 'AI HR'),
+    ('Humanly',  'ashby', 'humanly', 'AI recruiting'),
+    ('Union.ai', 'ashby', 'union',   'AI workflows'),
+    ('Read AI',  'ashby', 'read-ai', 'AI productivity'),
+    ('QA Wolf',  'ashby', 'qawolf',  'developer tooling'),
+    ('Depot',    'ashby', 'depot',   'developer tooling'),
+    ('Casium',   'ashby', 'casium',  'AI legal'),
+
+    -- Greenhouse (GeekWire funding tracker, May 2026)
+    ('Chainguard',  'greenhouse', 'chainguard',  'supply chain security'),
+    ('Panthalassa', 'greenhouse', 'panthalassa', 'AI infrastructure'),
+    ('Starcloud',   'greenhouse', 'starcloud',   'AI infrastructure'),
+
+    -- Workable (GeekWire 200, May 2026)
+    ('Seeq', 'workable', 'seeq', 'industrial analytics')
+
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (May 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Airtable', 'greenhouse', 'airtable', 'collaboration software')
 ON CONFLICT (ats, board_token) DO NOTHING;
