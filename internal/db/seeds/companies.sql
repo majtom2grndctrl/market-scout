@@ -162,10 +162,11 @@ ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Ashby (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
-    ('Helion', 'ashby', 'helion', 'Renewable Energy Power Generation'),
-    ('Hiya', 'ashby', 'hiya', 'Software Development'),
-    ('Qumulo', 'ashby', 'qumulo', 'Software Development'),
-    ('Polly', 'ashby', 'polly', 'Software Development')
+    ('Helion',   'ashby', 'helion',   'Renewable Energy Power Generation'),
+    ('Hiya',     'ashby', 'hiya',     'Software Development'),
+    ('Qumulo',   'ashby', 'qumulo',   'Software Development'),
+    ('Polly',    'ashby', 'polly',    'Software Development'),
+    ('LiveKit',  'ashby', 'livekit',  'Developer Infrastructure')
 ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Workday (May 2026)
