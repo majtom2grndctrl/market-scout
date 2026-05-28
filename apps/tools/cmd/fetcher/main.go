@@ -34,7 +34,7 @@ const companyTimeout = 45 * time.Second
 const maxConcurrentCompanies = 5
 
 // atsAdapter is the contract the fetcher needs from any ATS integration.
-// Defined here (the consumer) rather than in internal/ats so the interface
+// Defined here (the consumer) rather than in apps/tools/internal/ats so the interface
 // reflects the fetcher's needs; concrete adapters satisfy it implicitly.
 type atsAdapter interface {
 	FetchPostings(ctx context.Context, boardToken string) ([]domain.Posting, error)

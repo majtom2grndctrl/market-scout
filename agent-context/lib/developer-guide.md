@@ -201,7 +201,7 @@ market-scout/
 │       │   └── strip-boilerplate/   # Per-company boilerplate stripper (classification preprocessor)
 │       │       └── main.go
 │       └── internal/
-│           ├── ats/                 # ATS adapter implementations (interface lives in cmd/fetcher per §5.3)
+│           ├── ats/                 # ATS adapter implementations (interface lives in apps/tools/cmd/fetcher per §5.3)
 │           │   ├── greenhouse.go    # Greenhouse implementation
 │           │   ├── lever.go         # Lever implementation
 │           │   ├── ashby.go         # Ashby implementation

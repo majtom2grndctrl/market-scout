@@ -1,7 +1,8 @@
 //go:build integration
 
-// Integration tests for internal/db. Require a live Postgres instance and
-// DATABASE_URL env var. Run with: go test -tags=integration ./internal/db/...
+// Integration tests for apps/tools/internal/db. Require a live Postgres
+// instance and DATABASE_URL env var.
+// Run with (from apps/tools/): go test -tags=integration ./internal/db/...
 package db_test
 
 import (

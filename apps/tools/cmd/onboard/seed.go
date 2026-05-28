@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// seedRow is one row pending append to internal/db/seeds/companies.sql.
+// seedRow is one row pending append to apps/tools/internal/db/seeds/companies.sql.
 // Industry mirrors the seed file's `industry` column; an empty string emits
 // SQL NULL, matching the seeded rows that lack an industry classification.
 type seedRow struct {

@@ -1,5 +1,5 @@
 // Package ats hosts ATS adapter implementations: Greenhouse, Lever, Ashby, Workday, and Workable.
-// Adapters return domain.Posting from internal/domain.
+// Adapters return domain.Posting from apps/tools/internal/domain.
 // Each consumer declares its own minimal interface; adapters satisfy them
 // implicitly via Go structural typing.
 // See: agent-context/lib/project.md

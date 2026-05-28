@@ -2,14 +2,14 @@
 // shells out to ./bin/strip-boilerplate for each company with >=3 postings,
 // and substitutes the cleaned description text back into the SelectedPosting
 // slice. The 3-posting threshold mirrors the minSamples requirement in
-// internal/enrich/boilerplate — Strip needs a corpus to detect prevalence.
+// apps/tools/internal/enrich/boilerplate — Strip needs a corpus to detect prevalence.
 // Durable architecture context: agent-context/lib/
 //
-// Note on the duplicated threshold: cmd/batch-enrich invokes the stripper as a
-// subprocess (./bin/strip-boilerplate) and has no compile-time dependency on
-// internal/enrich/boilerplate. The constant cannot be imported; it must be
-// duplicated and kept in sync manually with minSamples in
-// internal/enrich/boilerplate/strip.go.
+// Note on the duplicated threshold: apps/tools/cmd/batch-enrich invokes the
+// stripper as a subprocess (./bin/strip-boilerplate) and has no compile-time
+// dependency on apps/tools/internal/enrich/boilerplate. The constant cannot be
+// imported; it must be duplicated and kept in sync manually with minSamples in
+// apps/tools/internal/enrich/boilerplate/strip.go.
 package main
 
 import (
@@ -23,13 +23,13 @@ import (
 	"time"
 )
 
-// stripMinPostings mirrors minSamples in internal/enrich/boilerplate/strip.go;
+// stripMinPostings mirrors minSamples in apps/tools/internal/enrich/boilerplate/strip.go;
 // no import path exists — keep in sync manually.
 const stripMinPostings = 3
 
 // stripBinaryPath is the relative path to the prebuilt strip-boilerplate
-// helper. The batch-enrich binary is invoked from the repo root, so this
-// resolves against the operator's working directory.
+// helper. batch-enrich runs from apps/tools/, so this resolves to
+// apps/tools/bin/strip-boilerplate.
 const stripBinaryPath = "./bin/strip-boilerplate"
 
 type stripInput struct {

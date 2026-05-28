@@ -15,7 +15,7 @@ Standard Go `testing` package. Tests live next to the code they exercise (`foo.g
 | Unit | Pure logic, parsers, response decoding | Alongside source (`apps/tools/internal/ats/greenhouse_test.go`) |
 | Adapter HTTP | ATS adapter against `httptest.Server` with recorded fixtures | `apps/tools/internal/ats/*_test.go` |
 | DB integration | `sqlc` queries against a real Postgres (testcontainers-go or a shared dev container) | `apps/tools/internal/db/*_integration_test.go`, build tag `//go:build integration` |
-| End-to-end | `cmd/fetcher` run against fixture ATS server + real Postgres | `apps/tools/cmd/fetcher/*_e2e_test.go`, build tag `//go:build e2e` |
+| End-to-end | `apps/tools/cmd/fetcher` run against fixture ATS server + real Postgres | `apps/tools/cmd/fetcher/*_e2e_test.go`, build tag `//go:build e2e` |
 
 Default `go test ./...` runs unit + adapter HTTP tests. Integration and E2E tests require their build tags (`go test -tags=integration ./...`) and a running Postgres.
 

@@ -20,8 +20,8 @@ import (
 )
 
 // failuresFilePath is the relative path where AppendFailures writes its
-// JSON-lines log. Operators invoke batch-enrich from the repo root, so this
-// resolves under the working directory like ./bin/strip-boilerplate does.
+// JSON-lines log. batch-enrich runs from apps/tools/, so this resolves to
+// apps/tools/agent-output/batch-enrich/failures.jsonl.
 // Declared as a var so tests can redirect writes to a temp directory.
 var failuresFilePath = "agent-output/batch-enrich/failures.jsonl"
 

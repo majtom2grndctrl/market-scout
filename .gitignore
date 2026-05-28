@@ -25,6 +25,7 @@ coverage.html
 /apps/tools/migrate
 /apps/tools/strip-boilerplate
 /apps/tools/batch-enrich
+/apps/tools/onboard
 
 # --- Go module / tooling caches ---
 # vendor/ is intentionally NOT ignored — uncomment if you adopt vendoring later.

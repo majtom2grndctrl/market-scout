@@ -1,5 +1,5 @@
 // Command onboard verifies sidecar JSONL records of candidate companies,
-// stamps verified rows, and appends seed inserts to internal/db/seeds/companies.sql.
+// stamps verified rows, and appends seed inserts to apps/tools/internal/db/seeds/companies.sql.
 // See: agent-context/lib/watchlist.md
 package main
 

@@ -1,4 +1,4 @@
-// Command migrate applies SQL migrations from internal/db/migrations against
+// Command migrate applies SQL migrations from apps/tools/internal/db/migrations against
 // the database referenced by DATABASE_URL.
 // See: agent-context/lib/developer-guide.md
 package main
