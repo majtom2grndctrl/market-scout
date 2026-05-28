@@ -98,14 +98,22 @@ Specs are working documents — they align on what to build and why, then get co
 
 ## 2) Development Setup
 
+### Working directory
+
+Go commands run from `apps/tools/`, not the repo root. The module root, `godotenv.Load(".env.local")` in every binary, and two CWD-relative path literals (the onboard seed path and the batch-enrich failures-log path) all assume this. `docker compose` runs from repo root.
+
 ### Initial Setup
 
-After cloning, start the database and apply migrations:
+After cloning, start the database, link env, and apply migrations:
 
 ```bash
-docker compose up -d        # Postgres + pgvector
-go run ./cmd/migrate up     # Apply schema migrations
+docker compose up -d                        # Postgres + pgvector (repo root)
+ln -s ../../.env.local apps/tools/.env.local # Fresh-clone setup; root .env.local is canonical
+cd apps/tools
+go run ./cmd/migrate up                     # Apply schema migrations
 ```
+
+`.env.local` is canonical at repo root (docker-compose reads it). `apps/tools/.env.local` is a symlink so the Go tools see the same file — no DB-credential drift. Both are gitignored; the symlink is a local-setup step, not checked in.
 
 Generate sqlc code if any `.sql` files in `internal/db/queries/` have changed:
 

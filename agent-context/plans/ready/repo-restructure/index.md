@@ -40,14 +40,15 @@ Relocate the Go module into `apps/tools/` and establish an `apps/` directory so 
 ## Acceptance criteria
 
 - [ ] Go module root is `apps/tools/`; `go.mod` module path is `github.com/majtom2grndctrl/market-scout/apps/tools`.
-- [ ] No file references the old module path `github.com/majtom2grndctrl/market-scout` (grep across the repo returns nothing outside historical plan docs).
+- [ ] No file references the old module path `github.com/majtom2grndctrl/market-scout` (grep across the repo returns nothing outside `agent-context/plans/done/**` and the active sibling draft `agent-context/plans/drafts/mcp-server/`).
 - [ ] `go build ./...` and `go vet ./...` succeed when run from `apps/tools/`.
 - [ ] `go test ./...` passes from `apps/tools/` (unit; integration/e2e tags if a DB is available).
 - [ ] `sqlc generate` from `apps/tools/` produces no diff against checked-in generated code.
-- [ ] Each binary runs from `apps/tools/` and resolves env + relative paths without error: `go run ./cmd/migrate up`, `./cmd/fetcher`, `./cmd/onboard`, `./cmd/batch-enrich`, `./cmd/strip-boilerplate`. Seed file (`internal/db/seeds/companies.sql`) and `agent-output/` resolve under `apps/tools/`.
+- [ ] Each binary runs from `apps/tools/` and resolves env + relative paths without error: `go run ./cmd/migrate up`, `go run ./cmd/fetcher`, `go run ./cmd/onboard`, `go run ./cmd/batch-enrich`, `go run ./cmd/strip-boilerplate`. Seed file (`internal/db/seeds/companies.sql`) and `agent-output/` resolve under `apps/tools/`.
 - [ ] Moved files retain history: `git log --follow` on a moved file shows pre-move commits.
 - [ ] `docker compose up` from repo root still starts Postgres (compose file and root `.env.local` unchanged).
 - [ ] `agent-context/lib/` and `CLAUDE.md` carry no stale paths: real-path references to `cmd/…` and `internal/…` are updated to `apps/tools/…`, and dev-command examples show the `cd apps/tools` convention.
+- [ ] `agent-context/lib/developer-guide.md` documents the `ln -s ../../.env.local apps/tools/.env.local` step for fresh clones.
 - [ ] `.gitignore` Go-artifact and `agent-output` anchors point under `apps/tools/`.
 
 ## Tasks
@@ -58,19 +59,19 @@ Relocate the Go module into `apps/tools/` and establish an `apps/` directory so 
 
 ### Task 2: Rewrite the module path
 
-`go mod edit -module github.com/majtom2grndctrl/market-scout/apps/tools` on the moved `go.mod`. Then prefix-swap the import string across the 20 Go files (29 occurrences): `github.com/majtom2grndctrl/market-scout` → `github.com/majtom2grndctrl/market-scout/apps/tools`. The string appears nowhere else in the repo, so it is a safe blind swap. Run `gofmt -w` / `goimports` after.
+`go mod edit -module github.com/majtom2grndctrl/market-scout/apps/tools` on the moved `go.mod`. Then prefix-swap the import string across the 20 Go files (29 occurrences): `github.com/majtom2grndctrl/market-scout` → `github.com/majtom2grndctrl/market-scout/apps/tools`. The string appears nowhere else in the repo, so it is a safe blind swap. Restrict the rewrite to `*.go` files; `go.mod` is already handled by `go mod edit` and must not be sed-rewritten. Run `gofmt -w` / `goimports` after.
 
 ### Task 3: Wire env and artifact paths
 
-Create `apps/tools/.env.local` as a symlink to `../../.env.local`. Confirm the two CWD-relative literals resolve correctly when run from `apps/tools/`: the seed path (`cmd/onboard/main.go`) and the failures-log path (`cmd/batch-enrich/report.go`) need no edit — the directories they name move with the module or are created on write under `apps/tools/`.
+Create `apps/tools/.env.local` as a symlink to `../../.env.local`. Confirm the two CWD-relative literals resolve correctly when run from `apps/tools/`: the seed path (`cmd/onboard/main.go`) and the failures-log path (`cmd/batch-enrich/report.go`) need no edit — both resolve correctly *because* the run-from-`apps/tools/` convention puts CWD at the new module root (the seed file moves with the module; the failures log is created on write).
 
 ### Task 4: Update root config
 
-Update `.gitignore`: repoint the Go build-artifact anchors (`/bin/`, `/cmd/fetcher/fetcher`, `/fetcher`, `/migrate`, `/strip-boilerplate`, `/batch-enrich`) and `/agent-output/` to their `apps/tools/` locations. Confirm `docker-compose.yml` needs no change (it reads root `.env.local`).
+Update `.gitignore`: repoint the Go build-artifact anchors and `agent-output` entry to their new locations — `/bin/` → `/apps/tools/bin/`, `/cmd/fetcher/fetcher` → `/apps/tools/cmd/fetcher/fetcher`, `/fetcher` → `/apps/tools/fetcher`, `/migrate` → `/apps/tools/migrate`, `/strip-boilerplate` → `/apps/tools/strip-boilerplate`, `/batch-enrich` → `/apps/tools/batch-enrich`, `/agent-output/` → `/apps/tools/agent-output/`. Confirm `docker-compose.yml` needs no change (it reads root `.env.local`).
 
 ### Task 5: Update docs
 
-Update `agent-context/lib/` (`index.md`, `project.md`, `developer-guide.md`, `testing-guide.md`, `watchlist.md`, `style-guide.md`) and `CLAUDE.md`: real-path references to `cmd/…` and `internal/…` become `apps/tools/…`; dev-command examples gain the `cd apps/tools` step. Leave the durable architecture *decisions* (no Go API server, no ORM) untouched — only paths change.
+Update `agent-context/lib/` (`index.md`, `project.md`, `developer-guide.md`, `testing-guide.md`, `watchlist.md`, `style-guide.md`) and `CLAUDE.md`: real-path references to `cmd/…` and `internal/…` become `apps/tools/…`; dev-command examples gain the `cd apps/tools` step. Leave the durable architecture *decisions* (no Go API server, no ORM) untouched — only paths change. Active sibling drafts under `agent-context/plans/drafts/` (e.g. `mcp-server/`) are out of scope — they update on their own promotion.
 
 ### Task 6: Verify
 

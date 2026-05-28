@@ -9,6 +9,8 @@
 ## Agent Router (Task → Minimal Docs)
 
 - **Project purpose, goals, audience** → `agent-context/lib/project.md`
+- **Repo layout (`apps/`, `research/`)** → `agent-context/lib/project.md` §Repo layout
+- **Working directory for Go commands, `.env.local` symlink** → `agent-context/lib/developer-guide.md` §2 Development Setup
 - **Settled architecture decisions** → `agent-context/lib/project.md` §Settled architecture
 - **Writing / editing `agent-context/` files** → `agent-context/lib/style-guide.md`
 - **Dev setup, Go conventions, logging, comments** → `agent-context/lib/developer-guide.md`

@@ -23,6 +23,12 @@ Two goals that should shape every suggestion:
 
 Not a product to sell. A personal tool that doubles as a portfolio piece and learning vehicle.
 
+## Repo layout
+
+`apps/` houses deployable units. The Go module (binaries and shared packages) lives at `apps/tools/`; the module path is `github.com/majtom2grndctrl/market-scout/apps/tools`. The forthcoming Next.js app lands at `apps/web/` as a sibling. Shared infra (`docker-compose.yml`, root `.env.local`) stays at repo root and serves both.
+
+`research/` sits at repo root as a deliberate low-attention pocket — quasi-documentation that agents read only when explicitly directed. It is not under `agent-context/` (read by default) and not under `apps/` (deployable code). Tools reference its contents via CLI arg, never a hardcoded path.
+
 ## Settled architecture
 
 | Layer | Choice | Notes |
