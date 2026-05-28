@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/majtom2grndctrl/market-scout/internal/domain"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/domain"
 )
 
 const (

@@ -14,7 +14,7 @@ import (
 
 	"os"
 
-	"github.com/majtom2grndctrl/market-scout/internal/db"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
 )
 
 // why: posting_snapshots.location_texts carries a three-valued contract that

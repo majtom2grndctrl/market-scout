@@ -17,17 +17,17 @@ import (
 // which round-trips cleanly back to "null" on encode — preserving the schema
 // invariant on every rewrite, even for records this tool does not touch.
 type Record struct {
-	Rank          int      `json:"rank"`
-	Name          string   `json:"name"`
-	Source        Source   `json:"source"`
-	URL           *string  `json:"url"`
-	CareersURL    *string  `json:"careers_url"`
-	ATS           *string  `json:"ats"`
-	BoardToken    *string  `json:"board_token"`
-	Notes         *string  `json:"notes"`
-	Status        *string  `json:"status"`
-	VerifiedAt    *string  `json:"verified_at"`
-	VerifiedRunID *string  `json:"verified_run_id"`
+	Rank          int     `json:"rank"`
+	Name          string  `json:"name"`
+	Source        Source  `json:"source"`
+	URL           *string `json:"url"`
+	CareersURL    *string `json:"careers_url"`
+	ATS           *string `json:"ats"`
+	BoardToken    *string `json:"board_token"`
+	Notes         *string `json:"notes"`
+	Status        *string `json:"status"`
+	VerifiedAt    *string `json:"verified_at"`
+	VerifiedRunID *string `json:"verified_run_id"`
 }
 
 // Source is the immutable sub-object captured by the annotator from the

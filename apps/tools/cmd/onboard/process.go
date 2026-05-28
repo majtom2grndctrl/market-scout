@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/majtom2grndctrl/market-scout/internal/db"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
 )
 
 // recencyDays is the dedup recency window from agent-context/lib/watchlist.md

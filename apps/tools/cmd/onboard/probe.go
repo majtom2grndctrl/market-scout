@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/majtom2grndctrl/market-scout/internal/ats"
-	"github.com/majtom2grndctrl/market-scout/internal/domain"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/ats"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/domain"
 )
 
 // adapterProbe is the minimal surface cmd/onboard needs from an ATS adapter.
@@ -114,7 +114,7 @@ func probeCareersURL(ctx context.Context, client *http.Client, rawURL string) er
 	if err != nil {
 		return fmt.Errorf("building careers_url request %s: %w", rawURL, err)
 	}
-	req.Header.Set("User-Agent", "market-scout/0.1 (onboarding probe; +https://github.com/majtom2grndctrl/market-scout)")
+	req.Header.Set("User-Agent", "market-scout/0.1 (onboarding probe; +https://github.com/majtom2grndctrl/market-scout/apps/tools)")
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("careers_url GET %s: %w", rawURL, err)

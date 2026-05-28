@@ -20,9 +20,9 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for database/sql
 
-	"github.com/majtom2grndctrl/market-scout/internal/ats"
-	"github.com/majtom2grndctrl/market-scout/internal/db"
-	"github.com/majtom2grndctrl/market-scout/internal/domain"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/ats"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/domain"
 )
 
 // companyTimeout bounds the full per-company unit of work: HTTP fetch plus DB

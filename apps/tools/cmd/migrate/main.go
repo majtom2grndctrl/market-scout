@@ -13,7 +13,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	"github.com/joho/godotenv"
-	db "github.com/majtom2grndctrl/market-scout/internal/db"
+	db "github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
 )
 
 func main() {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/majtom2grndctrl/market-scout/internal/enrich/boilerplate"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/boilerplate"
 )
 
 // Long paragraphs (>200 bytes) used to seed shared boilerplate across inputs.

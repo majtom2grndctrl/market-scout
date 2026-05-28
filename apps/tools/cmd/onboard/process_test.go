@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/majtom2grndctrl/market-scout/internal/db"
-	"github.com/majtom2grndctrl/market-scout/internal/domain"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/domain"
 )
 
 // fakeAdapter returns a controllable adapter used in every status-path test.
@@ -398,10 +398,10 @@ func TestProcessRecord_DedupAfterAutoDetect(t *testing.T) {
 
 func TestDetectATS(t *testing.T) {
 	tests := []struct {
-		url      string
-		want     bool
-		ats      string
-		token    string
+		url   string
+		want  bool
+		ats   string
+		token string
 	}{
 		{"https://boards.greenhouse.io/acme", true, "greenhouse", "acme"},
 		{"https://job-boards.greenhouse.io/acme/jobs", true, "greenhouse", "acme"},

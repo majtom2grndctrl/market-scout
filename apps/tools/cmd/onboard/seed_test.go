@@ -27,7 +27,7 @@ func writeSeedFixture(t *testing.T, content string) string {
 }
 
 // TestSeedAppender_ApostropheDedup verifies that a company name containing a
-// SQL-escaped apostrophe (written as '' by sqlString) is recognised by the
+// SQL-escaped apostrophe (written as ” by sqlString) is recognised by the
 // in-file dedup regex on a subsequent run, so Has returns true and no duplicate
 // row is appended.
 //

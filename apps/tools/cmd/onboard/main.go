@@ -23,7 +23,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the "pgx" driver for database/sql
 
-	"github.com/majtom2grndctrl/market-scout/internal/db"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
 	"github.com/oklog/ulid/v2"
 )
 
@@ -303,4 +303,3 @@ func newRunID() string {
 	}
 	return id.String()
 }
-

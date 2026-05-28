@@ -1,4 +1,4 @@
-module github.com/majtom2grndctrl/market-scout
+module github.com/majtom2grndctrl/market-scout/apps/tools
 
 go 1.26.2
 

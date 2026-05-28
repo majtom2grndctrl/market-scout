@@ -50,10 +50,12 @@ func seedRowKey(ats, boardToken string) string {
 }
 
 // seedValuesRowRegex matches one VALUES row in the seed file:
-//   ('Name', 'ats', 'board_token', 'industry')
+//
+//	('Name', 'ats', 'board_token', 'industry')
+//
 // The capture indexes used are ats=1, board_token=2.
 //
-// The name column uses (?:[^']|'')* to allow SQL-escaped apostrophes ('' per
+// The name column uses (?:[^']|”)* to allow SQL-escaped apostrophes (” per
 // ANSI SQL). The ats and board_token columns use [^']* — neither contains
 // apostrophes and the simpler form is easier to read at those positions.
 // Option (a) was chosen over a line-by-line tokenizer: the single pattern

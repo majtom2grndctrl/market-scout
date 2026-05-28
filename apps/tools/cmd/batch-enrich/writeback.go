@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/majtom2grndctrl/market-scout/internal/db"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
 )
 
 // writeOneMaxAttempts caps the total attempts (initial + retries) for a

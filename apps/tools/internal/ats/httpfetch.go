@@ -31,7 +31,7 @@ func httpFetch(ctx context.Context, client *http.Client, url string) ([]byte, er
 		return nil, fmt.Errorf("httpfetch: building request for %s: %w", url, err)
 	}
 	// Some job-board CDNs (Cloudflare) reset connections from Go's default UA.
-	req.Header.Set("User-Agent", "market-scout/0.1 (job board fetcher; +https://github.com/majtom2grndctrl/market-scout)")
+	req.Header.Set("User-Agent", "market-scout/0.1 (job board fetcher; +https://github.com/majtom2grndctrl/market-scout/apps/tools)")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -74,7 +74,7 @@ func httpPost(ctx context.Context, client *http.Client, url string, body []byte)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	// Some job-board CDNs (Cloudflare) reset connections from Go's default UA.
-	req.Header.Set("User-Agent", "market-scout/0.1 (job board fetcher; +https://github.com/majtom2grndctrl/market-scout)")
+	req.Header.Set("User-Agent", "market-scout/0.1 (job board fetcher; +https://github.com/majtom2grndctrl/market-scout/apps/tools)")
 
 	resp, err := client.Do(req)
 	if err != nil {

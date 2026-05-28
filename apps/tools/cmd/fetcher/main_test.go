@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/majtom2grndctrl/market-scout/internal/ats"
-	"github.com/majtom2grndctrl/market-scout/internal/domain"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/ats"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/domain"
 )
 
 func TestClassifyCompanyError(t *testing.T) {
