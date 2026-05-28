@@ -22,7 +22,7 @@ A local MCP server exposing read-only access to the market-scout Postgres DB, so
 - Auth / multi-user. Single local admin user only.
 
 ## Acceptance criteria
-- [ ] `go run ./cmd/mcp` starts an stdio MCP server; a Claude Code session configured per the settings entry lists its tools.
+- [ ] `go run ./cmd/mcp` (from `apps/tools/`) starts an stdio MCP server; a Claude Code session configured per the settings entry lists its tools.
 - [ ] `query` with a valid `SELECT` returns matching rows as a JSON array of objects (column name → value; SQL NULL → JSON null).
 - [ ] `query` with an `INSERT`/`UPDATE`/`DELETE`/DDL statement returns an error and mutates no data (row counts unchanged afterward).
 - [ ] A result set larger than the row cap is truncated to the cap, and the response indicates truncation.
@@ -36,10 +36,10 @@ A local MCP server exposing read-only access to the market-scout Postgres DB, so
 Create `cmd/mcp/main.go` following the `cmd/onboard` structure: a testable `run` body, `slog` to stderr, `godotenv.Load(".env.local")`, `signal.NotifyContext` for shutdown. Add `mark3labs/mcp-go` to `go.mod`. Read the read-only DSN from its env var; fail fast if unset — no fallback to `DATABASE_URL`, since the fallback would silently defeat the safety boundary. Open with `sql.Open("pgx", dsn)`, ping with a timeout. Register a `query` tool with one required string param `sql`. Handler runs the SQL inside a read-only transaction (`sql.TxOptions{ReadOnly: true}`) with a per-transaction `statement_timeout`, scans dynamic columns into a JSON-friendly shape, caps rows, and returns `mcp.NewToolResultText(json)`. Serve over stdio with `server.ServeStdio`.
 
 ### Task 2: Read-only role provisioning + setup docs
-Provide an idempotent SQL script (e.g. `internal/db/setup/readonly_role.sql`) that creates the read-only role and grants `SELECT` on all current **and future** tables in `public` (`GRANT SELECT ON ALL TABLES IN SCHEMA public` plus `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES`). Document the one-time setup step and the read-only DSN env var in `developer-guide.md`. This is operational setup, not a numbered schema migration — roles are cluster-level, and a migration would bake a credential into source.
+Provide an idempotent SQL script (e.g. `apps/tools/internal/db/setup/readonly_role.sql`) that creates the read-only role and grants `SELECT` on all current **and future** tables in `public` (`GRANT SELECT ON ALL TABLES IN SCHEMA public` plus `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES`). Document the one-time setup step and the read-only DSN env var in `developer-guide.md`. This is operational setup, not a numbered schema migration — roles are cluster-level, and a migration would bake a credential into source.
 
 ### Task 3: `fetch_status` curated tool
-Add a sqlc query in `internal/db/queries/` returning the latest `fetch_run` per company (`DISTINCT ON (company_id) ... ORDER BY company_id, started_at DESC`), joined to `companies.name`. Run `sqlc generate`; commit SQL input and generated output together. Register a `fetch_status` tool (no params) that calls the query through `db.New(pool)` and returns the rows as JSON.
+Add a sqlc query in `apps/tools/internal/db/queries/` returning the latest `fetch_run` per company (`DISTINCT ON (company_id) ... ORDER BY company_id, started_at DESC`), joined to `companies.name`. Run `sqlc generate`; commit SQL input and generated output together. Register a `fetch_status` tool (no params) that calls the query through `db.New(pool)` and returns the rows as JSON.
 
 ### Task 4: Claude Code wiring + tests
 Add the `cmd/mcp` server to `.claude/settings.json`. Unit-test the row→JSON encoding (type mapping, NULL handling, truncation) with no DB. Add an integration test (`//go:build integration`) that, against a real Postgres connected as the read-only role, confirms a `SELECT` returns rows and a write statement is rejected.
@@ -69,5 +69,5 @@ Result encoding contract: JSON array of objects keyed by column name. NULL → J
 ## Open questions
 - Row cap and statement-timeout defaults — propose 1000 rows / 5s.
 - Read-only DSN env var name — propose `MCP_DATABASE_URL` (alt: `DATABASE_URL_RO`).
-- Settings invocation — `go run ./cmd/mcp` (no build step, slower start) vs. a prebuilt `bin/mcp` (faster, needs build). Propose `go run` for dev simplicity.
+- Settings invocation — `go run ./cmd/mcp` (from `apps/tools/`, no build step, slower start) vs. a prebuilt `apps/tools/bin/mcp` (faster, needs build). Propose `go run` for dev simplicity.
 - `mark3labs/mcp-go` vs. the official `github.com/modelcontextprotocol/go-sdk` (now exists, High source reputation). You chose mark3labs after research; flagged only because the official SDK is a long-term alternative. Default: proceed with mark3labs.

@@ -15,8 +15,8 @@ Grounding facts gathered during drafting. Not decisions — those live in `index
 
 ## Codebase grounding (verified against source)
 
-- Module path: `github.com/majtom2grndctrl/market-scout` (`go.mod:1`).
-- `db.New(db DBTX) *Queries` — `internal/db/db.go:19`. `DBTX` satisfied by `*sql.DB` and `*sql.Tx`.
+- Module path: `github.com/majtom2grndctrl/market-scout/apps/tools` (`go.mod:1`).
+- `db.New(db DBTX) *Queries` — `apps/tools/internal/db/db.go:19`. `DBTX` satisfied by `*sql.DB` and `*sql.Tx`.
 - DB wiring (both `cmd/fetcher` and `cmd/onboard`): `godotenv.Load(".env.local")` → `os.Getenv("DATABASE_URL")` (fatal if empty) → `sql.Open("pgx", dsn)` → `pool.PingContext` (10s timeout) → `db.New(pool)`. pgx registered via blank import `_ "github.com/jackc/pgx/v5/stdlib"`.
 - main/run split: `cmd/onboard` uses `func run(args, stdout, stderr) int` returning an exit code (`exitOK=0`, `exitGenericError=1`, `exitPreconditionMissing=2`); `main` just `os.Exit(run(...))`. `cmd/fetcher` uses `func run() error`. The onboard pattern fits the MCP binary.
 - Signal handling: `ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)`.
@@ -32,4 +32,4 @@ The 9 sqlc read queries are oriented to the fetcher/enrichment pipelines, not ve
 
 ## Test conventions
 
-Unit tests alongside source; integration tests gated `//go:build integration`, skip when `DATABASE_URL` unset, open a real pool. `cmd/fetcher/main_test.go` uses `httptest` + fake interfaces; `cmd/fetcher/fetch_runs_integration_test.go` shows the DB-integration shape.
+Unit tests alongside source; integration tests gated `//go:build integration`, skip when `DATABASE_URL` unset, open a real pool. `cmd/fetcher/main_test.go` uses `httptest` + fake interfaces; `apps/tools/cmd/fetcher/fetch_runs_integration_test.go` shows the DB-integration shape.
