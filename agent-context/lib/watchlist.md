@@ -2,13 +2,13 @@
 
 > **Read this when:** adding, removing, or sourcing companies for the scrape run, or evaluating ATS coverage.
 > **Key invariant:** The seed file is the canonical source of truth. Seeded fields: `name`, `ats`, `board_token`, `industry`.
-> **Related:** `project.md` §ATS targets, `index.md`, `internal/ats/`
+> **Related:** `project.md` §ATS targets, `index.md`, `apps/tools/internal/ats/`
 
 ---
 
 ## New companies
 
-Annotation is done by an agent or human; verification and seed-row emission are handled by `cmd/onboard` (see §Research file annotation).
+Annotation is done by an agent or human; verification and seed-row emission are handled by `apps/tools/cmd/onboard` (see §Research file annotation).
 
 ### What to capture
 
@@ -133,4 +133,4 @@ Unset fields are `null`, not omitted. Schema is positionally stable so `jq` filt
 
 ### Confirmed results
 
-Verified companies are appended to the seed file by `cmd/onboard` on the run that stamps `verified_at`.
+Verified companies are appended to the seed file by `apps/tools/cmd/onboard` on the run that stamps `verified_at`.

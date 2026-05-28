@@ -64,9 +64,9 @@ Name boundary modules and entry points. Describe contract semantics and invarian
 
 **Point to boundary packages** (use actual paths once they exist — never invent paths in examples):
 ```
-ATS adapters: internal/ats/<adapter>.go
-Snapshot writer: internal/db/snapshots.go
-Fetcher entry:  cmd/fetcher
+ATS adapters: apps/tools/internal/ats/<adapter>.go
+Snapshot writer: apps/tools/internal/db/snapshots.go
+Fetcher entry:  apps/tools/cmd/fetcher
 ```
 
 **Describe behavior in prose:**
@@ -83,7 +83,7 @@ timestamped row per posting per fetch. Adapters never write to the DB.
 
 After implementation, point to real code. A stale struct definition or SQL schema in a context file creates mismatches at the worst possible layer. Describe the contract's semantics in prose; reference the source file or migration for the shape.
 
-Package-internal types (anything under `internal/`, unexported identifiers) belong in code comments, not context files.
+Package-internal types (anything under `apps/tools/internal/`, unexported identifiers) belong in code comments, not context files.
 
 ## Durable vs. Ephemeral Content
 

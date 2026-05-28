@@ -33,8 +33,8 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Fetcher | Go binary, `cmd/fetcher` | Concurrent HTTP from ATS APIs, cron-scheduled |
-| Classifier | Go binary, `cmd/batch-enrich` | Cron-schedulable. Dispatches Haiku subprocesses via `claude -p` for per-posting classification. No Anthropic SDK or direct REST. Writeback through the sqlc query layer. |
+| Fetcher | Go binary, `apps/tools/cmd/fetcher` | Concurrent HTTP from ATS APIs, cron-scheduled |
+| Classifier | Go binary, `apps/tools/cmd/batch-enrich` | Cron-schedulable. Dispatches Haiku subprocesses via `claude -p` for per-posting classification. No Anthropic SDK or direct REST. Writeback through the sqlc query layer. |
 | Database | Postgres in Docker | Option to point at Supabase later |
 | DB client | `sqlc` + `database/sql` + `pgx/v5/stdlib` | Write SQL, get generated type-safe Go. No ORM. Standard `database/sql` target (no `sql_package` override); generated models use `sql.NullString`/`sql.NullTime`, translated to `*string`/`*time.Time` at the DB boundary. |
 | Vector search | pgvector extension | Enabled from day one. Similarity queries in raw SQL. |
@@ -50,7 +50,7 @@ Classification runs on its own cadence. The classifier selects unclassified post
 
 ## ATS targets
 
-Five adapters are live: Greenhouse, Lever, Ashby, Workday, and Workable. Each ATS is a separate file in `internal/ats`; all adapters return `domain.Posting` from `internal/domain`.
+Five adapters are live: Greenhouse, Lever, Ashby, Workday, and Workable. Each ATS is a separate file in `apps/tools/internal/ats`; all adapters return `domain.Posting` from `apps/tools/internal/domain`.
 
 | Platform | `board_token` format | API type |
 |---|---|---|

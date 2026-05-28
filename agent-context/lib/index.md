@@ -32,10 +32,10 @@
 
 | Decision | Choice | Notes |
 |---|---|---|
-| Fetcher | Go binary, `cmd/fetcher` | Concurrent HTTP from ATS APIs, cron-scheduled |
+| Fetcher | Go binary, `apps/tools/cmd/fetcher` | Concurrent HTTP from ATS APIs, cron-scheduled |
 | Database | Postgres in Docker | Option to point at Supabase later |
 | DB client | `sqlc` + `database/sql` + `pgx/v5/stdlib` | Write SQL, get generated type-safe Go. No ORM. pgx is the registered `database/sql` driver. |
 | Vector search | pgvector extension | Enabled from day one. Similarity queries in raw SQL. |
 | Storage model | Append-only snapshots | Every fetch writes timestamped rows. Never upsert. Load-bearing for trend analysis. |
 | App layer | Next.js → Postgres direct | No separate Go API server. `pg` or `postgres.js`. |
-| ATS adapters | Interface in `cmd/fetcher`; implementations in `internal/ats/` | All adapters implement the same `FetchPostings` contract. |
+| ATS adapters | Interface in `apps/tools/cmd/fetcher`; implementations in `apps/tools/internal/ats/` | All adapters implement the same `FetchPostings` contract. |

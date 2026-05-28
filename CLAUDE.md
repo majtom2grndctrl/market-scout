@@ -16,6 +16,6 @@ Read `agent-context/lib/style-guide.md`.
 
 Read `agent-context/lib/testing-guide.md`.
 
-## Before editing files in `internal/db/`
+## Before editing files in `apps/tools/internal/db/`
 
 Read `agent-context/lib/developer-guide.md` §5.8 (Generated files). Never hand-edit sqlc output.

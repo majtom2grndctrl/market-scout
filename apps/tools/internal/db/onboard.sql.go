@@ -35,10 +35,8 @@ type FindCompanyDedupStatusRow struct {
 	HasRecentSnapshot bool
 }
 
-// Used by cmd/onboard to dedup a sidecar record against the companies table.
-// Returns the company id if a row with the given (ats, board_token) exists,
-// plus a boolean indicating whether any of that company's postings have a
-// posting_snapshots row with fetched_at within the recency window.
+// Given (ats, board_token), returns whether a matching company exists and
+// whether it has any posting_snapshots within the recency window.
 //
 // Recency window: snapshots from now() - (recency_days days) and later count
 // as "recent". The caller passes the watchlist's 30-day threshold as an

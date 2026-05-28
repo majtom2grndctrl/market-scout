@@ -12,14 +12,14 @@ Standard Go `testing` package. Tests live next to the code they exercise (`foo.g
 
 | Layer | Scope | Location |
 |-------|-------|----------|
-| Unit | Pure logic, parsers, response decoding | Alongside source (`internal/ats/greenhouse_test.go`) |
-| Adapter HTTP | ATS adapter against `httptest.Server` with recorded fixtures | `internal/ats/*_test.go` |
-| DB integration | `sqlc` queries against a real Postgres (testcontainers-go or a shared dev container) | `internal/db/*_integration_test.go`, build tag `//go:build integration` |
-| End-to-end | `cmd/fetcher` run against fixture ATS server + real Postgres | `cmd/fetcher/*_e2e_test.go`, build tag `//go:build e2e` |
+| Unit | Pure logic, parsers, response decoding | Alongside source (`apps/tools/internal/ats/greenhouse_test.go`) |
+| Adapter HTTP | ATS adapter against `httptest.Server` with recorded fixtures | `apps/tools/internal/ats/*_test.go` |
+| DB integration | `sqlc` queries against a real Postgres (testcontainers-go or a shared dev container) | `apps/tools/internal/db/*_integration_test.go`, build tag `//go:build integration` |
+| End-to-end | `cmd/fetcher` run against fixture ATS server + real Postgres | `apps/tools/cmd/fetcher/*_e2e_test.go`, build tag `//go:build e2e` |
 
 Default `go test ./...` runs unit + adapter HTTP tests. Integration and E2E tests require their build tags (`go test -tags=integration ./...`) and a running Postgres.
 
-Fixtures (recorded ATS JSON responses) live in `internal/ats/testdata/<adapter>/`. The `testdata/` directory name is recognized by the Go toolchain and excluded from build.
+Fixtures (recorded ATS JSON responses) live in `apps/tools/internal/ats/testdata/<adapter>/`. The `testdata/` directory name is recognized by the Go toolchain and excluded from build.
 
 ---
 
@@ -68,7 +68,7 @@ Assert observable outcomes: rows written to the DB, results returned by a query,
 
 Model the actual lifecycle: HTTP fetch → JSON decode → snapshot row construction → DB insert → query read. Over-mocking the DB or HTTP layer hides the interactions tests exist to document. Prefer `httptest.Server` with fixture JSON over mocking the adapter interface.
 
-Reference: `internal/ats/greenhouse_test.go` (adapter against `httptest.Server` serving recorded JSON).
+Reference: `apps/tools/internal/ats/greenhouse_test.go` (adapter against `httptest.Server` serving recorded JSON).
 
 ### Seam-crossing tests
 
@@ -116,17 +116,19 @@ Tests co-locate with source (`*_test.go`). Shared infrastructure:
 
 | Directory | Purpose |
 |-----------|---------|
-| `internal/testutil/` | Reusable helpers (`NewTestDB`, fixture loaders, fake clock) |
-| `internal/ats/testdata/<adapter>/` | Recorded ATS JSON responses |
-| `internal/db/testdata/` | SQL seed scripts for integration tests |
+| `apps/tools/internal/testutil/` | Reusable helpers (`NewTestDB`, fixture loaders, fake clock) |
+| `apps/tools/internal/ats/testdata/<adapter>/` | Recorded ATS JSON responses |
+| `apps/tools/internal/db/testdata/` | SQL seed scripts for integration tests |
 
 Test files are exempt from source file size guidance. Test suites are flat and linear — large is fine. A 600-line `_test.go` with 30 table cases is healthier than three files split by aesthetic.
 
-Helpers go in `internal/testutil/` only when reused across packages. Package-local helpers stay in `helpers_test.go` next to the tests that use them.
+Helpers go in `apps/tools/internal/testutil/` only when reused across packages. Package-local helpers stay in `helpers_test.go` next to the tests that use them.
 
 ---
 
 ## 6. Running Tests
+
+From `apps/tools/`:
 
 ```bash
 go test ./...                              # All unit + adapter tests

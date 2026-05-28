@@ -9,11 +9,11 @@
 ## Agent TL;DR
 
 - Optimize for **readability over cleverness**; prefer small, explicit changes.
-- Respect **package boundaries**: `cmd/fetcher` orchestrates and owns the DB lifecycle. `internal/ats` adapts ATS APIs (HTTP only — no DB access). `internal/db` holds sqlc output. Adapters and the fetcher exchange `domain.Posting` from `internal/domain`.
+- Respect **package boundaries**: `apps/tools/cmd/fetcher` orchestrates and owns the DB lifecycle. `apps/tools/internal/ats` adapts ATS APIs (HTTP only — no DB access). `apps/tools/internal/db` holds sqlc output. Adapters and the fetcher exchange `domain.Posting` from `apps/tools/internal/domain`.
 - `posting_snapshots` is **append-only**. Every fetch writes new timestamped rows. Never upsert. This is load-bearing for trend analysis.
-- Define **Go interfaces at package boundaries** (`internal/ats/` exposes the ATS adapter interface; each ATS is a separate file).
+- Define **Go interfaces at package boundaries** (`apps/tools/internal/ats/` exposes the ATS adapter interface; each ATS is a separate file).
 - Validate ATS API responses at the adapter boundary; return typed errors. No `panic` in library code.
-- Database access goes through `sqlc`-generated functions; no ad-hoc SQL strings in business logic. Raw SQL lives in `internal/db/queries/`.
+- Database access goes through `sqlc`-generated functions; no ad-hoc SQL strings in business logic. Raw SQL lives in `apps/tools/internal/db/queries/`.
 - Next.js app layer is **deferred**. See [`project.md` §Non-goals](./project.md).
 - **Deliver the impact defined in docs and tickets.** Specs define what and why; use judgment on how. When the plan doesn't survive contact with the code, adapt — but surface deviations and update the docs. See §1.
 
@@ -115,13 +115,13 @@ go run ./cmd/migrate up                     # Apply schema migrations
 
 `.env.local` is canonical at repo root (docker-compose reads it). `apps/tools/.env.local` is a symlink so the Go tools see the same file — no DB-credential drift. Both are gitignored; the symlink is a local-setup step, not checked in.
 
-Generate sqlc code if any `.sql` files in `internal/db/queries/` have changed:
+Generate sqlc code if any `.sql` files in `apps/tools/internal/db/queries/` have changed:
 
 ```bash
 sqlc generate
 ```
 
-The generated `.go` files in `internal/db/` are checked in — regenerate after changing schema or queries, then commit the diff.
+The generated `.go` files in `apps/tools/internal/db/` are checked in — regenerate after changing schema or queries, then commit the diff.
 
 ### Running the Fetcher
 
@@ -146,11 +146,11 @@ Primary debugging surfaces:
 
 - **TablePlus** — GUI client. Connect using `DATABASE_URL`. Inspect tables, run ad-hoc queries, browse schema.
 - **`psql`** — `docker exec -it market-scout-db psql` drops into a shell using the container's credentials. Port 5432 is also exposed to localhost, so a host-side `psql $DATABASE_URL` works if `psql` is installed.
-- **Ad-hoc Go scripts** — write a `.go` file to the project root, run with `go run <script>.go`, then delete it. Scripts must live at the project root: Go modules require `go.mod` to resolve imports (`github.com/jackc/pgx/v5/stdlib`, `github.com/joho/godotenv`, etc.). Running from `/tmp` or any directory without `go.mod` fails with "no required module provides package."
+- **Ad-hoc Go scripts** — write a `.go` file to `apps/tools/` (the Go module root), run with `go run <script>.go`, then delete it. Scripts must live alongside `go.mod`: Go modules require `go.mod` to resolve imports (`github.com/jackc/pgx/v5/stdlib`, `github.com/joho/godotenv`, etc.). Running from `/tmp` or any directory without `go.mod` fails with "no required module provides package."
 
 ### Schema Migrations
 
-Migrations live in `internal/db/migrations/` as numbered SQL files. Apply with `go run ./cmd/migrate up`. Never edit a migration after it has run against any environment; add a new one.
+Migrations live in `apps/tools/internal/db/migrations/` as numbered SQL files. Apply with `go run ./cmd/migrate up` (from `apps/tools/`). Never edit a migration after it has run against any environment; add a new one.
 
 After a schema change, regenerate sqlc:
 
@@ -174,6 +174,8 @@ go run ./cmd/fetcher
 
 ### Build Pipeline
 
+From `apps/tools/`:
+
 ```bash
 go build ./cmd/fetcher       # Compile the fetcher binary
 go build ./...               # Compile every package (verifies the tree)
@@ -182,38 +184,41 @@ staticcheck ./...            # Stricter linter
 go test ./...                # Run the test suite
 ```
 
-`sqlc generate` is a separate step — it reads `internal/db/queries/*.sql` and schema from `internal/db/migrations/` and writes typed Go query functions into `internal/db/`. Run it after editing SQL or migrations.
+`sqlc generate` is a separate step — it reads `apps/tools/internal/db/queries/*.sql` and schema from `apps/tools/internal/db/migrations/` and writes typed Go query functions into `apps/tools/internal/db/`. Run it after editing SQL or migrations.
 
 ### Output Structure
 
 ```
 market-scout/
-├── cmd/
-│   ├── fetcher/             # Main fetcher entry point
-│   │   └── main.go
-│   ├── migrate/             # Migration runner
-│   │   └── main.go
-│   └── strip-boilerplate/   # Per-company boilerplate stripper (classification preprocessor)
-│       └── main.go
-├── internal/
-│   ├── ats/                 # ATS adapter implementations (interface lives in cmd/fetcher per §5.3)
-│   │   ├── greenhouse.go    # Greenhouse implementation
-│   │   ├── lever.go         # Lever implementation
-│   │   ├── ashby.go         # Ashby implementation
-│   │   ├── workday.go       # Workday implementation
-│   │   └── httpfetch.go     # Shared HTTP helpers (GET and POST)
-│   └── db/
-│       ├── migrations/      # Numbered migration files (source of truth for schema)
-│       ├── queries/         # Hand-written SQL for sqlc
-│       ├── *.sql.go         # sqlc-generated query functions
-│       └── models.go        # sqlc-generated row types
+├── apps/
+│   └── tools/                       # Go module (binaries + shared packages)
+│       ├── go.mod
+│       ├── cmd/
+│       │   ├── fetcher/             # Main fetcher entry point
+│       │   │   └── main.go
+│       │   ├── migrate/             # Migration runner
+│       │   │   └── main.go
+│       │   └── strip-boilerplate/   # Per-company boilerplate stripper (classification preprocessor)
+│       │       └── main.go
+│       └── internal/
+│           ├── ats/                 # ATS adapter implementations (interface lives in cmd/fetcher per §5.3)
+│           │   ├── greenhouse.go    # Greenhouse implementation
+│           │   ├── lever.go         # Lever implementation
+│           │   ├── ashby.go         # Ashby implementation
+│           │   ├── workday.go       # Workday implementation
+│           │   └── httpfetch.go     # Shared HTTP helpers (GET and POST)
+│           └── db/
+│               ├── migrations/      # Numbered migration files (source of truth for schema)
+│               ├── queries/         # Hand-written SQL for sqlc
+│               ├── *.sql.go         # sqlc-generated query functions
+│               └── models.go        # sqlc-generated row types
 ├── agent-context/
-│   ├── lib/                 # Durable architecture docs
-│   └── plans/               # Ephemeral session plans
-└── docker-compose.yml       # Postgres + pgvector
+│   ├── lib/                         # Durable architecture docs
+│   └── plans/                       # Ephemeral session plans
+└── docker-compose.yml               # Postgres + pgvector
 ```
 
-The Next.js app layer (`web/` or similar) will land later; see [`lib/project.md` §Non-goals](./lib/project.md).
+The Next.js app layer lands at `apps/web/` later; see [`lib/project.md` §Non-goals](./lib/project.md).
 
 ---
 
@@ -238,7 +243,7 @@ Split along natural boundaries:
 2. **Consumer** — different importers use different subsets of exports. Each subset becomes a file.
 3. **Change frequency** — stable plumbing vs. actively-evolving logic. Separate to reduce churn.
 
-In Go, prefer **multiple files in the same package** over new packages. New packages are only justified when there's a real interface boundary (e.g. `internal/ats/` is a package because adapters share an interface; individual adapter files are not sub-packages).
+In Go, prefer **multiple files in the same package** over new packages. New packages are only justified when there's a real interface boundary (e.g. `apps/tools/internal/ats/` is a package because adapters share an interface; individual adapter files are not sub-packages).
 
 ### 4.3 Splits to avoid
 
@@ -277,14 +282,14 @@ In Go, prefer **multiple files in the same package** over new packages. New pack
 
 ### 5.3 Interfaces at boundaries
 
-- Define interfaces in the package that **consumes** them, not the package that implements them. Idiomatic Go: `cmd/fetcher` declares what it needs from an ATS adapter; implementations in `internal/ats/` satisfy it implicitly.
-- Keep interfaces small. The ATS adapter interface should be the minimum the fetcher needs to call (e.g. `FetchPostings(ctx, company) ([]domain.Posting, error)`, where `domain.Posting` lives in `internal/domain` so producers and consumers share it without depending on each other).
+- Define interfaces in the package that **consumes** them, not the package that implements them. Idiomatic Go: `apps/tools/cmd/fetcher` declares what it needs from an ATS adapter; implementations in `apps/tools/internal/ats/` satisfy it implicitly.
+- Keep interfaces small. The ATS adapter interface should be the minimum the fetcher needs to call (e.g. `FetchPostings(ctx, company) ([]domain.Posting, error)`, where `domain.Posting` lives in `apps/tools/internal/domain` so producers and consumers share it without depending on each other).
 - Validate external responses at the adapter boundary. Decode JSON into typed structs; reject malformed payloads with a wrapped error rather than passing `map[string]any` upward.
 
 ### 5.4 Structs over maps for typed data
 
 - Anything with a known shape gets a `struct`. Maps are for genuinely dynamic key sets.
-- ATS API responses → decode into structs that mirror the response, then translate into domain types (`internal/domain.Posting`) before returning. The wire shape and the domain shape are separate concerns.
+- ATS API responses → decode into structs that mirror the response, then translate into domain types (`apps/tools/internal/domain.Posting`) before returning. The wire shape and the domain shape are separate concerns.
 - Use struct tags (`json:"job_id"`) at the wire-shape layer only. Domain types should not carry transport tags.
 
 ### 5.5 Type switches over stringly-typed branching
@@ -304,10 +309,10 @@ Concurrency exists to overlap waits — outbound HTTP, mostly. It is not a perfo
 ### 5.7 Database access
 
 - All SQL goes through `sqlc`-generated query functions. No string-built queries in business logic.
-- Hand-written SQL lives in `internal/db/queries/*.sql` with `-- name: FunctionName :many` annotations.
+- Hand-written SQL lives in `apps/tools/internal/db/queries/*.sql` with `-- name: FunctionName :many` annotations.
 - sqlc targets the standard `database/sql` interface (no `sql_package` override). pgx v5 is registered as the `pgx` driver via a blank import of `github.com/jackc/pgx/v5/stdlib`. Open with `sql.Open("pgx", dsn)`; pass the resulting `*sql.DB` — or a `*sql.Tx` inside a transaction — into `db.New`.
-- Generated row types use `sql.NullString` and `sql.NullTime`. Translate to and from `*string` / `*time.Time` at the DB boundary so `internal/domain` stays free of `database/sql` symbols.
-- `cmd/fetcher` owns DB lifecycle: it opens the pool, begins per-company transactions, and invokes the sqlc functions. ATS adapters are HTTP-only and never receive a `*sql.DB`.
+- Generated row types use `sql.NullString` and `sql.NullTime`. Translate to and from `*string` / `*time.Time` at the DB boundary so `apps/tools/internal/domain` stays free of `database/sql` symbols.
+- `apps/tools/cmd/fetcher` owns DB lifecycle: it opens the pool, begins per-company transactions, and invokes the sqlc functions. ATS adapters are HTTP-only and never receive a `*sql.DB`.
 - Snapshot writes are **append-only inserts**. There is no update path for `posting_snapshots`. If you find yourself reaching for `ON CONFLICT ... DO UPDATE`, stop and re-read the snapshot model.
 
 ### 5.8 Generated files
@@ -318,15 +323,15 @@ Recognize one by the header `// Code generated by ... DO NOT EDIT.` at the top o
 
 | File / glob | Generator | Committed? | Regenerate with |
 |---|---|---|---|
-| `internal/db/*.sql.go` | sqlc | yes | `sqlc generate` |
-| `internal/db/db.go`, `internal/db/models.go` | sqlc | yes | `sqlc generate` |
-| `internal/db/migrations_embed.go` | hand-written (uses `//go:embed`) | yes — not generated | n/a |
+| `apps/tools/internal/db/*.sql.go` | sqlc | yes | `sqlc generate` |
+| `apps/tools/internal/db/db.go`, `apps/tools/internal/db/models.go` | sqlc | yes | `sqlc generate` |
+| `apps/tools/internal/db/migrations_embed.go` | hand-written (uses `//go:embed`) | yes — not generated | n/a |
 
 There are no `go:generate` directives in the tree; sqlc is invoked by hand and the diff is committed alongside the SQL change.
 
 If generated output is wrong, **fix the source, not the output:**
 
-- sqlc type wrong for a column? Edit the `.sql` query in `internal/db/queries/`, or add an `overrides` entry in `sqlc.yaml`. Then regenerate.
+- sqlc type wrong for a column? Edit the `.sql` query in `apps/tools/internal/db/queries/`, or add an `overrides` entry in `sqlc.yaml`. Then regenerate.
 - Migrations: never edit a shipped migration; add a new one (see §2 Schema Migrations).
 
 Workflow: change the source → `sqlc generate` → review the diff → commit input and output together. The generated diff is part of the change.
@@ -348,7 +353,7 @@ Workflow: change the source → `sqlc generate` → review the diff → commit i
 - **TablePlus** or an ad-hoc Go script (see §2 Database Access) — inspect snapshot rows, vector embeddings, and migration state directly.
 - `slog` output goes to stderr by default. Pipe through `jq` if you switch the handler to JSON for richer filtering.
 
-**Enrichment / classification output.** The `classifications` table is the primary data quality surface. Current classification per posting is the latest row by `classified_at` — the `DISTINCT ON` pattern in `internal/db/queries/classifications.sql` is the canonical query shape; read it before writing ad-hoc inspection queries.
+**Enrichment / classification output.** The `classifications` table is the primary data quality surface. Current classification per posting is the latest row by `classified_at` — the `DISTINCT ON` pattern in `apps/tools/internal/db/queries/classifications.sql` is the canonical query shape; read it before writing ad-hoc inspection queries.
 
 Key invariants:
 
