@@ -25,7 +25,7 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 
 ## Repo layout
 
-`apps/` houses deployable units. The Go module (binaries and shared packages) lives at `apps/tools/`; the module path is `github.com/majtom2grndctrl/market-scout/apps/tools`. The forthcoming Next.js app lands at `apps/web/` as a sibling. Shared infra (`docker-compose.yml`, root `.env.local`) stays at repo root and serves both.
+`apps/` houses deployable units. The Go module (binaries and shared packages) lives at `apps/tools/`; the module path is `github.com/majtom2grndctrl/market-scout/apps/tools`. The Next.js app lives at `apps/web/` as a sibling. Shared infra (`docker-compose.yml`, root `.env.local`) stays at repo root and serves both.
 
 `research/` sits at repo root as a deliberate low-attention pocket — quasi-documentation that agents read only when explicitly directed. It is not under `agent-context/` (read by default) and not under `apps/` (deployable code). Tools reference its contents via CLI arg, never a hardcoded path.
 
@@ -40,6 +40,7 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 | Vector search | pgvector extension | Enabled from day one. Similarity queries in raw SQL. |
 | Storage model | Append-only snapshots | Every fetch writes timestamped rows. Never upsert. Load-bearing for trend analysis. |
 | App layer | Next.js (Server Actions / API routes → Postgres direct) | No separate Go API server. `pg` or `postgres.js`. |
+| UI stack | App Router, TypeScript, Tailwind v4, shadcn/ui on Base UI | Components are copied into the repo, not imported. `shadcn add` serves the Base UI variant, not Radix — set in `components.json` (`style: base-nova`, `tsx: true`). Geist font, Lucide icons, neutral base color. |
 | Future | `init` CLI | Scaffolds new users' setups. Not in scope yet. |
 
 Our own first-observed timestamp on a job-posting record is the load-bearing repost-detection signal. ATS-reported "first published" and "created at" timestamps refresh on repost on at least some boards, so they cannot be trusted as the primary signal. The append-only snapshot model combined with an immutable first-observed timestamp — set once on initial upsert, never overwritten — is what makes repost detection durable. Source-reported timestamps are captured on every snapshot as a secondary change-detection signal, not as the repost anchor.
@@ -73,7 +74,7 @@ The Postgres DB is also intended to serve as a knowledge store for an AI agent l
 ## Non-goals (current scope)
 
 - Scheduler (deferred)
-- Next.js app UI (deferred)
+- Next.js product screens (deferred — `apps/web` scaffold and shadcn/ui design system are in place; no product UI built yet)
 - Embedding storage for classification summaries (deferred — pgvector columns not yet added; summary is report-only today; classification provenance schema is live in migration 000001)
 - `skills[].requirement` persistence (deferred — writeback ignores the field today)
 - Agent UI (deferred)
