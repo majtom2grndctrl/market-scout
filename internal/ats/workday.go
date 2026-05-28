@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -218,20 +219,92 @@ func decodeWorkdayJob(raw json.RawMessage, boardToken, host, site string, index 
 		posting.LocationTexts = []string{job.LocationsText}
 	}
 
-	// postedOn is YYYY-MM-DD in the tenant's local calendar. Treat as midnight
-	// UTC: timezone is not on the wire and PostedAt is day-resolution only, so
-	// sub-day skew is noise. Unparseable values warn and leave both timestamp
-	// fields nil — one bad date should not abort the whole fetch.
+	// postedOn is usually YYYY-MM-DD in the tenant's local calendar, but some
+	// tenants return rendered relative strings like "Posted Today" or
+	// "Posted 6 Days Ago". Try ISO first, fall back to the relative form.
+	// Treat absolute results as midnight UTC: timezone is not on the wire and
+	// PostedAt is day-resolution only, so sub-day skew is noise. Unparseable
+	// values warn and leave both timestamp fields nil — one bad date should
+	// not abort the whole fetch.
 	if job.PostedOn != "" {
-		t, err := time.Parse("2006-01-02", job.PostedOn)
-		if err != nil {
+		t, recognized := parseWorkdayPostedOn(job.PostedOn, time.Now().UTC())
+		if t != nil {
+			posting.PostedAt = t
+			posting.SourceFirstPublishedAt = t
+		} else if !recognized {
 			slog.Warn("[workday] unparseable postedOn", "value", job.PostedOn, "boardToken", boardToken, "externalPath", job.ExternalPath)
-		} else {
-			t = t.UTC()
-			posting.PostedAt = &t
-			posting.SourceFirstPublishedAt = &t
 		}
 	}
 
 	return posting, nil
+}
+
+// parseWorkdayPostedOn normalizes the wire's postedOn string into a midnight-UTC
+// timestamp. It accepts the ISO YYYY-MM-DD shape and a small set of relative
+// strings Workday tenants render in place of dates:
+//
+//   - "Posted Today"          → now (truncated to the day)
+//   - "Posted Yesterday"      → now − 1 day
+//   - "Posted N Days Ago"     → now − N days
+//   - "Posted 30+ Days Ago"   → recognized but unresolvable; returns (nil, true)
+//
+// The second return is true when the input matched a known shape — including
+// the capped "30+" case — so callers can suppress the unparseable-value warning
+// for inputs we knowingly drop.
+//
+// now is passed in (rather than reading time.Now inside) to keep the function
+// testable without a clock abstraction.
+func parseWorkdayPostedOn(value string, now time.Time) (*time.Time, bool) {
+	v := strings.TrimSpace(value)
+	if v == "" {
+		return nil, false
+	}
+
+	// ISO YYYY-MM-DD — the common case.
+	if t, err := time.Parse("2006-01-02", v); err == nil {
+		t = t.UTC()
+		return &t, true
+	}
+
+	lower := strings.ToLower(v)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	switch lower {
+	case "posted today":
+		return &today, true
+	case "posted yesterday":
+		t := today.AddDate(0, 0, -1)
+		return &t, true
+	}
+
+	// "Posted N Days Ago" / "Posted N Day Ago". The capped "30+" form is
+	// recognized but intentionally unresolved — we don't know the real date.
+	const prefix = "posted "
+	const suffix = " ago"
+	if strings.HasPrefix(lower, prefix) && strings.HasSuffix(lower, suffix) {
+		middle := strings.TrimSuffix(strings.TrimPrefix(lower, prefix), suffix)
+		middle = strings.TrimSpace(middle)
+		// Strip trailing " day" or " days".
+		switch {
+		case strings.HasSuffix(middle, " days"):
+			middle = strings.TrimSuffix(middle, " days")
+		case strings.HasSuffix(middle, " day"):
+			middle = strings.TrimSuffix(middle, " day")
+		default:
+			return nil, false
+		}
+		middle = strings.TrimSpace(middle)
+		if strings.HasSuffix(middle, "+") {
+			// Capped bucket — recognized, but not resolvable to a real date.
+			return nil, true
+		}
+		n, err := strconv.Atoi(middle)
+		if err != nil || n < 0 {
+			return nil, false
+		}
+		t := today.AddDate(0, 0, -n)
+		return &t, true
+	}
+
+	return nil, false
 }

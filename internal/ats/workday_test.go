@@ -236,6 +236,106 @@ func TestWorkdayAdapter_HTTPError(t *testing.T) {
 	}
 }
 
+func TestParseWorkdayPostedOn(t *testing.T) {
+	// Fixed "now" so relative-date math is deterministic regardless of when
+	// the test runs. Mid-day chosen to confirm truncation to midnight UTC.
+	now := time.Date(2026, 5, 20, 14, 31, 22, 0, time.UTC)
+	today := time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name           string
+		value          string
+		wantTime       *time.Time
+		wantRecognized bool
+	}{
+		{
+			name:           "iso date",
+			value:          "2024-04-25",
+			wantTime:       timePtr(time.Date(2024, 4, 25, 0, 0, 0, 0, time.UTC)),
+			wantRecognized: true,
+		},
+		{
+			name:           "posted today",
+			value:          "Posted Today",
+			wantTime:       &today,
+			wantRecognized: true,
+		},
+		{
+			name:           "posted today lowercase",
+			value:          "posted today",
+			wantTime:       &today,
+			wantRecognized: true,
+		},
+		{
+			name:           "posted yesterday",
+			value:          "Posted Yesterday",
+			wantTime:       timePtr(today.AddDate(0, 0, -1)),
+			wantRecognized: true,
+		},
+		{
+			name:           "posted 1 day ago (singular)",
+			value:          "Posted 1 Day Ago",
+			wantTime:       timePtr(today.AddDate(0, 0, -1)),
+			wantRecognized: true,
+		},
+		{
+			name:           "posted 6 days ago",
+			value:          "Posted 6 Days Ago",
+			wantTime:       timePtr(today.AddDate(0, 0, -6)),
+			wantRecognized: true,
+		},
+		{
+			name:           "posted 29 days ago",
+			value:          "Posted 29 Days Ago",
+			wantTime:       timePtr(today.AddDate(0, 0, -29)),
+			wantRecognized: true,
+		},
+		{
+			name:           "posted 30+ days ago is recognized but unresolved",
+			value:          "Posted 30+ Days Ago",
+			wantTime:       nil,
+			wantRecognized: true,
+		},
+		{
+			name:           "empty string",
+			value:          "",
+			wantTime:       nil,
+			wantRecognized: false,
+		},
+		{
+			name:           "garbage string",
+			value:          "next tuesday-ish",
+			wantTime:       nil,
+			wantRecognized: false,
+		},
+		{
+			name:           "posted with non-numeric count",
+			value:          "Posted many days ago",
+			wantTime:       nil,
+			wantRecognized: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, recognized := parseWorkdayPostedOn(tc.value, now)
+			if recognized != tc.wantRecognized {
+				t.Errorf("recognized: got %v, want %v", recognized, tc.wantRecognized)
+			}
+			switch {
+			case tc.wantTime == nil && got != nil:
+				t.Errorf("time: got %v, want nil", *got)
+			case tc.wantTime != nil && got == nil:
+				t.Errorf("time: got nil, want %v", *tc.wantTime)
+			case tc.wantTime != nil && got != nil && !got.Equal(*tc.wantTime):
+				t.Errorf("time: got %v, want %v", *got, *tc.wantTime)
+			}
+		})
+	}
+}
+
+func timePtr(t time.Time) *time.Time { return &t }
+
 func TestWorkdayAdapter_MissingExternalPath(t *testing.T) {
 	fixture := loadAdapterFixture(t, "workday", "jobs_missing_external_path.json")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
