@@ -24,7 +24,7 @@ Relocate the Go module into `apps/tools/` and establish an `apps/` directory so 
 - Renaming binaries, packages, or commands.
 - Reworking env loading to be CWD-independent in code.
 - `.claude/settings.local.json` permission entries (path-specific allow entries may stop matching after the move — harmless re-prompts, not repo state).
-- `research/` — stays at repo root (source/research data, passed to tools by CLI arg, not a hardcoded path).
+- `research/` — stays at repo root. It is a deliberate low-attention pocket: quasi-documentation that agents should not read unless explicitly pointed at it. Keeping it at root (not under `agent-context/`, which agents read by default, and not under `apps/`) preserves that separation. Referenced by tools via CLI arg, never a hardcoded path.
 
 ## What moves vs. stays
 
@@ -103,7 +103,7 @@ go build ./...
 
 `//go:embed` directives (migrations, seeds) are relative to their `.go` file and move intact. `sqlc.yaml` paths are relative to the config file and resolve unchanged once the file sits at `apps/tools/sqlc.yaml` and `sqlc generate` runs from there.
 
-## Open questions
+## Decisions
 
-- **`.env.local`: symlink vs. second file.** Recommending a symlink (`apps/tools/.env.local` → `../../.env.local`) for a single source of truth; both are gitignored and created at local setup. A standalone second file risks DB-credential drift. Confirm at implementation.
-- **`research/` long-term home.** Stays at repo root for now. If a `data/` or top-level grouping emerges later, revisit — out of scope here.
+- **`.env.local` uses a symlink.** `apps/tools/.env.local` → `../../.env.local`. The root copy is canonical (docker-compose reads it); the symlink gives the Go tools a single source of truth, avoiding DB-credential drift. Both are gitignored; the symlink is a documented local-setup step.
+- **`research/` stays at repo root as a low-attention pocket.** It is not folded into `agent-context/` or `apps/`. Its role — quasi-docs that agents read only when explicitly directed — should be written into `agent-context/lib/` at promotion, since it is durable project intent not derivable from the folder's contents.
