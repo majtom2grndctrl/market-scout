@@ -24,7 +24,7 @@ Grounding facts gathered during drafting. Not decisions — those live in `index
 
 ## fetch_runs (for Task 3)
 
-`fetch_runs` columns (migration `000005`): `id`, `company_id`, `started_at`, `completed_at` (nullable), `status` CHECK in (`in_progress`,`success`,`failed`), `error_message` (nullable), `postings_count` (nullable int). Existing queries are write-only (`InsertFetchRun`, `MarkFetchRunSuccess`, `MarkFetchRunFailed`) — no read query yet, so Task 3 adds the first one. Index `idx_fetch_runs_company_id_started_at (company_id, started_at DESC)` supports the `DISTINCT ON` shape.
+`fetch_runs` columns (migration `000005`): `id`, `company_id`, `started_at`, `completed_at` (nullable), `status` CHECK in (`in_progress`,`success`,`failed`), `error_message` (nullable), `postings_count` (nullable int). Existing queries are write-only (`InsertFetchRun`, `MarkFetchRunSuccess`, `MarkFetchRunFailed`) — no read query yet, so Task 3 adds the first one. Index `idx_fetch_runs_company_id_started_at (company_id, started_at DESC)` (added in migration `000006`) supports the `DISTINCT ON` shape.
 
 ## Existing read queries (context for what `query` replaces)
 
