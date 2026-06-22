@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "market-scout-postgres": {
+      "command": "go",
+      "args": ["run", "-C", "apps/tools", "./cmd/mcp"]
+    }
+  }
+}

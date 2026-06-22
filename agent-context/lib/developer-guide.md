@@ -86,13 +86,13 @@ Specs are working documents — they align on what to build and why, then get co
 
 - **Delete the spec.** Temp docs in `agent-context/plans/` are removed when the epic closes. Ticket specs close naturally with the ticket.
 - **Architecture docs** (`agent-context/lib/`) capture what's durable — design principles, package boundaries, contracts, snapshot model, schema invariants. Content an agent can't derive by opening the relevant file.
-- **Code comments** capture implementation-level "why" decisions. Rationale a reader can't derive from the code alone. See §8.
+- **Code comments** capture implementation-level "why" decisions. Rationale a reader can't derive from the code alone. See §7.
 
 **What doesn't belong in `agent-context/lib/`:**
 
 - Specs for specific features or epics (use tickets or `agent-context/plans/`)
 - Implementation plans or task breakdowns (use tickets)
-- Content that names specific functions, types, or file paths as load-bearing detail (see [Style Guide](./lib/style-guide.md))
+- Content that names specific functions, types, or file paths as load-bearing detail (see [Style Guide](./style-guide.md))
 
 ---
 
@@ -142,6 +142,29 @@ The fetcher is intended to run on a cron schedule. For local development, invoke
 
 The connection string lives in `.env.local` as `DATABASE_URL`. The fetcher and migration runner load it via `godotenv` at startup; no separate shell session is needed.
 
+### Read-only MCP role
+
+The MCP server uses `DATABASE_URL_RO`. It must be a read-only DSN and never falls back to `DATABASE_URL`.
+
+Provision the role once per Postgres cluster, after migrations:
+
+```bash
+psql "$DATABASE_URL" -f internal/db/setup/readonly_role.sql
+psql "$DATABASE_URL" -c '\password market_scout_readonly'
+```
+
+Run the script with the same owner role used for migrations, so future table grants attach to that owner.
+
+Choose the password out of band. Then add the matching DSN to root `.env.local`, next to `DATABASE_URL`:
+
+```bash
+DATABASE_URL_RO=postgres://market_scout_readonly:<password>@localhost:5432/market_scout?sslmode=disable
+```
+
+`DATABASE_URL` is the admin/read-write DSN for migrations, setup, and writer binaries. `DATABASE_URL_RO` is the agent-safe DSN for MCP verification. Human operators may keep both in `.env.local`; the MCP server reads only `DATABASE_URL_RO`.
+
+`internal/db/setup/readonly_role.sql` is operational SQL, not a numbered migration and not sqlc output. Roles are cluster-level, and credentials do not belong in source. This setup file may be hand-edited; sqlc input stays in `internal/db/queries/` and numbered migrations.
+
 Primary debugging surfaces:
 
 - **TablePlus** — GUI client. Connect using `DATABASE_URL`. Inspect tables, run ad-hoc queries, browse schema.
@@ -184,6 +207,17 @@ staticcheck ./...            # Stricter linter
 go test ./...                # Run the test suite
 ```
 
+Configured commands are also built into `bin/` via `make` (from `apps/tools/`):
+
+```bash
+make build       # Build all configured commands into bin/
+make fetcher     # Build a single command (any name in CMDS)
+make check       # go build ./... + go vet ./... + make build (pre-commit gate)
+make clean       # Remove the built binaries
+```
+
+Targets always shell out to `go build` and let Go's build cache decide what to recompile — a Makefile prerequisite list can't track transitive Go deps and would risk stale binaries. `bin/` is gitignored; the binaries are local artifacts (native Mac arch). Cron and `cmd/batch-enrich`'s subprocess call (`./bin/strip-boilerplate`) both expect the prebuilt binaries, so rebuild after pulling changes. Add a new command by appending its `cmd/` directory name to `CMDS` in the Makefile.
+
 `sqlc generate` is a separate step — it reads `apps/tools/internal/db/queries/*.sql` and schema from `apps/tools/internal/db/migrations/` and writes typed Go query functions into `apps/tools/internal/db/`. Run it after editing SQL or migrations.
 
 ### Output Structure
@@ -218,7 +252,7 @@ market-scout/
 └── docker-compose.yml               # Postgres + pgvector
 ```
 
-The Next.js app layer lands at `apps/web/` later; see [`lib/project.md` §Non-goals](./lib/project.md).
+The Next.js app layer lands at `apps/web/` later; see [`project.md` §Non-goals](./project.md).
 
 ---
 
@@ -309,6 +343,7 @@ Concurrency exists to overlap waits — outbound HTTP, mostly. It is not a perfo
 ### 5.7 Database access
 
 - All SQL goes through `sqlc`-generated query functions. No string-built queries in business logic.
+- Exception: `apps/tools/cmd/mcp` may accept caller-provided SQL only inside the MCP read-only query gateway. It must use the read-only role, a read-only transaction, statement timeout, and row cap.
 - Hand-written SQL lives in `apps/tools/internal/db/queries/*.sql` with `-- name: FunctionName :many` annotations.
 - sqlc targets the standard `database/sql` interface (no `sql_package` override). pgx v5 is registered as the `pgx` driver via a blank import of `github.com/jackc/pgx/v5/stdlib`. Open with `sql.Open("pgx", dsn)`; pass the resulting `*sql.DB` — or a `*sql.Tx` inside a transaction — into `db.New`.
 - Generated row types use `sql.NullString` and `sql.NullTime`. Translate to and from `*string` / `*time.Time` at the DB boundary so `apps/tools/internal/domain` stays free of `database/sql` symbols.

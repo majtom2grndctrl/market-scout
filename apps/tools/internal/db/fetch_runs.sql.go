@@ -29,6 +29,58 @@ func (q *Queries) InsertFetchRun(ctx context.Context, arg InsertFetchRunParams) 
 	return id, err
 }
 
+const listLatestFetchRunsByCompany = `-- name: ListLatestFetchRunsByCompany :many
+SELECT DISTINCT ON (fr.company_id)
+    c.name,
+    fr.status,
+    fr.started_at,
+    fr.completed_at,
+    fr.postings_count,
+    fr.error_message
+FROM fetch_runs fr
+JOIN companies c ON c.id = fr.company_id
+ORDER BY fr.company_id, fr.started_at DESC
+`
+
+type ListLatestFetchRunsByCompanyRow struct {
+	Name          string
+	Status        string
+	StartedAt     time.Time
+	CompletedAt   sql.NullTime
+	PostingsCount sql.NullInt32
+	ErrorMessage  sql.NullString
+}
+
+func (q *Queries) ListLatestFetchRunsByCompany(ctx context.Context) ([]ListLatestFetchRunsByCompanyRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLatestFetchRunsByCompany)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLatestFetchRunsByCompanyRow
+	for rows.Next() {
+		var i ListLatestFetchRunsByCompanyRow
+		if err := rows.Scan(
+			&i.Name,
+			&i.Status,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.PostingsCount,
+			&i.ErrorMessage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markFetchRunFailed = `-- name: MarkFetchRunFailed :exec
 UPDATE fetch_runs
 SET status = 'failed', completed_at = $2, error_message = $3

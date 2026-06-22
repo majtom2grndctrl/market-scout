@@ -12,3 +12,15 @@ WHERE id = $1;
 UPDATE fetch_runs
 SET status = 'failed', completed_at = $2, error_message = $3
 WHERE id = $1;
+
+-- name: ListLatestFetchRunsByCompany :many
+SELECT DISTINCT ON (fr.company_id)
+    c.name,
+    fr.status,
+    fr.started_at,
+    fr.completed_at,
+    fr.postings_count,
+    fr.error_message
+FROM fetch_runs fr
+JOIN companies c ON c.id = fr.company_id
+ORDER BY fr.company_id, fr.started_at DESC;
