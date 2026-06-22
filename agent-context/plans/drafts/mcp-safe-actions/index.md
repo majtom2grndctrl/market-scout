@@ -32,17 +32,17 @@ The first actions cover watchlist growth and enrichment writeback: add a verifie
 - [ ] Existing `query` behavior remains read-only and still uses `DATABASE_URL_RO`.
 - [ ] Existing `fetch_status` behavior remains read-only and still uses `DATABASE_URL_RO`.
 - [ ] `cmd/mcp` starts when both read-only and action DSNs are set; it exits non-zero with a clear startup error when `DATABASE_URL_ACTIONS` is absent.
-- [ ] No MCP tool accepts arbitrary write SQL.
+- [ ] No MCP tool accepts arbitrary write SQL. Review verifies only `query` accepts a freeform SQL argument, and it is bound to the read-only pool and read-only transaction.
 - [ ] `add_company` inserts or no-ops one company by `(ats, board_token)`, returning the canonical DB row and an `"inserted"` boolean.
 - [ ] `add_company` rejects unsupported ATS values, empty names, empty board tokens, malformed Workday/Workable tokens, and malformed careers page URLs.
 - [ ] `add_company` probes the ATS board by default; failed probes return a structured action error and insert no row.
-- [ ] Company insertion does not mutate `posting_snapshots`, `job_postings`, `classifications`, or taxonomy tables.
+- [ ] Company insertion does not mutate `posting_snapshots`, `job_postings`, `classifications`, or taxonomy tables. Integration tests assert scoped before/after row counts for test data; review verifies `mcp.add_company` writes only `companies`.
 - [ ] The action role cannot run ad-hoc `INSERT`, `UPDATE`, `DELETE`, DDL, temp table creation, or writes outside approved MCP functions.
-- [ ] `enrichment_preview` returns candidate counts and sample postings using the same selection rules as `batch-enrich`.
-- [ ] `save_enrichment` validates an agent-produced enrichment payload, inserts a new append-only classification, attaches taxonomy joins, and never updates or deletes existing classification history.
-- [ ] `save_enrichment` rejects unknown role-dimension slugs, invalid seniority, invalid slugs, cross-table slug collisions, and payloads for nonexistent postings.
-- [ ] `go test ./cmd/mcp -count=1` and `go test ./...` pass.
-- [ ] Integration tests under `//go:build integration` prove action-role write boundaries against Postgres.
+- [ ] `enrichment_preview` returns `selected_count`, `sample_count`, `already_classified_count`, and sample postings using the same selection rules as `batch-enrich`.
+- [ ] `save_enrichment` validates an agent-produced enrichment payload, inserts a new append-only classification, attaches taxonomy joins, and never updates or deletes existing classification history. Integration tests assert repeated calls append rows and seeded prior classifications remain unchanged; review verifies `mcp.save_enrichment` does not update or delete classification history.
+- [ ] `save_enrichment` rejects the full stable validation-code table in Task 7, including unknown role dimensions, missing or invalid seniority, invalid slugs, duplicate slugs, cross-table collisions, null bytes, notes length, invalid provenance, empty dimensions, and nonexistent postings.
+- [ ] From `apps/tools`: `go test ./cmd/mcp -count=1` and `go test ./...` pass.
+- [ ] From `apps/tools`: `go test -tags=integration ./cmd/mcp -count=1` proves action-role write boundaries against Postgres when `DATABASE_URL`, `DATABASE_URL_RO`, and `DATABASE_URL_ACTIONS` are set.
 
 ## Tasks
 
@@ -54,21 +54,23 @@ The action connection is not exposed to the generic `query` tool. Every mutation
 
 ### Task 2: Provision a minimal action role
 
-Add `apps/tools/internal/db/setup/action_role.sql` beside the existing read-only setup script. It creates and normalizes `market_scout_actions`, the role used by `DATABASE_URL_ACTIONS`. The action role should start from no privileges, then receive only what approved action tools need.
+Add `apps/tools/internal/db/setup/action_role.sql` beside the existing read-only setup script. It creates and normalizes `market_scout_actions`, the role used by `DATABASE_URL_ACTIONS`. Add the numbered migration that creates the `mcp` schema baseline. The action role should start from no privileges, then receive only what approved action tools need.
 
 Initial grants:
 
 - `CONNECT` on the database.
 - `USAGE` on the dedicated MCP action schema.
-- `EXECUTE` on approved MCP action functions.
+- `EXECUTE` on approved MCP action functions that already exist.
 
 Do not grant table writes, schema create, database temporary privileges, blanket function execute, or taxonomy writes directly to the role. The script should revoke inherited/public paths first, normalize role flags, and fail if the role owns objects or belongs to other roles.
 
-Approved functions live in a dedicated `mcp` schema, are created by a numbered migration, are owned by the database owner, and use `SECURITY DEFINER` with a pinned `search_path`. The action role executes those functions; the functions perform the table writes with owner privileges. This is the enforceable boundary: a leaked `DATABASE_URL_ACTIONS` DSN can call only the approved functions, not arbitrary table writes.
+Approved functions live in a dedicated `mcp` schema, are created by a numbered migration, are owned by the database owner, and use `SECURITY DEFINER SET search_path = pg_catalog`. Fully qualify every application table and function inside them: `public.<table>` and `mcp.<function>`. Revoke public paths explicitly: `REVOKE ALL ON SCHEMA mcp FROM PUBLIC` and `REVOKE ALL ON FUNCTION ... FROM PUBLIC` for each approved function before granting `market_scout_actions`. The action role executes those functions; the functions perform the table writes with owner privileges. This is the enforceable boundary: a leaked `DATABASE_URL_ACTIONS` DSN can call only the approved functions, not arbitrary table writes.
 
 Grant ownership:
 
 - Numbered migrations create the `mcp` schema and approved functions.
+- Task 2 creates the role script and `mcp` schema baseline. It may grant only functions that already exist.
+- Tasks 3 and 7 update `action_role.sql` with explicit `EXECUTE` grants after adding each approved function.
 - `action_role.sql` creates/normalizes `market_scout_actions` and grants `USAGE` plus explicit `EXECUTE` on each approved function.
 - Add every new approved function to `action_role.sql`; do not use blanket `GRANT EXECUTE ON ALL FUNCTIONS`.
 - Operators rerun `action_role.sql` after migrations that add approved MCP functions.
@@ -77,13 +79,21 @@ Grant ownership:
 
 Add `mcp.add_company` in the `mcp` schema for the curated company write path, plus sqlc input under `apps/tools/internal/db/queries/` that calls it.
 
+Approved-function requirements:
+
+- Add the function in a numbered migration.
+- Use `SECURITY DEFINER SET search_path = pg_catalog`.
+- Fully qualify application objects as `public.<table>` and `mcp.<function>`.
+- Revoke `EXECUTE` from `PUBLIC` before granting the action role.
+- Update `apps/tools/internal/db/setup/action_role.sql` with an explicit `EXECUTE` grant for `mcp.add_company`.
+
 Function contract:
 
 - Signature: `mcp.add_company(p_name text, p_ats text, p_board_token text, p_industry text, p_careers_page_url text)`.
 - Behavior: insert with `ON CONFLICT (ats, board_token) DO NOTHING`, then return the canonical row.
 - Output columns: `id bigint`, `name text`, `ats text`, `board_token text`, `created_at timestamptz`, `industry text`, `careers_page_url text`, `inserted boolean`.
 
-The function must not update existing company metadata. Stale merge remains human-owned. Regenerate sqlc and commit SQL input plus generated output together.
+The function must not update existing company metadata. Stale merge remains human-owned. The sqlc call query must pass nullable arguments for `p_industry` and `p_careers_page_url` so omitted values become SQL NULL, not empty strings. Regenerate sqlc and commit SQL input plus generated output together.
 
 ### Task 4: Implement `add_company`
 
@@ -120,7 +130,32 @@ Validation:
 | Postings count | `"postings_count"` | Count returned by the adapter when valid |
 | Error | `"error"` | Probe error string when invalid |
 
-Response shape should include `ok`, `inserted`, `company`, `seed_file_updated`, `follow_up`, and `probe_result`. Validation, probe, and DB failures return `ok=false` in the JSON envelope via `mcp.NewToolResultText`, not an MCP transport error. Reserve MCP tool errors for malformed tool calls the server cannot decode.
+Response shape should include `ok`, `inserted`, `company`, `seed_file_updated`, `follow_up`, `probe_result`, and `errors`. Validation, probe, and DB failures return `ok=false` in the JSON envelope via `mcp.NewToolResultText`, not an MCP transport error. Reserve MCP tool errors for malformed tool calls the server cannot decode.
+
+Failure defaults:
+
+| Field | Default |
+|---|---|
+| `ok` | `false` |
+| `inserted` | `false` |
+| `company` | `null` |
+| `seed_file_updated` | `false` |
+| `follow_up` | `null` |
+| `probe_result` | `null` unless the probe ran; probe failures include the failed probe result |
+| `errors` | non-empty array |
+
+Failure errors use the shared action error shape: `{ "path": string, "code": string, "message": string }`.
+
+`add_company` error codes:
+
+| Code | Path |
+|---|---|
+| `missing_required` | missing field |
+| `unsupported_ats` | `ats` |
+| `invalid_board_token` | `board_token` |
+| `invalid_url` | `careers_page_url` |
+| `probe_failed` | `probe` |
+| `db_error` | `db` |
 
 `company` response shape:
 
@@ -138,7 +173,7 @@ Response shape should include `ok`, `inserted`, `company`, `seed_file_updated`, 
 
 Today `agent-context/lib/watchlist.md` says the seed file is canonical. Direct MCP insertion creates a local DB row that is not reflected in `apps/tools/internal/db/seeds/companies.sql`.
 
-For v1, make this explicit in the tool response: include `"seed_file_updated": false` and a `"follow_up"` message naming the seed file. Do not have MCP edit source files as a side effect of a DB action.
+For v1, make this explicit in the tool response: always include `"seed_file_updated": false`. On successful insert or no-op company responses, include a `"follow_up"` message naming the seed file. Failure responses keep `follow_up` null. Do not have MCP edit source files as a side effect of a DB action.
 
 Leave a clear follow-up hook in the response for a future `stage_company_seed_patch` action that writes seed SQL for human review.
 
@@ -152,15 +187,23 @@ Inputs:
 - `focus`: string, default `""`; `%` and `_` keep the same SQL ILIKE wildcard behavior as `batch-enrich`.
 - `force`: boolean, default false.
 
-Use the existing selection logic or extract it to a reusable package if needed. Preview uses `DATABASE_URL_RO`, not `DATABASE_URL_ACTIONS`; the read-only role already has the needed table reads. MCP validates `count` against its own 1..100 bound before calling shared selection logic.
+Extract selection/config logic that MCP and `cmd/batch-enrich` both need into a dedicated internal package before adding the tool. Task 6 owns selection extraction; Task 7 must not move the same files. Preview uses `DATABASE_URL_RO`, not `DATABASE_URL_ACTIONS`; the read-only role already has the needed table reads. MCP validates `count` against its own 1..100 bound before calling shared selection logic.
 
-Response includes `ok`, input echo, selected count, already-classified count, and a sample capped at 20 rows. `already_classified_count` is always present: when `force=true`, it counts selected postings that already have at least one classification row; when `force=false`, it is `0` because classified postings are excluded from selection.
+Response includes `ok`, input echo, `selected_count`, `sample_count`, `already_classified_count`, and a sample capped at 20 rows. `selected_count` is the number of rows selected after the requested `count` limit, not a pre-limit total. `sample_count` is the number of rows in the returned sample. Do not add `total_candidate_count` unless the implementation adds a separate count query. `already_classified_count` is always present: when `force=true`, it counts selected postings that already have at least one classification row; when `force=false`, it is `0` because classified postings are excluded from selection.
 
 The sample must include posting id, company id, company name, and title. Current `batch-enrich` selection returns posting id, company id, title, and description only, so the implementation must add a preview-specific join or extend the shared selection query/type to include company name.
 
 ### Task 7: Add enrichment save action
 
 Add `save_enrichment`, an MCP tool that persists an enrichment payload produced by an agent or human-reviewed agent workflow. It does not spawn agents and does not invoke `cmd/batch-enrich`.
+
+Approved-function requirements:
+
+- Add the function in a numbered migration.
+- Use `SECURITY DEFINER SET search_path = pg_catalog`.
+- Fully qualify application objects as `public.<table>` and `mcp.<function>`.
+- Revoke `EXECUTE` from `PUBLIC` before granting the action role.
+- Update `apps/tools/internal/db/setup/action_role.sql` with an explicit `EXECUTE` grant for `mcp.save_enrichment`.
 
 Input shape mirrors the per-posting classifier contract already used by `batch-enrich`:
 
@@ -176,7 +219,9 @@ Input shape mirrors the per-posting classifier contract already used by `batch-e
 
 `provenance.model` defaults to `"mcp-agent"` when omitted. `provenance.prompt_version` defaults to `"mcp-save-enrichment-v1"` when omitted. Both must match `^[A-Za-z0-9._-]+$` after defaults are applied.
 
-Validation should reuse the `batch-enrich` validation rules by extracting shared types/rules out of `cmd/batch-enrich` if needed. Do not import `cmd/batch-enrich` directly because it is `package main`. The MCP action may use the read-only pool to load taxonomy and confirm the posting exists. It must reject invalid seniority, invalid slugs, duplicate slugs, unknown role dimensions, cross-table slug collisions, null bytes, notes that exceed the existing cap, and nonexistent postings before calling the action function.
+Validation should reuse the `batch-enrich` validation rules by extracting shared types/rules out of `cmd/batch-enrich` if needed. Do not import `cmd/batch-enrich` directly because it is `package main`. Shared validation must expose structured failures; add an adapter that converts them back to existing `batch-enrich` retry hints. The MCP action may use the read-only pool to load taxonomy and confirm the posting exists. It must reject invalid seniority, invalid slugs, duplicate slugs, unknown role dimensions, cross-table slug collisions, null bytes, notes that exceed the existing cap, and nonexistent postings before calling the action function.
+
+Task 7 owns validation/type extraction only. It must not move the selection/config files extracted by Task 6.
 
 Slug rules:
 
@@ -185,7 +230,59 @@ Slug rules:
 - A slug emitted in two different payload arrays is invalid.
 - Cross-table collision checks run against existing taxonomy across canonical roles, specializations, skills, and role dimensions, and against the payload itself.
 
+Stable validation codes:
+
+| Code | Path |
+|---|---|
+| `missing_seniority` | `classification.seniority` |
+| `invalid_seniority` | `classification.seniority` |
+| `invalid_slug` | `<array>[i].slug` |
+| `slug_too_long` | `<array>[i].slug` |
+| `duplicate_slug` | duplicate `<array>[i].slug` |
+| `slug_collision` | colliding `<array>[i].slug` |
+| `empty_dimensions` | `canonical_roles[i].dimensions` |
+| `unknown_dimension` | `canonical_roles[i].dimensions[j]` |
+| `null_byte` | offending string field |
+| `notes_too_long` | `classification.notes` |
+| `invalid_provenance` | `provenance.model` or `provenance.prompt_version` |
+| `posting_not_found` | `posting_id` |
+
 Persistence should call one approved function through sqlc: `mcp.save_enrichment(p_payload jsonb, p_model text, p_prompt_version text) RETURNS jsonb`. The function runs as one SQL statement; PostgreSQL rolls back all writes from the statement on error. It owns the full write path: get-or-create canonical roles, specializations, and skills; attach canonical role dimensions; insert one classifications row; attach role/specialization/skill join rows. The function must insert a new classification row every time rather than updating prior rows.
+
+The MCP request wraps the current `batch-enrich` AgentResponse shape and adds MCP-only provenance. Pass provenance separately as `p_model` and `p_prompt_version` after defaults. `summary` is echoed only by Go. `skills[].requirement` is retained in the request and response, stripped from `p_payload`, and not persisted.
+
+Exact `p_payload` shape:
+
+```json
+{
+  "posting_id": 123,
+  "classification": {
+    "seniority": "senior",
+    "notes": "text"
+  },
+  "canonical_roles": [
+    {
+      "slug": "backend-engineer",
+      "name": "Backend Engineer",
+      "dimensions": ["api-platform"]
+    }
+  ],
+  "specializations": [
+    {
+      "slug": "distributed-systems",
+      "name": "Distributed Systems"
+    }
+  ],
+  "skills": [
+    {
+      "slug": "go",
+      "name": "Go"
+    }
+  ]
+}
+```
+
+Inside `mcp.save_enrichment`, re-check cross-table slug ownership and role-dimension existence before inserts. SQL-level invariant violations return JSON with `ok=false` and `errors[]` using the shared action error shape; do not require Go to parse arbitrary exception text for validation errors. Unexpected DB failures may still surface as `db_error`.
 
 `mcp.save_enrichment` returns JSON with `classification_id`, `posting_id`, and `new_taxonomy`. The function must distinguish newly inserted taxonomy from existing taxonomy; do not rely on current `GetOrCreate*` sqlc queries, which return only IDs.
 
@@ -219,9 +316,13 @@ Unit tests:
 
 Integration tests:
 
+Integration tests require `DATABASE_URL`, `DATABASE_URL_RO`, and `DATABASE_URL_ACTIONS`. Skip integration tests when any required DSN is absent. Use `DATABASE_URL` for setup and cleanup, `DATABASE_URL_RO` for read-only assertions, and `DATABASE_URL_ACTIONS` for action-role boundary assertions.
+
 - Action role can insert a company through the approved function.
 - Action role can save one classification through the approved function path.
 - Action role cannot write directly to snapshots, postings, classifications, taxonomy tables, or schema.
+- Action role cannot directly insert, update, or delete `companies`.
+- Action role cannot `CREATE TEMP TABLE`.
 - Read-only role remains unable to run writes.
 - `add_company` writes exactly one company on repeated calls.
 - `save_enrichment` inserts a new classification on repeated calls without mutating previous classifications.
@@ -233,8 +334,9 @@ Integration tests:
 **Phase 3 (sequential):** Task 3 — creates the company function/query and consumes Task 2's schema convention.
 **Phase 4 (sequential):** Task 4 — consumes Tasks 1–3.
 **Phase 5 (sequential):** Task 5 — documents and surfaces seed drift after the DB action exists.
-**Phase 6 (concurrent):** Task 6, Task 7 — preview is read-only; enrichment save consumes the action-function pattern from earlier phases.
-**Phase 7 (sequential):** Task 8 — final test sweep across all action surfaces.
+**Phase 6 (sequential):** Task 6 — extracts shared selection/config logic and adds preview.
+**Phase 7 (sequential):** Task 7 — extracts validation/type logic and adds enrichment save without moving Task 6's files.
+**Phase 8 (sequential):** Task 8 — final test sweep across all action surfaces.
 
 ## Rough Sketch
 
