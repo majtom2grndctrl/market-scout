@@ -98,6 +98,7 @@ func TestScanQueryRows_NormalizesByteJSONAndText(t *testing.T) {
 
 func TestRun_ExitsNonZeroWhenDatabaseURLROUnset(t *testing.T) {
 	t.Setenv("DATABASE_URL_RO", "")
+	t.Setenv("DATABASE_URL_ACTIONS", "")
 
 	var stderr bytes.Buffer
 	got := run(nil, io.Discard, &stderr)
@@ -106,6 +107,61 @@ func TestRun_ExitsNonZeroWhenDatabaseURLROUnset(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "DATABASE_URL_RO is not set") {
 		t.Fatalf("stderr = %q, want DATABASE_URL_RO unset message", stderr.String())
+	}
+}
+
+func TestOpenPools_FailsWhenAnyDSNUnset(t *testing.T) {
+	// Neither DSN set: openPools must fail (RO is checked first) and never
+	// return a usable pool or cleanup.
+	t.Setenv("DATABASE_URL_RO", "")
+	t.Setenv("DATABASE_URL_ACTIONS", "")
+
+	pools, cleanup, err := openPools(t.Context())
+	if err == nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		t.Fatalf("openPools err = nil, want failure when DSNs unset")
+	}
+	if cleanup != nil {
+		t.Fatalf("openPools cleanup = non-nil on failure, want nil")
+	}
+	if pools.readOnly != nil || pools.action != nil {
+		t.Fatalf("openPools returned non-nil pools on failure: %+v", pools)
+	}
+}
+
+func TestOpenVerifiedPool_UnsetReportsEnvVarNotValue(t *testing.T) {
+	t.Setenv("DATABASE_URL_ACTIONS", "")
+
+	_, err := openVerifiedPool(t.Context(), "DATABASE_URL_ACTIONS")
+	if err == nil {
+		t.Fatalf("openVerifiedPool err = nil, want failure for unset DSN")
+	}
+	if !strings.Contains(err.Error(), "DATABASE_URL_ACTIONS is not set") {
+		t.Fatalf("err = %q, want DATABASE_URL_ACTIONS unset message", err.Error())
+	}
+}
+
+// TestOpenVerifiedPool_PingFailureDoesNotLeakDSN guards the no-secrets rule:
+// startup errors must name the env var but never echo the DSN string, which
+// carries credentials.
+func TestOpenVerifiedPool_PingFailureDoesNotLeakDSN(t *testing.T) {
+	const secretDSN = "postgres://leakuser:supersecret@127.0.0.1:1/db?sslmode=disable"
+	t.Setenv("DATABASE_URL_ACTIONS", secretDSN)
+
+	_, err := openVerifiedPool(t.Context(), "DATABASE_URL_ACTIONS")
+	if err == nil {
+		t.Fatalf("openVerifiedPool err = nil, want ping failure against unreachable DSN")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "DATABASE_URL_ACTIONS") {
+		t.Fatalf("err = %q, want it to name DATABASE_URL_ACTIONS", msg)
+	}
+	for _, secret := range []string{secretDSN, "supersecret", "leakuser"} {
+		if strings.Contains(msg, secret) {
+			t.Fatalf("err = %q, leaked secret %q", msg, secret)
+		}
 	}
 }
 

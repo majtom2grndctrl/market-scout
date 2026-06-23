@@ -165,6 +165,25 @@ DATABASE_URL_RO=postgres://market_scout_readonly:<password>@localhost:5432/marke
 
 `internal/db/setup/readonly_role.sql` is operational SQL, not a numbered migration and not sqlc output. Roles are cluster-level, and credentials do not belong in source. This setup file may be hand-edited; sqlc input stays in `internal/db/queries/` and numbered migrations.
 
+### Action MCP role
+
+The MCP server's write tools use `DATABASE_URL_ACTIONS`. Its role, `market_scout_actions`, can call only approved functions in the `mcp` schema — never run arbitrary writes. Approved functions are `SECURITY DEFINER`, owned by the database owner, added by numbered migrations. The role gets CONNECT, USAGE on `mcp`, and one EXECUTE grant per approved function. A leaked DSN can call only those functions.
+
+Provision after migrations, with the same owner role used for migrations:
+
+```bash
+psql "$DATABASE_URL" -f internal/db/setup/action_role.sql
+psql "$DATABASE_URL" -c '\password market_scout_actions'
+```
+
+Rerun `action_role.sql` after any migration that adds an approved `mcp` function, so its EXECUTE grant attaches. The script's grant section lists one block per function; never use `GRANT EXECUTE ON ALL FUNCTIONS`. Choose the password out of band, then add the DSN to root `.env.local`:
+
+```bash
+DATABASE_URL_ACTIONS=postgres://market_scout_actions:<password>@localhost:5432/market_scout?sslmode=disable
+```
+
+`action_role.sql` is operational SQL, hand-editable, not a numbered migration or sqlc input — same as `readonly_role.sql`.
+
 Primary debugging surfaces:
 
 - **TablePlus** — GUI client. Connect using `DATABASE_URL`. Inspect tables, run ad-hoc queries, browse schema.
@@ -230,6 +249,9 @@ market-scout/
 │       ├── cmd/
 │       │   ├── fetcher/             # Main fetcher entry point
 │       │   │   └── main.go
+│       │   ├── mcp/                 # MCP server (read-only query gateway + action tools)
+│       │   ├── batch-enrich/        # Batch classification runner
+│       │   ├── onboard/             # Company onboarding tool (seed + probe)
 │       │   ├── migrate/             # Migration runner
 │       │   │   └── main.go
 │       │   └── strip-boilerplate/   # Per-company boilerplate stripper (classification preprocessor)
@@ -241,9 +263,14 @@ market-scout/
 │           │   ├── ashby.go         # Ashby implementation
 │           │   ├── workday.go       # Workday implementation
 │           │   └── httpfetch.go     # Shared HTTP helpers (GET and POST)
+│           ├── enrich/              # Enrichment pipeline packages
+│           │   ├── boilerplate/     # Per-company boilerplate detection and stripping
+│           │   ├── classify/        # Classifier contract, validation, taxonomy loading
+│           │   └── selection/       # Posting selection logic for batch runs
 │           └── db/
 │               ├── migrations/      # Numbered migration files (source of truth for schema)
 │               ├── queries/         # Hand-written SQL for sqlc
+│               ├── setup/           # Operational role SQL (readonly_role.sql, action_role.sql; not migrations, not sqlc input)
 │               ├── *.sql.go         # sqlc-generated query functions
 │               └── models.go        # sqlc-generated row types
 ├── agent-context/
@@ -344,6 +371,7 @@ Concurrency exists to overlap waits — outbound HTTP, mostly. It is not a perfo
 
 - All SQL goes through `sqlc`-generated query functions. No string-built queries in business logic.
 - Exception: `apps/tools/cmd/mcp` may accept caller-provided SQL only inside the MCP read-only query gateway. It must use the read-only role, a read-only transaction, statement timeout, and row cap.
+- Exception: `apps/tools/cmd/mcp` action tools call approved `mcp.*` SECURITY DEFINER functions through the action pool; callers never supply SQL. `add_company` issues a fixed, fully-parameterized `QueryRowContext` call (constant statement, all values bound) rather than a sqlc-generated function — sqlc's offline parser cannot expand a multi-column `RETURNS TABLE` without a live database. `save_enrichment` uses a sqlc-generated function — `mcp.save_enrichment` returns a scalar `jsonb`, which the offline parser handles fine.
 - Hand-written SQL lives in `apps/tools/internal/db/queries/*.sql` with `-- name: FunctionName :many` annotations.
 - sqlc targets the standard `database/sql` interface (no `sql_package` override). pgx v5 is registered as the `pgx` driver via a blank import of `github.com/jackc/pgx/v5/stdlib`. Open with `sql.Open("pgx", dsn)`; pass the resulting `*sql.DB` — or a `*sql.Tx` inside a transaction — into `db.New`.
 - Generated row types use `sql.NullString` and `sql.NullTime`. Translate to and from `*string` / `*time.Time` at the DB boundary so `apps/tools/internal/domain` stays free of `database/sql` symbols.

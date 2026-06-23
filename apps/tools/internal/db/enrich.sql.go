@@ -176,9 +176,11 @@ const listUnclassifiedPostings = `-- name: ListUnclassifiedPostings :many
 
 SELECT jp.id AS posting_id,
        jp.company_id,
+       c.name AS company_name,
        s.title,
        s.description_text
 FROM job_postings jp
+JOIN companies c ON c.id = jp.company_id
 JOIN LATERAL (
     SELECT title, description_text
     FROM posting_snapshots
@@ -203,19 +205,24 @@ type ListUnclassifiedPostingsParams struct {
 type ListUnclassifiedPostingsRow struct {
 	PostingID       int64
 	CompanyID       int64
+	CompanyName     string
 	Title           sql.NullString
 	DescriptionText sql.NullString
 }
 
-// Queries that drive the batch-enrich Go command. Selection uses a LATERAL join
-// to the latest posting_snapshots row per job_posting, an optional ILIKE focus
-// prefilter, and oldest-first ordering to process the backlog in stable priority.
-// The Forced variant drops the NOT EXISTS classifications guard so already-
-// classified postings are eligible for re-enrichment under --force.
+// Queries that drive the batch-enrich Go command and the MCP enrichment_preview
+// tool. Selection uses a LATERAL join to the latest posting_snapshots row per
+// job_posting, an optional ILIKE focus prefilter, and oldest-first ordering to
+// process the backlog in stable priority. The Forced variant drops the NOT
+// EXISTS classifications guard so already-classified postings are eligible for
+// re-enrichment under --force.
+//
+// The join to companies surfaces company_name, which enrichment_preview reports
+// in its sample. companies.name is NOT NULL, so the column is non-nullable.
 //
 // @row_limit is named (not `limit`) because `limit` is a reserved word in
-// sqlc's named-parameter syntax. Column aliases (`posting_id`, `description_text`)
-// pin the generated struct field names (PostingID, DescriptionText).
+// sqlc's named-parameter syntax. Column aliases (`posting_id`, `description_text`,
+// `company_name`) pin the generated struct field names.
 func (q *Queries) ListUnclassifiedPostings(ctx context.Context, arg ListUnclassifiedPostingsParams) ([]ListUnclassifiedPostingsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listUnclassifiedPostings, arg.Focus, arg.RowLimit)
 	if err != nil {
@@ -228,6 +235,7 @@ func (q *Queries) ListUnclassifiedPostings(ctx context.Context, arg ListUnclassi
 		if err := rows.Scan(
 			&i.PostingID,
 			&i.CompanyID,
+			&i.CompanyName,
 			&i.Title,
 			&i.DescriptionText,
 		); err != nil {
@@ -247,9 +255,11 @@ func (q *Queries) ListUnclassifiedPostings(ctx context.Context, arg ListUnclassi
 const listUnclassifiedPostingsForced = `-- name: ListUnclassifiedPostingsForced :many
 SELECT jp.id AS posting_id,
        jp.company_id,
+       c.name AS company_name,
        s.title,
        s.description_text
 FROM job_postings jp
+JOIN companies c ON c.id = jp.company_id
 JOIN LATERAL (
     SELECT title, description_text
     FROM posting_snapshots
@@ -271,6 +281,7 @@ type ListUnclassifiedPostingsForcedParams struct {
 type ListUnclassifiedPostingsForcedRow struct {
 	PostingID       int64
 	CompanyID       int64
+	CompanyName     string
 	Title           sql.NullString
 	DescriptionText sql.NullString
 }
@@ -287,6 +298,7 @@ func (q *Queries) ListUnclassifiedPostingsForced(ctx context.Context, arg ListUn
 		if err := rows.Scan(
 			&i.PostingID,
 			&i.CompanyID,
+			&i.CompanyName,
 			&i.Title,
 			&i.DescriptionText,
 		); err != nil {
@@ -301,4 +313,18 @@ func (q *Queries) ListUnclassifiedPostingsForced(ctx context.Context, arg ListUn
 		return nil, err
 	}
 	return items, nil
+}
+
+const postingExists = `-- name: PostingExists :one
+SELECT EXISTS (SELECT 1 FROM job_postings WHERE id = $1) AS exists
+`
+
+// PostingExists reports whether a job_postings row exists for the given id. The
+// MCP save_enrichment action calls it through the read-only pool to reject a
+// nonexistent posting before invoking the action function.
+func (q *Queries) PostingExists(ctx context.Context, id int64) (bool, error) {
+	row := q.db.QueryRowContext(ctx, postingExists, id)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }

@@ -55,6 +55,15 @@ WHERE job_posting_id = $1
 ORDER BY classified_at DESC
 LIMIT 1;
 
+-- SaveEnrichment calls the approved mcp.save_enrichment SECURITY DEFINER function,
+-- which owns the full classifier writeback path (get-or-create taxonomy, insert one
+-- classifications row, attach join rows) and returns a JSON envelope. Unlike
+-- mcp.add_company (a multi-column RETURNS TABLE that sqlc's offline parser cannot
+-- expand), this is a scalar jsonb return, so it is safe to route through sqlc and
+-- keep codegen offline. The MCP action tool binds this against the action pool.
+-- name: SaveEnrichment :one
+SELECT mcp.save_enrichment($1, $2, $3)::jsonb AS result;
+
 -- Full-table DISTINCT ON — no filter or limit. Suitable for local/debug use;
 -- production callers should add a job_posting_id filter or pagination parameters.
 -- name: ListCurrentClassifications :many

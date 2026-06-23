@@ -5,6 +5,16 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/classify"
+)
+
+// maxSlugLen and maxNotesLen are the shared classifier caps, referenced here so
+// the boundary cases stay pinned to the single source of truth in
+// internal/enrich/classify.
+const (
+	maxSlugLen  = classify.MaxSlugLen
+	maxNotesLen = classify.MaxNotesLen
 )
 
 // newTestTaxonomy builds an in-memory Taxonomy with a small but realistic

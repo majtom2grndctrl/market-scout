@@ -1,4 +1,6 @@
-// Command mcp serves read-only market-scout Postgres queries over MCP stdio.
+// Command mcp is the market-scout MCP server. Read-only inspection tools bind
+// DATABASE_URL_RO; curated write tools bind DATABASE_URL_ACTIONS (action role,
+// EXECUTE-only on approved mcp.* SECURITY DEFINER functions).
 // See: agent-context/lib/developer-guide.md
 package main
 
@@ -79,27 +81,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	dsn := os.Getenv("DATABASE_URL_RO")
-	if dsn == "" {
-		slog.Error("[mcp] DATABASE_URL_RO is not set")
-		return exitGenericError
-	}
-
-	pool, err := sql.Open("pgx", dsn)
+	pools, cleanup, err := openPools(ctx)
 	if err != nil {
-		slog.Error("[mcp] opening database", "error", err)
+		// err already names the misconfigured DSN by env var without exposing its value.
+		slog.Error("[mcp] opening database pools", "error", err)
 		return exitGenericError
 	}
-	defer pool.Close()
+	defer cleanup()
 
-	pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err := pool.PingContext(pingCtx); err != nil {
-		slog.Error("[mcp] pinging database", "error", err)
-		return exitGenericError
-	}
-
-	s := newMCPServer(pool)
+	s := newMCPServer(pools)
 	slog.Info("[mcp] serving stdio")
 	stdioServer := server.NewStdioServer(s)
 	if err := stdioServer.Listen(ctx, os.Stdin, os.Stdout); err != nil && !errors.Is(err, context.Canceled) {
@@ -110,7 +100,66 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
-func newMCPServer(pool *sql.DB) *server.MCPServer {
+// dbPools holds the two connections the MCP server uses. The read-only pool
+// backs the generic query gateway and other inspection tools; the action pool
+// is reserved for curated write tools that call approved SECURITY DEFINER
+// functions. The action pool is never handed to the read-only query handler.
+type dbPools struct {
+	readOnly *sql.DB
+	action   *sql.DB
+}
+
+// openPools opens and verifies both database connections. Both DSNs are
+// required: a misconfigured action DSN is a startup failure, not a degraded
+// mode, so a leaked broad DSN can never silently substitute for the curated
+// action path. Errors name the offending env var but never its value.
+func openPools(ctx context.Context) (pools dbPools, cleanup func(), err error) {
+	roPool, err := openVerifiedPool(ctx, "DATABASE_URL_RO")
+	if err != nil {
+		return dbPools{}, nil, err
+	}
+
+	actionPool, err := openVerifiedPool(ctx, "DATABASE_URL_ACTIONS")
+	if err != nil {
+		roPool.Close()
+		return dbPools{}, nil, err
+	}
+
+	cleanup = func() {
+		actionPool.Close()
+		roPool.Close()
+	}
+	return dbPools{readOnly: roPool, action: actionPool}, cleanup, nil
+}
+
+// openVerifiedPool reads the DSN from envVar, opens a pool, and pings it. The
+// caller owns Close on success. On failure it reports the env var name only;
+// the DSN value (which carries credentials) never reaches logs or errors.
+func openVerifiedPool(ctx context.Context, envVar string) (*sql.DB, error) {
+	dsn := os.Getenv(envVar)
+	if dsn == "" {
+		return nil, fmt.Errorf("%s is not set", envVar)
+	}
+
+	pool, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("opening %s: %w", envVar, err)
+	}
+
+	pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := pool.PingContext(pingCtx); err != nil {
+		pool.Close()
+		// The driver's ping error embeds connection parameters (user, host,
+		// database) parsed from the DSN, so it is not wrapped here: leaking
+		// credentials in startup logs would defeat the action-boundary design.
+		return nil, fmt.Errorf("pinging %s failed (connection refused or unreachable); DSN value omitted from this error", envVar)
+	}
+
+	return pool, nil
+}
+
+func newMCPServer(pools dbPools) *server.MCPServer {
 	s := server.NewMCPServer(
 		"market-scout-postgres",
 		"0.1.0",
@@ -118,18 +167,66 @@ func newMCPServer(pool *sql.DB) *server.MCPServer {
 		server.WithRecovery(),
 	)
 
+	// Read-only inspection tools always bind to the read-only pool. Curated write
+	// tools bind to the action pool (pools.action), which can call only approved
+	// mcp.* SECURITY DEFINER functions — never the read-only query gateway.
 	queryTool := mcp.NewTool(
 		"query",
 		mcp.WithDescription("Run a read-only SQL query against market-scout Postgres and return rows as JSON."),
 		mcp.WithString("sql", mcp.Required(), mcp.Description("SQL query to run in a read-only transaction.")),
 	)
-	s.AddTool(queryTool, queryHandler(pool))
+	s.AddTool(queryTool, queryHandler(pools.readOnly))
 
 	fetchStatusTool := mcp.NewTool(
 		"fetch_status",
 		mcp.WithDescription("Return the latest fetch run status for each company."),
 	)
-	s.AddTool(fetchStatusTool, fetchStatusHandler(pool))
+	s.AddTool(fetchStatusTool, fetchStatusHandler(pools.readOnly))
+
+	// enrichment_preview is read-only: it reports what batch-enrich would select
+	// without spawning agents, so it binds the read-only pool. The RO role
+	// already has the table reads the shared selection core needs.
+	enrichmentPreviewTool := mcp.NewTool(
+		"enrichment_preview",
+		mcp.WithDescription("Preview which job postings batch-enrich would select for classification, without spawning agents or writing anything."),
+		mcp.WithNumber("count", mcp.Description("Max postings to select (1-100). Defaults to 10.")),
+		mcp.WithString("focus", mcp.Description("ILIKE prefilter on title and description; `%` and `_` are SQL wildcards. Empty means no filter.")),
+		mcp.WithBoolean("force", mcp.Description("Include already-classified postings (drops the unclassified filter). Defaults to false.")),
+	)
+	s.AddTool(enrichmentPreviewTool, enrichmentPreviewHandler(pools.readOnly))
+
+	// add_company is an action tool: it writes through the approved
+	// mcp.add_company function, so it binds the action pool, not the read-only
+	// pool. The agent sends only typed parameters; the server never relays SQL.
+	addCompanyTool := mcp.NewTool(
+		"add_company",
+		mcp.WithDescription("Validate and insert a company through the approved mcp.add_company action function. Optionally probes the live ATS board first."),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Company display name.")),
+		mcp.WithString("ats", mcp.Required(), mcp.Description("ATS key: greenhouse, lever, ashby, workday, or workable.")),
+		mcp.WithString("board_token", mcp.Required(), mcp.Description("ATS board token. Workday is {host}/{site}; Workable is the account slug.")),
+		mcp.WithString("industry", mcp.Description("Optional industry label, stored verbatim.")),
+		mcp.WithString("careers_page_url", mcp.Description("Optional absolute http(s) careers page URL.")),
+		mcp.WithBoolean("probe", mcp.Description("Probe the live ATS board before inserting. Defaults to true.")),
+	)
+	s.AddTool(addCompanyTool, addCompanyHandler(pools.action))
+
+	// save_enrichment is an action tool: it persists a classification through the
+	// approved mcp.save_enrichment function, so the write binds the action pool.
+	// It also reads taxonomy and posting existence for pre-validation through the
+	// read-only pool — the RO role already has those table reads. The agent sends
+	// a classifier-shaped payload plus provenance; the server never relays SQL.
+	saveEnrichmentTool := mcp.NewTool(
+		"save_enrichment",
+		mcp.WithDescription("Persist a classifier-shaped enrichment for a job posting through the approved mcp.save_enrichment action function. Append-only: every call inserts a new classification row and never edits prior history."),
+		mcp.WithNumber("posting_id", mcp.Required(), mcp.Description("Target job posting id; must already exist.")),
+		mcp.WithObject("provenance", mcp.Description("Optional. model defaults to \"mcp-agent\", prompt_version to \"mcp-save-enrichment-v1\". Both must match ^[A-Za-z0-9._-]+$ after defaults.")),
+		mcp.WithObject("classification", mcp.Required(), mcp.Description("seniority (required closed set) and optional notes.")),
+		mcp.WithArray("canonical_roles", mcp.Description("Canonical roles: each {slug, name, dimensions[]}. Dimensions are a closed seeded set.")),
+		mcp.WithArray("specializations", mcp.Description("Specializations: each {slug, name}.")),
+		mcp.WithArray("skills", mcp.Description("Skills: each {slug, name, optional requirement}. requirement is echoed but not persisted.")),
+		mcp.WithString("summary", mcp.Description("Echoed in the response only; not persisted.")),
+	)
+	s.AddTool(saveEnrichmentTool, saveEnrichmentHandler(pools.readOnly, pools.action))
 
 	return s
 }
@@ -266,11 +363,11 @@ func resetAndCloseConn(conn *sql.Conn) error {
 	return nil
 }
 
-func scanQueryRows(rows queryRows, cap int) (queryEnvelope, error) {
-	return scanQueryRowsWithContext(context.Background(), rows, cap)
+func scanQueryRows(rows queryRows, rowCap int) (queryEnvelope, error) {
+	return scanQueryRowsWithContext(context.Background(), rows, rowCap)
 }
 
-func scanQueryRowsWithContext(ctx context.Context, rows queryRows, cap int) (queryEnvelope, error) {
+func scanQueryRowsWithContext(ctx context.Context, rows queryRows, rowCap int) (queryEnvelope, error) {
 	cols, err := rows.Columns()
 	if err != nil {
 		return queryEnvelope{}, fmt.Errorf("read query columns: %w", err)
@@ -285,7 +382,7 @@ func scanQueryRowsWithContext(ctx context.Context, rows queryRows, cap int) (que
 			return queryEnvelope{}, fmt.Errorf("read query rows: %w", err)
 		}
 
-		if len(result.Rows) >= cap {
+		if len(result.Rows) >= rowCap {
 			result.Truncated = true
 			break
 		}

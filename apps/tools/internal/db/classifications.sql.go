@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 )
 
 const getCurrentClassificationForPosting = `-- name: GetCurrentClassificationForPosting :one
@@ -233,4 +234,27 @@ func (q *Queries) ListCurrentClassifications(ctx context.Context) ([]Classificat
 		return nil, err
 	}
 	return items, nil
+}
+
+const saveEnrichment = `-- name: SaveEnrichment :one
+SELECT mcp.save_enrichment($1, $2, $3)::jsonb AS result
+`
+
+type SaveEnrichmentParams struct {
+	PPayload       json.RawMessage
+	PModel         string
+	PPromptVersion string
+}
+
+// SaveEnrichment calls the approved mcp.save_enrichment SECURITY DEFINER function,
+// which owns the full classifier writeback path (get-or-create taxonomy, insert one
+// classifications row, attach join rows) and returns a JSON envelope. Unlike
+// mcp.add_company (a multi-column RETURNS TABLE that sqlc's offline parser cannot
+// expand), this is a scalar jsonb return, so it is safe to route through sqlc and
+// keep codegen offline. The MCP action tool binds this against the action pool.
+func (q *Queries) SaveEnrichment(ctx context.Context, arg SaveEnrichmentParams) (json.RawMessage, error) {
+	row := q.db.QueryRowContext(ctx, saveEnrichment, arg.PPayload, arg.PModel, arg.PPromptVersion)
+	var result json.RawMessage
+	err := row.Scan(&result)
+	return result, err
 }
