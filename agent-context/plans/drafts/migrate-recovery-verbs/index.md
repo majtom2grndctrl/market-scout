@@ -16,7 +16,7 @@ what to force to.
 - Add a `force <version>` verb: clear the dirty flag by pinning the recorded version.
 - Validate the `force` argument: reject non-integer and negative values before
   calling into the migrator.
-- Handle the fresh-database case (`ErrNilVersion`) gracefully for both new verbs,
+- Handle the fresh-database case (`ErrNilVersion`) gracefully in the `version` verb,
   mirroring how `up`/`down` already special-case `ErrNoChange`.
 - Keep the existing `[migrate]`-tagged structured `slog` logging on the new verbs.
 - Document the teardown footgun and the recovery recipe in
@@ -37,8 +37,8 @@ what to force to.
 ## Acceptance criteria
 
 - [ ] `migrate version` prints the current version and dirty flag on a migrated DB.
-- [ ] `migrate version` on a fresh DB (no migrations applied) reports "no migrations
-      applied" rather than erroring opaquely.
+- [ ] `migrate version` on a fresh DB reports the no-migrations-applied case
+      rather than erroring opaquely.
 - [ ] `migrate force <version>` clears the dirty flag: after a `down` strands the DB
       `dirty`, `force <version>` followed by `up` returns the DB to a clean,
       fully-migrated state.
@@ -65,24 +65,34 @@ Extend `run()` in `apps/tools/cmd/migrate/main.go`. The current flow parses
 On `ErrNilVersion`, report no migrations applied and exit zero. Otherwise log the
 version and dirty flag as structured `slog` key/values.
 
-`force` reads `os.Args[2]`, parses it as a non-negative integer, and rejects a
-missing, non-integer, or negative argument with a usage error before touching the
-migrator. On a valid argument, call `m.Force(version)` (note: `Force` takes an
-`int`). Treat a post-force `ErrNilVersion`/`ErrNoChange` the same forgiving way the
-existing code treats `ErrNoChange`.
+`force` checks `len(os.Args) < 3` and emits the usage error before indexing
+`os.Args[2]`, then parses that arg as a non-negative integer, rejecting a
+non-integer or negative value with a usage error before touching the migrator. Keep
+the parsed value as `int` — what `m.Force(version int)` takes — independent of
+`Version()`'s `uint` return. On a valid argument, call `m.Force(version)`: a nil
+return is success, a non-nil error fails with a clear `[migrate]` message. `Force`
+does not report `ErrNoChange`/`ErrNilVersion`, so the `force` path needs no fresh-DB
+special-case.
 
 Update the usage strings (the `len(os.Args) < 2` guard and the unknown-direction
 error) to list `up|down|force|version`.
+
+Exact log wording and `slog` key names are the implementer's choice. The contract is
+structured key/values under the `[migrate]` tag, never `fmt.Println`; the fresh-DB
+`version` message is illustrative, not a literal string contract.
 
 ### Task 2: Document the recovery recipe
 
 In `agent-context/lib/developer-guide.md` §2 (Schema Migrations), add a short
 subsection covering: `down` is a full teardown and intentionally blocks at the
-RESTRICT FKs (000007/000008) when enrichment history exists, leaving the DB `dirty`;
-recover with `migrate version` to read the stuck version, resolve the
-`canonical_role_dimensions` / `job_posting_roles` references named in those down
-migrations, then `migrate force <N>` and `migrate up`. Keep it durable prose — name
-the recovery steps and the verbs, not internal function names.
+RESTRICT FKs (000007/000008) when enrichment history exists, leaving the DB `dirty`.
+Recovery: run `migrate version` to read the stuck version; manually delete the
+blocking rows the down migrations' own comments name — the `canonical_role_dimensions`
+rows for the stuck dimension (000007) or the `job_posting_roles` rows for the stuck
+role (000008) — so the down `DELETE` can proceed; then `migrate force <N>` and
+`migrate up`. Point operators to those down-migration comments for the exact `DELETE`
+statements rather than duplicating them. Keep it durable prose — name the recovery
+steps and the verbs, not internal function names.
 
 ## Sequencing
 
@@ -98,6 +108,9 @@ instance `up`/`down` use. The `version`/`force` branches sit alongside the exist
 `up`/`down` cases; argument parsing for `force` uses `strconv.Atoi` with an explicit
 non-negative check. golang-migrate API (v4.19.1, confirmed): `Force(version int) error`,
 `Version() (uint, bool, error)`, sentinel `migrate.ErrNilVersion`.
+
+`strconv` is not currently imported in `main.go`; the `force` path adds it.
+Throughout this spec, `cmd/migrate` is shorthand for `apps/tools/cmd/migrate`.
 
 This stays a flat verb switch on purpose — no cobra/flag framework. Readability-first,
 single-operator tool (developer-guide §1.3, §5.1).
