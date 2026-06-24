@@ -194,11 +194,26 @@ Primary debugging surfaces:
 
 Migrations live in `apps/tools/internal/db/migrations/` as numbered SQL files. Apply with `go run ./cmd/migrate up` (from `apps/tools/`). Never edit a migration after it has run against any environment; add a new one.
 
+`migrate` supports four verbs: `up`, `down`, `force <version>`, `version`. `version` prints the current version and the dirty flag (or reports no migrations on a fresh DB). `force <version>` pins the recorded version and clears the dirty flag.
+
 After a schema change, regenerate sqlc:
 
 ```bash
 sqlc generate
 ```
+
+#### Teardown and Recovery
+
+`migrate down` is a full teardown — it reverts every migration, not a single step. It blocks at the RESTRICT foreign keys in migrations 000007 and 000008 when enrichment history exists, leaving the DB `dirty`. That block is a feature: it protects enrichment provenance from being silently dropped.
+
+To recover from a stuck teardown:
+
+1. `migrate version` — read the stuck version and confirm the dirty flag.
+2. Delete the blocking rows the down migration names in its own comments: `canonical_role_dimensions` rows for the stuck dimension (000007), or `job_posting_roles` rows for the stuck role (000008). The down `DELETE` can then proceed.
+3. `migrate force <N>` — clear the dirty flag at the stuck version `N`.
+4. `migrate up` — re-apply forward to a clean state.
+
+The exact `DELETE` statements live in the down-migration files themselves — `000007_add_sales_role_dimension.down.sql` and `000008_add_legal_engineer_role.down.sql`. Copy them from there; duplicated SQL drifts.
 
 ### Reload Behavior
 
