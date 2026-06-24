@@ -213,7 +213,7 @@ To recover from a stuck teardown:
 3. `migrate force <N>` — clear the dirty flag at the stuck version `N`.
 4. `migrate up` — re-apply forward to a clean state.
 
-The exact `DELETE` statements live in the down-migration files themselves — `000007_add_sales_role_dimension.down.sql` and `000008_add_legal_engineer_role.down.sql`. Copy them from there; duplicated SQL drifts.
+Each down migration spells out the prerequisite child-row `DELETE` in its comments — the `WHERE` clause to run against `canonical_role_dimensions` (`000007_add_sales_role_dimension.down.sql`) or `job_posting_roles` (`000008_add_legal_engineer_role.down.sql`). Run that first. The file's own runnable `DELETE` is the parent-row delete the FK blocks until those child rows are gone, so don't just copy that one.
 
 ### Reload Behavior
 
