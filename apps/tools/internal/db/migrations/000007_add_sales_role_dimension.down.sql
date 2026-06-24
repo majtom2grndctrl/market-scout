@@ -1,5 +1,5 @@
 -- Removes the 'sales' role dimension.
--- Deletes any row with slug='sales' regardless of provenance — see developer-guide §5 for migration discipline.
+-- Deletes any row with slug='sales' regardless of provenance — see developer-guide §2 (Schema Migrations) for migration discipline.
 -- If any canonical role has been mapped to 'sales', the RESTRICT FK
 -- (canonical_role_dimensions.dimension_id → role_dimensions.id ON DELETE RESTRICT)
 -- will block this delete. That block is intentional: historical provenance surfaces
