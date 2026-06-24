@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 
 	"github.com/golang-migrate/migrate/v4"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -32,12 +33,29 @@ func run() error {
 	}
 
 	if len(os.Args) < 2 {
-		return errors.New("missing direction argument; usage: migrate up|down")
+		return errors.New("missing verb argument; usage: migrate up|down|force|version")
 	}
 
-	direction := os.Args[1]
-	if direction != "up" && direction != "down" {
-		return fmt.Errorf("unknown direction %q; expected up|down", direction)
+	verb := os.Args[1]
+	switch verb {
+	case "up", "down", "force", "version":
+		// known verb
+	default:
+		return fmt.Errorf("unknown verb %q; expected up|down|force|version", verb)
+	}
+
+	// force parses and validates its argument before constructing the migrator,
+	// so a bad argument never opens a DB connection.
+	var forceVersion int
+	if verb == "force" {
+		if len(os.Args) < 3 {
+			return errors.New("missing version argument; usage: migrate force <version>")
+		}
+		v, err := strconv.Atoi(os.Args[2])
+		if err != nil || v < 0 {
+			return fmt.Errorf("invalid force version %q; expected a non-negative integer", os.Args[2])
+		}
+		forceVersion = v
 	}
 
 	src, err := iofs.New(db.MigrationsFS, "migrations")
@@ -55,22 +73,43 @@ func run() error {
 		}
 	}()
 
-	var runErr error
-	switch direction {
-	case "up":
-		runErr = m.Up()
-	case "down":
-		runErr = m.Down()
-	}
-
-	if runErr != nil {
-		if errors.Is(runErr, migrate.ErrNoChange) {
-			slog.Info("[migrate] migrations up to date")
+	switch verb {
+	case "version":
+		version, dirty, err := m.Version()
+		if errors.Is(err, migrate.ErrNilVersion) {
+			slog.Info("[migrate] no migrations applied")
 			return nil
 		}
-		return fmt.Errorf("migration %s failed: %w", direction, runErr)
+		if err != nil {
+			return fmt.Errorf("reading migration version: %w", err)
+		}
+		slog.Info("[migrate] current version", "version", version, "dirty", dirty)
+		return nil
+
+	case "force":
+		if err := m.Force(forceVersion); err != nil {
+			return fmt.Errorf("forcing version %d: %w", forceVersion, err)
+		}
+		slog.Info("[migrate] forced version", "version", forceVersion)
+		return nil
+
+	case "up", "down":
+		var runErr error
+		if verb == "up" {
+			runErr = m.Up()
+		} else {
+			runErr = m.Down()
+		}
+		if runErr != nil {
+			if errors.Is(runErr, migrate.ErrNoChange) {
+				slog.Info("[migrate] migrations up to date")
+				return nil
+			}
+			return fmt.Errorf("migration %s failed: %w", verb, runErr)
+		}
+		slog.Info("[migrate] migration complete", "direction", verb)
+		return nil
 	}
 
-	slog.Info("[migrate] migration complete", "direction", direction)
 	return nil
 }
