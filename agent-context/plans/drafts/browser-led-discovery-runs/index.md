@@ -34,7 +34,7 @@ Remove the friction in browser-led company sourcing: before an agent spends brow
 - [ ] A candidate matched only by normalized name (punctuation and whitespace stripped, lowercased, equality — substring is not a match) returns `stale` with the matched company surfaced, never a silent `duplicate`.
 - [ ] A candidate with no `(ats, board_token)` match and no normalized-name match returns `new`.
 - [ ] `recency_days` defaults to 30 when omitted. Name normalization has one shared definition; the tool does not carry a second copy of the rule.
-- [ ] Malformed input (empty `name`) fails the whole batch: the tool returns `ok=false`, an empty/absent `results`, and one `actionError` per offending candidate — `path` in the indexed form `candidates[i].name` (following `save_enrichment`'s `canonical_roles[0].slug` precedent), `code` a stable snake_case code, `message` a human hint. Not an MCP transport error.
+- [ ] An invalid candidate (empty `name`) does not fail the batch. Its `results` element returns `verdict = invalid` and a per-element `error` (`actionError`, `path` = `candidates[i].name` following `save_enrichment`'s `canonical_roles[0].slug` precedent, `code` a stable snake_case code, `message` a hint); sibling candidates in the same call still return their verdicts. `ok=false` with empty `results` is reserved for call-level failure (e.g. DB error), not per-candidate validation. Never an MCP transport error.
 - [ ] `watchlist.md` documents the browser-led loop: `dedup_candidates` → browser investigation of survivors → `detect_ats` → `add_company`, and distinguishes the three sourcing paths (batch sidecar, one-off live onboard, browser-led preflight).
 - [ ] From `apps/tools`: `go test ./cmd/mcp -count=1` and `go test ./...` pass; `go build ./...`, `go vet ./...`, and `staticcheck ./...` report no new issues.
 
@@ -42,7 +42,7 @@ Remove the friction in browser-led company sourcing: before an agent spends brow
 
 ### Task 1: Dedup preflight tool
 
-Add a `dedup_candidates` read-only MCP tool bound to `pools.readOnly`, following `enrichment_preview`'s tool conventions (`mcp.NewTool` + `s.AddTool`, request DTO via `BindArguments`, `ok=false` envelope for tool-level failures, a `pool*`-backed seam wired by `dedupCandidatesHandler(pool)` into a `dedupCandidatesHandlerWithDeps` body for tests) — `enrichment_preview` is the only existing tool with this ok-envelope-plus-seam shape; `detect_ats` is DB-free and out of scope as a model here. `"dedup_candidates"` is the MCP tool string only — it stays snake_case; the Go identifiers are camelCase. It takes a batch of candidates and a top-level optional `recency_days *int` (default 30, following `previewRequest.Count *int`), returns a verdict per candidate. Empty `name` is semantic validation after a successful `BindArguments`, returned as an `ok=false` envelope — exactly as `enrichment_preview` handles an out-of-range `count`; a genuinely undecodable tool call still returns an MCP transport error.
+Add a `dedup_candidates` read-only MCP tool bound to `pools.readOnly`, following `enrichment_preview`'s tool conventions (`mcp.NewTool` + `s.AddTool`, request DTO via `BindArguments`, `ok=false` envelope for tool-level failures, a `pool*`-backed seam wired by `dedupCandidatesHandler(pool)` into a `dedupCandidatesHandlerWithDeps` body for tests) — `enrichment_preview` is the only existing tool with this ok-envelope-plus-seam shape; `detect_ats` is DB-free and out of scope as a model here. `"dedup_candidates"` is the MCP tool string only — it stays snake_case; the Go identifiers are camelCase. It takes a batch of candidates and a top-level optional `recency_days *int` (default 30, following `previewRequest.Count *int`), returns a verdict per candidate. Empty `name` is validated per candidate after a successful `BindArguments`: the offending element returns `verdict = invalid` with a per-element `error`; sibling candidates still get verdicts. Partial failure, not whole-batch reject — one bad name in a scraped list never discards the rest, which matters for unattended runs. This diverges from `enrichment_preview`, which rejects the whole call on bad input. `ok=false` is reserved for call-level failure; a genuinely undecodable tool call still returns an MCP transport error.
 
 Verdict precedence: if `(ats, board_token)` is supplied and matches a tracked company, reuse `FindCompanyDedupStatus` (`apps/tools/internal/db/queries/onboard.sql`) — a recent snapshot → `duplicate`; no recent snapshot → `stale`. Otherwise (no token supplied, or a token supplied but no `(ats, board_token)` match), run a normalized-name match against `companies`: a name match → `stale` with the matched company surfaced; no match → `new`. The name-match `:many` query also computes `has_recent_snapshot` via the same recency `EXISTS` subquery `FindCompanyDedupStatus` uses, so `Matched.has_recent_snapshot` is populated on both branches — the name branch still always returns `stale` regardless of recency; the field is informational. Normalization is the `watchlist.md` §Dedup rule, expressed once and shared (SQL expression or a Go helper — implementor's call, but a single source of truth). Add the name-match sqlc query. `FindCompanyDedupStatusRow` currently returns only `company_id` and `has_recent_snapshot` — no name — so the matched company can't be surfaced on the token branch as-is; extend it only additively — add the matched company `name` to its select list — rather than duplicating it into a second query, then regenerate sqlc. No writes, no probes, no fan-out concurrency (these are cheap read queries — developer-guide §5.6).
 
@@ -52,7 +52,7 @@ Add a "Browser-led discovery run" section to `agent-context/lib/watchlist.md`. C
 
 ### Task 3: Tests
 
-Unit tests for dedup verdict classification: the `(ats, board_token)` duplicate and stale paths, the name-match `stale` path, and the no-match `new` path. The recency boundary itself lives in SQL (the reused query's `EXISTS` subquery) and is exercised there, not re-asserted at the Go layer; the Go-layer coverage is the bool→verdict mapping for both recency states via the fake seam (`has_recent_snapshot=true` → `duplicate`, `false` → `stale`). Cover empty-`name` rejection and response mapping against a fake dedup source, using the `...WithDeps` seam.
+Unit tests for dedup verdict classification: the `(ats, board_token)` duplicate and stale paths, the name-match `stale` path, and the no-match `new` path. The recency boundary itself lives in SQL (the reused query's `EXISTS` subquery) and is exercised there, not re-asserted at the Go layer; the Go-layer coverage is the bool→verdict mapping for both recency states via the fake seam (`has_recent_snapshot=true` → `duplicate`, `false` → `stale`). Cover the per-candidate `invalid` path — an empty `name` yields an `invalid` element while sibling candidates still return verdicts — and response mapping against a fake dedup source, using the `...WithDeps` seam.
 
 ## Sequencing
 
@@ -67,9 +67,9 @@ The `(ats, board_token)` branch is a direct reuse of `FindCompanyDedupStatus`. T
 
 ## Boundary inventory
 
-Dedup verdict (JSON `verdict`, tool-only, not persisted): `new`, `duplicate`, `stale`.
+Dedup verdict (JSON `verdict`, tool-only, not persisted): `new`, `duplicate`, `stale`, `invalid`.
 
-Top-level wire shape mirrors `previewEnvelope`: `Ok` (`"ok"`, bool), `Results` (`"results"`, an array of per-candidate result objects — each carrying the `Name`/`Verdict`/`Matched` fields below), and `Errors` (`"errors"`, `[]actionError`). The table below describes the fields of one `results` element unless noted otherwise.
+Top-level wire shape: `Ok` (`"ok"`, bool), `Results` (`"results"`, one element per input candidate, in order), `Errors` (`"errors"`, `[]actionError`). `ok=false` with empty `results` is call-level failure only (e.g. DB error). A single invalid candidate does not set `ok=false` — it is reported in its own `results` element (`verdict = invalid`, per-element `error`). The table below describes the fields of one `results` element unless noted otherwise.
 
 | Name | Go field | JSON key | Source |
 |---|---|---|---|
@@ -79,7 +79,7 @@ Top-level wire shape mirrors `previewEnvelope`: `Ok` (`"ok"`, bool), `Results` (
 | Recency days | `RecencyDays *int` | `"recency_days"` | top-level batch input (not per-candidate), optional — a pointer so an omitted value (default 30) is distinguishable from an explicit `0`, following `previewRequest.Count *int`; converts to `int32` at the `FindCompanyDedupStatusParams.RecencyDays` boundary (the generated param is `int32`) |
 | Verdict | `Verdict` | `"verdict"` | output, computed |
 | Matched company | `Matched` | `"matched"` | output; `id`/`name`/`ats`/`board_token`/`has_recent_snapshot` when matched, else null — `name` from the added `FindCompanyDedupStatus` column on the token branch (from the name-match query directly on the name branch); `ats`/`board_token` may echo the input |
-| Error | (`actionError`) | `"path"`/`"code"`/`"message"` | output on failure; one per offending candidate, `path` indexed as `candidates[i].name` (fails the whole batch — `results` empty/absent) |
+| Error | `Error` (`*actionError`) | `"error"` | per-element; null unless `verdict = invalid`; then `path` = `candidates[i].name`, `code` stable snake_case, `message` a hint |
 
 ## Deferred: run-ledger contract (defined, not built)
 
@@ -87,6 +87,7 @@ Recorded so `discovery-source-recipes` materializes one agreed shape instead of 
 
 - **Source input** (per run): `source_kind` ∈ `company-list-page`, `news-article`, `manual`; an optional source URL; an optional note.
 - **Candidate record** (per candidate): `name`; optional `source_url` provenance (the page/article it was seen at); `status`; optional `ats` / `board_token`; optional `company_id` (set when `onboarded`); verbatim source `metadata`; optional `notes`.
+- **Evidence trail** (per candidate): the observed URLs, the `detect_ats` verdict, and the `dedup_candidates` verdict behind the outcome — not just the final `status`. The *why*, so an unattended run is auditable after the fact. Shape is the recipes milestone's call; named here so it is a deliberate choice, not a discovered gap.
 - **Status taxonomy**: the `watchlist.md` set — `duplicate`, `stale-needs-merge`, `unsupported-ats`, `no-careers`, `invalid-token`, `dead` — plus discovery-specific `onboarded` (passed `add_company`) and `pending` (discovered, unresolved when the session ended; allowed so incomplete sessions record honestly).
 - **Provenance**: every candidate carries its run and its source URL.
 - **Run summary**: source input, start/finish timing, total candidate count, and counts by status — computed by aggregating candidates on read, not denormalized onto the run row.
