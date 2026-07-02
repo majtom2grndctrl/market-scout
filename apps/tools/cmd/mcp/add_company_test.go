@@ -96,6 +96,12 @@ func TestRunAddCompany_ValidationErrorCodes(t *testing.T) {
 			wantCode: codeInvalidBoardToken,
 		},
 		{
+			name:     "workday site with query separator rejected",
+			req:      addCompanyRequest{Name: "Acme", ATS: "workday", BoardToken: "acme.wd5.myworkdayjobs.com/Careers?foo", Probe: boolPtr(false)},
+			wantPath: "board_token",
+			wantCode: codeInvalidBoardToken,
+		},
+		{
 			name:     "malformed workable token",
 			req:      addCompanyRequest{Name: "Acme", ATS: "workable", BoardToken: "Acme_Co", Probe: boolPtr(false)},
 			wantPath: "board_token",
@@ -104,6 +110,18 @@ func TestRunAddCompany_ValidationErrorCodes(t *testing.T) {
 		{
 			name:     "invalid careers url",
 			req:      addCompanyRequest{Name: "Acme", ATS: "greenhouse", BoardToken: "acme", CareersPageURL: "not a url", Probe: boolPtr(false)},
+			wantPath: "careers_page_url",
+			wantCode: codeInvalidURL,
+		},
+		{
+			name:     "bare careers url rejected",
+			req:      addCompanyRequest{Name: "Acme", ATS: "greenhouse", BoardToken: "acme", CareersPageURL: "example.com/careers", Probe: boolPtr(false)},
+			wantPath: "careers_page_url",
+			wantCode: codeInvalidURL,
+		},
+		{
+			name:     "non-http careers url rejected",
+			req:      addCompanyRequest{Name: "Acme", ATS: "greenhouse", BoardToken: "acme", CareersPageURL: "ftp://example.com/careers", Probe: boolPtr(false)},
 			wantPath: "careers_page_url",
 			wantCode: codeInvalidURL,
 		},
@@ -124,6 +142,33 @@ func TestRunAddCompany_ValidationErrorCodes(t *testing.T) {
 				t.Fatalf("errors = %+v, want path=%q code=%q", env.Errors, tc.wantPath, tc.wantCode)
 			}
 		})
+	}
+}
+
+func TestRunAddCompany_CareersPageURLValidationKeepsFieldMessage(t *testing.T) {
+	exec := &fakeExecutor{}
+	req := addCompanyRequest{
+		Name:           "Acme",
+		ATS:            "greenhouse",
+		BoardToken:     "acme",
+		CareersPageURL: "not a url",
+		Probe:          boolPtr(false),
+	}
+
+	env := runAddCompany(t.Context(), req, exec, neverProbe(t))
+
+	if env.Ok {
+		t.Fatalf("env.Ok = true, want false for invalid careers_page_url")
+	}
+	if len(env.Errors) != 1 {
+		t.Fatalf("errors = %+v, want exactly one careers_page_url error", env.Errors)
+	}
+	got := env.Errors[0]
+	if got.Path != "careers_page_url" || got.Code != codeInvalidURL {
+		t.Fatalf("error = %+v, want careers_page_url/%s", got, codeInvalidURL)
+	}
+	if !strings.HasPrefix(got.Message, "careers_page_url ") {
+		t.Fatalf("message = %q, want field-specific careers_page_url wording", got.Message)
 	}
 }
 

@@ -1,4 +1,4 @@
-// add_company is the first MCP action tool: it inserts a company through the
+// add_company is an MCP action tool: it inserts a company through the
 // approved mcp.add_company SECURITY DEFINER function, run by the locked-down
 // action role. The agent sends only typed parameters — never SQL — and the
 // server validates them, optionally probes the live ATS board, then calls the
@@ -12,8 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
@@ -21,19 +19,9 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/ats"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/atsdetect"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/domain"
 )
-
-// supportedATS is the closed set of ATS values the action tool accepts. It
-// mirrors the adapters the fetcher registers; an ats outside this set is
-// rejected before any probe or insert.
-var supportedATS = map[string]bool{
-	"greenhouse": true,
-	"lever":      true,
-	"ashby":      true,
-	"workday":    true,
-	"workable":   true,
-}
 
 // Action error codes. Each maps to a stable path the agent can branch on; the
 // envelope returns these in errors[] rather than as an MCP transport error.
@@ -51,19 +39,6 @@ const (
 // the drift visible to the operator. See agent-context/lib/watchlist.md for the
 // workflow that governs how companies enter the seed.
 const seedFilePath = "apps/tools/internal/db/seeds/companies.sql"
-
-// workdayHostPattern matches a Workday tenant host: one or more dot-separated
-// labels followed by .myworkdayjobs.com. Each dot-separated label starts and
-// ends with an alphanumeric character; hyphens are allowed only in the interior
-// (dots are separators, never inside a label). Stricter than the Workday adapter
-// parser by design — the action tool validates at the trust boundary rather than
-// deferring to the adapter's looser split.
-var workdayHostPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.myworkdayjobs\.com$`)
-
-// workableSlugPattern matches a Workable account slug: lowercase alphanumeric
-// segments joined by single hyphens. Stricter than the adapter's bare-slug
-// check, applied here at the boundary.
-var workableSlugPattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // addCompanyRequest is the MCP tool DTO. JSON keys are the wire contract with
 // the agent; field names follow Go style. Probe is a pointer so an omitted
@@ -134,7 +109,7 @@ type atsProbe interface {
 
 // probeFactory builds a live ATS adapter for a supported ats value. Injectable
 // so tests can fake the probe without real HTTP. The caller has already
-// validated ats against supportedATS.
+// validated ats through atsdetect.
 type probeFactory func(atsName string) (atsProbe, error)
 
 // addCompanyExecutor runs the approved mcp.add_company function and returns the
@@ -207,7 +182,7 @@ func (e poolExecutor) addCompany(ctx context.Context, params addCompanyParams) (
 }
 
 // defaultProbeFactory constructs the live adapter for ats using a shared HTTP
-// client. ats is assumed already validated against supportedATS.
+// client. ats is assumed already validated through atsdetect.
 func defaultProbeFactory(atsName string) (atsProbe, error) {
 	client := &http.Client{}
 	switch atsName {
@@ -334,8 +309,8 @@ func validateAddCompany(name, atsName, boardToken, careersURL string) []actionEr
 	}
 	if atsName == "" {
 		errs = append(errs, actionError{Path: "ats", Code: codeMissingRequired, Message: "ats is required"})
-	} else if !supportedATS[atsName] {
-		errs = append(errs, actionError{Path: "ats", Code: codeUnsupportedATS, Message: fmt.Sprintf("unsupported ats %q", atsName)})
+	} else if err := atsdetect.ValidateATS(atsName); err != nil {
+		errs = append(errs, actionError{Path: "ats", Code: codeUnsupportedATS, Message: err.Error()})
 	}
 	if boardToken == "" {
 		errs = append(errs, actionError{Path: "board_token", Code: codeMissingRequired, Message: "board_token is required"})
@@ -344,72 +319,29 @@ func validateAddCompany(name, atsName, boardToken, careersURL string) []actionEr
 	// ATS-specific board_token syntax. Only checked when both ats and token are
 	// present and the ats is supported — otherwise the errors above already
 	// describe the problem.
-	if boardToken != "" && supportedATS[atsName] {
-		if err := validateBoardToken(atsName, boardToken); err != nil {
+	if boardToken != "" && atsdetect.ValidateATS(atsName) == nil {
+		if err := atsdetect.ValidateBoardToken(atsName, boardToken); err != nil {
 			errs = append(errs, actionError{Path: "board_token", Code: codeInvalidBoardToken, Message: err.Error()})
 		}
 	}
 
 	if careersURL != "" {
-		if err := validateAbsoluteHTTPURL(careersURL); err != nil {
-			errs = append(errs, actionError{Path: "careers_page_url", Code: codeInvalidURL, Message: err.Error()})
+		if err := atsdetect.ValidateURL(careersURL); err != nil {
+			errs = append(errs, actionError{Path: "careers_page_url", Code: codeInvalidURL, Message: fieldURLMessage("careers_page_url", err)})
 		}
 	}
 
 	return errs
 }
 
-// validateBoardToken applies the ATS-specific token rules. Greenhouse, Lever,
-// and Ashby accept any non-empty token here; Workday and Workable enforce
-// stricter formats than their adapters' own parsers.
-func validateBoardToken(atsName, boardToken string) error {
-	switch atsName {
-	case "workday":
-		return validateWorkdayBoardToken(boardToken)
-	case "workable":
-		if !workableSlugPattern.MatchString(boardToken) {
-			return fmt.Errorf("workable board_token must be a lowercase slug like %q", "acme-co")
-		}
-		return nil
-	default:
-		return nil
+// fieldURLMessage keeps add_company's field-specific validation wording while
+// delegating URL parsing to atsdetect.
+func fieldURLMessage(field string, err error) string {
+	msg := err.Error()
+	if strings.HasPrefix(msg, "url ") {
+		return field + strings.TrimPrefix(msg, "url")
 	}
-}
-
-// validateWorkdayBoardToken requires exactly two slash-separated components
-// {host}/{site}: host must match *.myworkdayjobs.com; site must be non-empty
-// and free of slash, query, or fragment characters.
-func validateWorkdayBoardToken(boardToken string) error {
-	parts := strings.Split(boardToken, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("workday board_token must be {host}/{site}")
-	}
-	host, site := parts[0], parts[1]
-	if !workdayHostPattern.MatchString(host) {
-		return fmt.Errorf("workday host must match *.myworkdayjobs.com")
-	}
-	if site == "" {
-		return fmt.Errorf("workday site must not be empty")
-	}
-	if strings.ContainsAny(site, "/?#") {
-		return fmt.Errorf("workday site must not contain %q", "/?#")
-	}
-	return nil
-}
-
-// validateAbsoluteHTTPURL accepts only absolute http or https URLs.
-func validateAbsoluteHTTPURL(raw string) error {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("careers_page_url is not a valid URL: %w", err)
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("careers_page_url must be an absolute http(s) URL")
-	}
-	if u.Host == "" {
-		return fmt.Errorf("careers_page_url must be an absolute http(s) URL")
-	}
-	return nil
+	return msg
 }
 
 // runProbe constructs the live adapter and fetches the board. A construction or

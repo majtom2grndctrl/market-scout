@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"regexp"
-	"strings"
 
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/ats"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/domain"
@@ -24,80 +22,6 @@ import (
 // matter shows up.
 type adapterProbe interface {
 	FetchPostings(ctx context.Context, boardToken string) ([]domain.Posting, error)
-}
-
-// detectedATS is what ATS detection produces from a careers URL. Either
-// fields are populated and recognized==true, or recognized==false (the URL
-// matched no known pattern).
-type detectedATS struct {
-	recognized bool
-	ats        string
-	boardToken string
-}
-
-// atsPattern captures one URL-to-ATS detection rule. The order of patterns
-// in atsDetectionRules below is load-bearing: more specific patterns must
-// come before more general ones (e.g. job-boards.greenhouse.io before any
-// future wildcard greenhouse rule).
-type atsPattern struct {
-	ats     string
-	regex   *regexp.Regexp
-	extract func(m []string) string // takes regex submatches, returns board_token
-}
-
-var atsDetectionRules = []atsPattern{
-	{
-		ats:     "greenhouse",
-		regex:   regexp.MustCompile(`(?i)^https?://boards\.greenhouse\.io/([^/?#]+)`),
-		extract: func(m []string) string { return m[1] },
-	},
-	{
-		ats:     "greenhouse",
-		regex:   regexp.MustCompile(`(?i)^https?://job-boards\.greenhouse\.io/([^/?#]+)`),
-		extract: func(m []string) string { return m[1] },
-	},
-	{
-		ats:     "lever",
-		regex:   regexp.MustCompile(`(?i)^https?://jobs\.lever\.co/([^/?#]+)`),
-		extract: func(m []string) string { return m[1] },
-	},
-	{
-		ats:     "ashby",
-		regex:   regexp.MustCompile(`(?i)^https?://jobs\.ashbyhq\.com/([^/?#]+)`),
-		extract: func(m []string) string { return m[1] },
-	},
-	{
-		// Workday: host.myworkdayjobs.com[/locale]/site
-		// Locale is optional in URLs we see in research lists; strip it when
-		// present per watchlist.md §Workday token discovery. board_token is
-		// {host}/{site} — locale dropped.
-		ats:   "workday",
-		regex: regexp.MustCompile(`(?i)^https?://([a-z0-9.-]+\.myworkdayjobs\.com)(?:/[a-z]{2}(?:-[A-Z]{2})?)?/([^/?#]+)`),
-		extract: func(m []string) string {
-			return strings.ToLower(m[1]) + "/" + m[2]
-		},
-	},
-	{
-		// Workable: lowercased slug.
-		ats:     "workable",
-		regex:   regexp.MustCompile(`(?i)^https?://apply\.workable\.com/([^/?#]+)`),
-		extract: func(m []string) string { return strings.ToLower(m[1]) },
-	},
-}
-
-// detectATS maps a careers-page URL to an ATS + board token. First-match
-// wins, matching the precedence documented in watchlist.md §ATS detection.
-func detectATS(careersURL string) detectedATS {
-	for _, rule := range atsDetectionRules {
-		if m := rule.regex.FindStringSubmatch(careersURL); m != nil {
-			return detectedATS{
-				recognized: true,
-				ats:        rule.ats,
-				boardToken: rule.extract(m),
-			}
-		}
-	}
-	return detectedATS{recognized: false}
 }
 
 // probeCareersURL issues a GET against the careers URL. Returns nil on 2xx,

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/atsdetect"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
 )
 
@@ -114,13 +115,13 @@ func (p *processor) processRecord(ctx context.Context, rec *Record) (outcome, er
 			// invalid-token). Only if detection also fails to recognize the
 			// URL pattern do we stamp no-careers.
 			if rec.ATS == nil {
-				det := detectATS(*rec.CareersURL)
-				if !det.recognized {
+				det := atsdetect.DetectURL(*rec.CareersURL, "careers_url")
+				if !det.Recognized {
 					rec.Status = strPtr("no-careers")
 					return outcome{status: "no-careers"}, nil
 				}
-				rec.ATS = strPtr(det.ats)
-				rec.BoardToken = strPtr(det.boardToken)
+				rec.ATS = strPtr(det.ATS)
+				rec.BoardToken = strPtr(det.BoardToken)
 				// Auto-detected ats/board_token requires re-running dedup;
 				// the initial dedup check ran with both nil and skipped.
 				res, err := p.dedupAndStamp(ctx, rec)
@@ -137,13 +138,13 @@ func (p *processor) processRecord(ctx context.Context, rec *Record) (outcome, er
 			// Careers probe succeeded; derive ats/board_token from the URL.
 			// ATS detection consults the careers URL, not the company
 			// homepage — homepage URLs rarely encode ATS slugs.
-			det := detectATS(*rec.CareersURL)
-			if !det.recognized {
+			det := atsdetect.DetectURL(*rec.CareersURL, "careers_url")
+			if !det.Recognized {
 				rec.Status = strPtr("unsupported-ats")
 				return outcome{status: "unsupported-ats"}, nil
 			}
-			rec.ATS = strPtr(det.ats)
-			rec.BoardToken = strPtr(det.boardToken)
+			rec.ATS = strPtr(det.ATS)
+			rec.BoardToken = strPtr(det.BoardToken)
 			res, err := p.dedupAndStamp(ctx, rec)
 			if err != nil {
 				return outcome{}, err

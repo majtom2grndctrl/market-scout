@@ -195,6 +195,14 @@ func newMCPServer(pools dbPools) *server.MCPServer {
 	)
 	s.AddTool(enrichmentPreviewTool, enrichmentPreviewHandler(pools.readOnly))
 
+	detectATSTool := mcp.NewTool(
+		"detect_ats",
+		mcp.WithDescription("Parse supplied careers and observed URLs for supported ATS board evidence without probing, querying, or writing."),
+		mcp.WithString("careers_url", mcp.Description("Primary absolute http(s) URL evidence, usually the visible careers page or final ATS URL.")),
+		mcp.WithArray("observed_urls", mcp.WithStringItems(), mcp.Description("Ordered absolute http(s) URLs observed in redirects, page links, scripts, or network requests.")),
+	)
+	s.AddTool(detectATSTool, detectATSHandler())
+
 	// add_company is an action tool: it writes through the approved
 	// mcp.add_company function, so it binds the action pool, not the read-only
 	// pool. The agent sends only typed parameters; the server never relays SQL.

@@ -84,6 +84,31 @@ A careers page that does not match any pattern is `unsupported-ats`. A careers p
 
 Workday site names are not derivable from the company name. Visit the company's careers page and locate the Workday URL. The URL contains a locale segment between host and site: `https://{host}/{locale}/{site}/jobs`. The locale matches `[a-z]{2}(-[A-Z]{2})?` (e.g. `en-US`, `de`, `fr-FR`). Extract `host` and `site`; strip the locale. The board token is `{host}/{site}` (e.g. `nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite`).
 
+### Detection is a shared boundary
+
+URL-pattern detection is one source of truth. The batch research sidecar and the live MCP onboarding path apply the same URL rules — neither keeps its own copy, so a rule change lands once.
+
+Detection and validation are deterministic and side-effect-free: no network, no DB. Verification is a separate, live step. The live MCP preflight hands off to `add_company`, which probes the ATS and writes the company row. The batch sidecar hands off to `cmd/onboard`, which verifies and writes seed rows.
+
+### Live discover-and-onboard
+
+Use the live MCP path for one-off additions. Use the sidecar workflow and `cmd/onboard` for batch verification and seed-file writes.
+
+Agent or human finds the company homepage and careers page. Agent may inspect browser redirects, page links, scripts, and network request URLs. Pass the careers URL and relevant observed URLs to `detect_ats`.
+
+`detect_ats` parses supplied URL evidence only. It does not drive a browser, crawl the web, probe ATS endpoints, or write to the DB.
+
+Map the selected `detect_ats` result into `add_company`:
+
+| `detect_ats` selected field | `add_company` input |
+|---|---|
+| `ats` | `ats` |
+| `board_token` | `board_token` |
+
+Then call `add_company` with the selected `ats` and `board_token`, plus the company details. `add_company` probe success is the falsifiability gate. Failed probes insert nothing.
+
+Seed-file drift remains visible through the existing `add_company` follow-up.
+
 ### Research file annotation
 
 Bulk sourcing from research lists (e.g. `research/geekwire-200.md`, a YC batch page, a regional startup roundup) uses a structured JSONL sidecar. The source — wherever it lives — is not modified by this workflow. Annotation lives in `research/<source-stem>.jsonl`, one JSON object per line.

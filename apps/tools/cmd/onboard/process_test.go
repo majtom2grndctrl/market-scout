@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/atsdetect"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/domain"
 )
@@ -223,11 +224,11 @@ func TestProcessRecord_UnsupportedATS(t *testing.T) {
 	// the URL matches no detection pattern. We need an HTTP server (so the
 	// probe gets a 2xx) AND assurance that the URL is unrecognized. Use a
 	// server URL whose host is 127.0.0.1 — confirmed unrecognized by the
-	// adjacent TestDetectATS_Rejection — and short-circuit if a future
+	// adjacent TestDetectURL_Rejection — and short-circuit if a future
 	// regex set ever makes the assertion accidentally pass.
 	careers := careersServer(t, http.StatusOK)
-	if detectATS(careers.URL).recognized {
-		t.Fatalf("test invariant broken: detectATS(%q) recognized; pick a different URL", careers.URL)
+	if atsdetect.DetectURL(careers.URL, "careers_url").Recognized {
+		t.Fatalf("test invariant broken: atsdetect.DetectURL(%q) recognized; pick a different URL", careers.URL)
 	}
 	rec := Record{
 		Rank: 5, Name: "Random",
@@ -245,19 +246,19 @@ func TestProcessRecord_UnsupportedATS(t *testing.T) {
 	}
 }
 
-// TestDetectATS_Rejection is a pure-unit assertion that detectATS rejects
+// TestDetectURL_Rejection is a pure-unit assertion that ATS detection rejects
 // URLs that don't match any known pattern. Kept separate from the
 // processRecord path test so a future change to the detection rules that
 // accidentally widens coverage surfaces here, not as a state-machine bug.
-func TestDetectATS_Rejection(t *testing.T) {
+func TestDetectURL_Rejection(t *testing.T) {
 	rejects := []string{
 		"https://invalid.example.invalid/careers",
 		"https://careers.random.example.com/jobs",
 		"https://example.com/careers",
 	}
 	for _, u := range rejects {
-		if got := detectATS(u); got.recognized {
-			t.Errorf("detectATS(%q): got recognized=true, want false", u)
+		if got := atsdetect.DetectURL(u, "careers_url"); got.Recognized {
+			t.Errorf("atsdetect.DetectURL(%q): got Recognized=true, want false", u)
 		}
 	}
 }
@@ -396,7 +397,7 @@ func TestProcessRecord_DedupAfterAutoDetect(t *testing.T) {
 	}
 }
 
-func TestDetectATS(t *testing.T) {
+func TestDetectURL(t *testing.T) {
 	tests := []struct {
 		url   string
 		want  bool
@@ -413,17 +414,17 @@ func TestDetectATS(t *testing.T) {
 		{"https://careers.random.example.com/jobs", false, "", ""},
 	}
 	for _, tc := range tests {
-		got := detectATS(tc.url)
-		if got.recognized != tc.want {
-			t.Errorf("detectATS(%q).recognized: got %v, want %v", tc.url, got.recognized, tc.want)
+		got := atsdetect.DetectURL(tc.url, "careers_url")
+		if got.Recognized != tc.want {
+			t.Errorf("atsdetect.DetectURL(%q).Recognized: got %v, want %v", tc.url, got.Recognized, tc.want)
 			continue
 		}
 		if tc.want {
-			if got.ats != tc.ats {
-				t.Errorf("detectATS(%q).ats: got %q, want %q", tc.url, got.ats, tc.ats)
+			if got.ATS != tc.ats {
+				t.Errorf("atsdetect.DetectURL(%q).ATS: got %q, want %q", tc.url, got.ATS, tc.ats)
 			}
-			if got.boardToken != tc.token {
-				t.Errorf("detectATS(%q).boardToken: got %q, want %q", tc.url, got.boardToken, tc.token)
+			if got.BoardToken != tc.token {
+				t.Errorf("atsdetect.DetectURL(%q).BoardToken: got %q, want %q", tc.url, got.BoardToken, tc.token)
 			}
 		}
 	}
