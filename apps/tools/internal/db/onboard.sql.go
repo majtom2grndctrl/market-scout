@@ -7,11 +7,110 @@ package db
 
 import (
 	"context"
+	"database/sql"
+
+	"github.com/lib/pq"
 )
+
+const findCompaniesByNormalizedNames = `-- name: FindCompaniesByNormalizedNames :many
+SELECT
+    candidate_names.input_index,
+    c.id AS company_id,
+    c.name,
+    c.ats,
+    c.board_token,
+    c.industry,
+    c.careers_page_url,
+    EXISTS (
+        SELECT 1
+        FROM job_postings jp
+        JOIN posting_snapshots ps ON ps.job_posting_id = jp.id
+        WHERE jp.company_id = c.id
+          AND ps.fetched_at >= now() - make_interval(days => $1::int)
+    ) AS has_recent_snapshot
+FROM (
+    SELECT
+        ordinality::int AS input_index,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM unnest($2::text[]) WITH ORDINALITY AS raw_names(name, ordinality)
+) candidate_names
+JOIN (
+    SELECT
+        id,
+        name,
+        ats,
+        board_token,
+        industry,
+        careers_page_url,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM companies
+) c ON c.normalized_name = candidate_names.normalized_name
+ORDER BY candidate_names.input_index, c.id
+`
+
+type FindCompaniesByNormalizedNamesParams struct {
+	RecencyDays    int32
+	CandidateNames []string
+}
+
+type FindCompaniesByNormalizedNamesRow struct {
+	InputIndex        int32
+	CompanyID         int64
+	Name              string
+	Ats               string
+	BoardToken        string
+	Industry          sql.NullString
+	CareersPageUrl    sql.NullString
+	HasRecentSnapshot bool
+}
+
+// Given a batch of raw candidate names, returns all matching companies for each
+// candidate's normalized name. This preserves collisions for human
+// disambiguation. Normalization is the watchlist dedup rule: strip punctuation
+// and whitespace by keeping only alphanumeric characters, then lowercase and
+// compare for equality.
+//
+// input_index is 1-based, matching WITH ORDINALITY from the input array.
+func (q *Queries) FindCompaniesByNormalizedNames(ctx context.Context, arg FindCompaniesByNormalizedNamesParams) ([]FindCompaniesByNormalizedNamesRow, error) {
+	rows, err := q.db.QueryContext(ctx, findCompaniesByNormalizedNames, arg.RecencyDays, pq.Array(arg.CandidateNames))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindCompaniesByNormalizedNamesRow
+	for rows.Next() {
+		var i FindCompaniesByNormalizedNamesRow
+		if err := rows.Scan(
+			&i.InputIndex,
+			&i.CompanyID,
+			&i.Name,
+			&i.Ats,
+			&i.BoardToken,
+			&i.Industry,
+			&i.CareersPageUrl,
+			&i.HasRecentSnapshot,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const findCompanyDedupStatus = `-- name: FindCompanyDedupStatus :one
 SELECT
     c.id AS company_id,
+    c.name,
+    c.ats,
+    c.board_token,
+    c.industry,
+    c.careers_page_url,
     EXISTS (
         SELECT 1
         FROM job_postings jp
@@ -32,6 +131,11 @@ type FindCompanyDedupStatusParams struct {
 
 type FindCompanyDedupStatusRow struct {
 	CompanyID         int64
+	Name              string
+	Ats               string
+	BoardToken        string
+	Industry          sql.NullString
+	CareersPageUrl    sql.NullString
 	HasRecentSnapshot bool
 }
 
@@ -39,9 +143,9 @@ type FindCompanyDedupStatusRow struct {
 // whether it has any posting_snapshots within the recency window.
 //
 // Recency window: snapshots from now() - (recency_days days) and later count
-// as "recent". The caller passes the watchlist's 30-day threshold as an
-// integer; pushing the interval construction into SQL avoids a clock-skew
-// gap between app server and database, and avoids the awkward
+// as "recent". The caller passes the recency window in days; watchlist callers
+// default to 30. Pushing the interval construction into SQL avoids a
+// clock-skew gap between app server and database, and avoids the awkward
 // interval-as-int64 type sqlc emits for raw interval parameters.
 //
 // Returns zero rows if no company matches. Returns exactly one row if a
@@ -50,6 +154,14 @@ type FindCompanyDedupStatusRow struct {
 func (q *Queries) FindCompanyDedupStatus(ctx context.Context, arg FindCompanyDedupStatusParams) (FindCompanyDedupStatusRow, error) {
 	row := q.db.QueryRowContext(ctx, findCompanyDedupStatus, arg.RecencyDays, arg.Ats, arg.BoardToken)
 	var i FindCompanyDedupStatusRow
-	err := row.Scan(&i.CompanyID, &i.HasRecentSnapshot)
+	err := row.Scan(
+		&i.CompanyID,
+		&i.Name,
+		&i.Ats,
+		&i.BoardToken,
+		&i.Industry,
+		&i.CareersPageUrl,
+		&i.HasRecentSnapshot,
+	)
 	return i, err
 }

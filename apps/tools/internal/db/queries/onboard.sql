@@ -3,9 +3,9 @@
 -- whether it has any posting_snapshots within the recency window.
 --
 -- Recency window: snapshots from now() - (recency_days days) and later count
--- as "recent". The caller passes the watchlist's 30-day threshold as an
--- integer; pushing the interval construction into SQL avoids a clock-skew
--- gap between app server and database, and avoids the awkward
+-- as "recent". The caller passes the recency window in days; watchlist callers
+-- default to 30. Pushing the interval construction into SQL avoids a
+-- clock-skew gap between app server and database, and avoids the awkward
 -- interval-as-int64 type sqlc emits for raw interval parameters.
 --
 -- Returns zero rows if no company matches. Returns exactly one row if a
@@ -13,6 +13,11 @@
 -- postings or no snapshots in the window.
 SELECT
     c.id AS company_id,
+    c.name,
+    c.ats,
+    c.board_token,
+    c.industry,
+    c.careers_page_url,
     EXISTS (
         SELECT 1
         FROM job_postings jp
@@ -23,3 +28,45 @@ SELECT
 FROM companies c
 WHERE c.ats = sqlc.arg(ats)
   AND c.board_token = sqlc.arg(board_token);
+
+-- name: FindCompaniesByNormalizedNames :many
+-- Given a batch of raw candidate names, returns all matching companies for each
+-- candidate's normalized name. This preserves collisions for human
+-- disambiguation. Normalization is the watchlist dedup rule: strip punctuation
+-- and whitespace by keeping only alphanumeric characters, then lowercase and
+-- compare for equality.
+--
+-- input_index is 1-based, matching WITH ORDINALITY from the input array.
+SELECT
+    candidate_names.input_index,
+    c.id AS company_id,
+    c.name,
+    c.ats,
+    c.board_token,
+    c.industry,
+    c.careers_page_url,
+    EXISTS (
+        SELECT 1
+        FROM job_postings jp
+        JOIN posting_snapshots ps ON ps.job_posting_id = jp.id
+        WHERE jp.company_id = c.id
+          AND ps.fetched_at >= now() - make_interval(days => sqlc.arg(recency_days)::int)
+    ) AS has_recent_snapshot
+FROM (
+    SELECT
+        ordinality::int AS input_index,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM unnest(@candidate_names::text[]) WITH ORDINALITY AS raw_names(name, ordinality)
+) candidate_names
+JOIN (
+    SELECT
+        id,
+        name,
+        ats,
+        board_token,
+        industry,
+        careers_page_url,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM companies
+) c ON c.normalized_name = candidate_names.normalized_name
+ORDER BY candidate_names.input_index, c.id;

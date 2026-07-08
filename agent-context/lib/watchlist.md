@@ -33,11 +33,13 @@ Required fields:
 
 Before visiting any careers pages, query the `companies` table for the candidate names. Normalize both sides: strip punctuation and whitespace, lowercase, compare for equality. Substring matches are not duplicates.
 
-Return enough context to disambiguate: name, ATS, board token, industry, and careers page URL. Names collide across unrelated companies. Disambiguate using ATS board URL plus industry — the board URL is the strongest signal.
+For manual or sidecar review, retain enough context to disambiguate: name, ATS, board token, industry, and careers page URL. Names collide across unrelated companies. Disambiguate using ATS board URL plus industry — the board URL is the strongest signal. `dedup_candidates` returns matched company identity, `match_count`, all name-match rows, `match_kind`, and `reason`; use those fields to decide whether to drop, review, or investigate a candidate.
 
 **Skip rule.** A candidate is a duplicate when the DB already has a company with the same `(ats, board_token)` pair and a `posting_snapshots` row within the last 30 days. `(ats, board_token)` is the DB's unique constraint and the strongest dedup signal; name is used to surface matches for human inspection but is not part of the dedup tuple. Drop confirmed duplicates.
 
 **Recency threshold.** "Recent postings" means at least one `posting_snapshots` row for any of the company's job postings with `fetched_at` within the last 30 days. A company with an `(ats, board_token)` match but no snapshot within 30 days is stale.
+
+**Name-only matches.** A normalized name match is stale even when the matched company has recent postings. The MCP result includes `match_kind` and `reason`; use those fields to distinguish token duplicates from name-only review cases.
 
 **Stale matches.** A match whose DB row has no recent postings, a non-matching ATS, or a domain that no longer resolves is *not* a dedup case — it is a merge problem. Flag with the `stale-needs-merge` status (see annotation section) for human review. Merging stale DB rows with fresh research is out of scope for the onboarding pass.
 
@@ -108,6 +110,23 @@ Map the selected `detect_ats` result into `add_company`:
 Then call `add_company` with the selected `ats` and `board_token`, plus the company details. `add_company` probe success is the falsifiability gate. Failed probes insert nothing.
 
 Seed-file drift remains visible through the existing `add_company` follow-up.
+
+### Browser-led discovery run
+
+Use this path when one source yields many company leads and browser time should start after dedup.
+
+Loop:
+
+1. Discover candidates from a source: list page, article, manual notes, or pasted research.
+2. Call `dedup_candidates` with each candidate name and any known `ats` / `board_token`.
+3. Drop `duplicate` results before browser work. Set aside all `stale` results for merge or disambiguation review.
+4. Investigate new survivors in the browser. Collect homepage, careers, redirect, and ATS URLs.
+5. Pass observed URL evidence to `detect_ats`.
+6. Pass the selected ATS result to `add_company`.
+
+`add_company` stays the onboarding gate. Its ATS probe must pass before a company enters the fetcher set. Seed-file drift is still surfaced by the existing `add_company` follow-up.
+
+Sourcing paths: batch sidecar verifies research lists and writes seed rows; one-off live onboard adds one known company; browser-led preflight dedups many leads before browser investigation.
 
 ### Research file annotation
 

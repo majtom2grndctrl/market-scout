@@ -195,6 +195,27 @@ func newMCPServer(pools dbPools) *server.MCPServer {
 	)
 	s.AddTool(enrichmentPreviewTool, enrichmentPreviewHandler(pools.readOnly))
 
+	dedupCandidatesTool := mcp.NewTool(
+		"dedup_candidates",
+		mcp.WithDescription("Classify discovered company candidates as new, duplicate, stale, or invalid without probing, writing, or opening a browser."),
+		mcp.WithArray("candidates",
+			mcp.Required(),
+			mcp.Description("Candidate companies to classify, in order. Max 200. Each item has required name and optional ats/board_token."),
+			mcp.MaxItems(dedupMaxCandidates),
+			mcp.Items(map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"name":        map[string]any{"type": "string", "description": "Company display name."},
+					"ats":         map[string]any{"type": "string", "description": "Optional ATS key when already known."},
+					"board_token": map[string]any{"type": "string", "description": "Optional ATS board token when already known."},
+				},
+				"required": []string{"name"},
+			}),
+		),
+		mcp.WithInteger("recency_days", mcp.Description("Snapshot recency window in days, applied to the whole batch. Defaults to 30.")),
+	)
+	s.AddTool(dedupCandidatesTool, dedupCandidatesHandler(pools.readOnly))
+
 	detectATSTool := mcp.NewTool(
 		"detect_ats",
 		mcp.WithDescription("Parse supplied careers and observed URLs for supported ATS board evidence without probing, querying, or writing."),
