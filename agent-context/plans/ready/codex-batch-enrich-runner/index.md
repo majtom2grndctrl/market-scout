@@ -48,6 +48,9 @@ provenance, and reporting. Retain `claude -p` as an explicit fallback.
   name is added to the run report and startup log, not the database.
 - `agentRunner.Run` remains the shared dispatch seam. Codex output still passes
   through `ParseBatchedResponse` and `Validate` before writeback.
+- Each production runner owns its optional per-call child deadline. After a
+  subprocess returns, parent cancellation wins over the child deadline;
+  otherwise the child deadline maps to the shared agent-timeout sentinel.
 - Live model calls remain operator decisions. Task agents run unit tests only.
 
 ## Acceptance criteria
@@ -56,25 +59,28 @@ provenance, and reporting. Retain `claude -p` as an explicit fallback.
   `--runner=claude` selects the existing Claude implementation.
 - [ ] An unsupported runner value fails flag validation before posting selection
   or agent dispatch.
-- [ ] Startup checks only the executable required by the selected runner and
-  returns an actionable error when it is unavailable.
+- [ ] Startup checks only the selected runner executable (`codex` or `claude`)
+  and returns an actionable error when it is unavailable. The existing
+  `strip-boilerplate` preflight remains unchanged.
 - [ ] Each Codex call uses the pinned model, read-only sandbox, ephemeral mode,
   ignored user config and exec rules, an isolated temporary working directory,
   disabled agent tools, and a committed JSON Schema contract.
-- [ ] Posting titles, descriptions, taxonomy, focus text, and retry hints are
-  sent through stdin. None appear in process arguments.
+- [ ] Codex calls send posting titles, descriptions, taxonomy, focus text, and
+  retry hints through stdin. None appear in Codex process arguments. Claude's
+  existing `--system-prompt` behavior remains unchanged.
 - [ ] Codex stdout contains only the final schema-conformant JSON document.
   JSONL event mode is not used. Stderr is diagnostic only.
 - [ ] Codex output must match the existing batched response shape and still pass
   expected-ID routing plus semantic validation before writeback.
-- [ ] A batched response containing the same expected `posting_id` more than
-  once is rejected and enters the existing retry path instead of silently
-  overwriting one result.
-- [ ] Parent cancellation terminates the subprocess, preserves cancellation,
-  charges no attempt, and keeps exit code 130 behavior.
-- [ ] A configured per-call timeout terminates the subprocess, charges one
-  attempt, and enters the existing retry budget. This behavior is identical for
-  Claude and Codex runners.
+- [ ] A batched response containing any repeated `posting_id` is rejected before
+  expected/unexpected routing. It enters the existing retry path instead of
+  silently overwriting one result.
+- [ ] Parent cancellation terminates the subprocess, preserves cancellation, adds
+  zero to `PostingResult.Attempts`, and keeps exit code 130 behavior. It wins
+  when parent cancellation and the per-call deadline are both observed.
+- [ ] A configured runner-owned per-call timeout terminates the subprocess, adds
+  exactly one to `PostingResult.Attempts`, and follows the existing retry
+  budget. This behavior is identical for Claude and Codex runners.
 - [ ] Reports and startup logs identify runner, model, and prompt version.
   Classification rows and failure lines retain the exact selected model and
   prompt version.
@@ -91,7 +97,7 @@ provenance, and reporting. Retain `claude -p` as an explicit fallback.
 
 ### Task 1: Runner configuration
 
-Update `config.go` and `config_test.go`.
+Update `config.go`, `config_test.go`, and `integration_test.go`.
 
 - Add runner constants and `Config.Runner`.
 - Replace the single model constant with runner-specific pinned model constants.
@@ -99,6 +105,8 @@ Update `config.go` and `config_test.go`.
 - Keep model pins non-overridable. Provenance must not depend on local Codex
   config.
 - Preserve all existing flag defaults except the selected runner and model.
+- Set runner-specific `Config` values in integration tests that construct a
+  config for `Model` provenance.
 
 Do not:
 
@@ -110,14 +118,28 @@ Do not:
 Add focused Codex runner source and tests under `cmd/batch-enrich`.
 
 - Implement the existing `agentRunner` interface.
-- Package the batched response JSON Schema with the binary. Materialize it in a
-  private temporary directory for `codex exec --output-schema` and clean the
-  directory when the runner closes.
-- Run Codex with `--model`, `--sandbox read-only`, `--ephemeral`,
-  `--ignore-user-config`, `--ignore-rules`, `--skip-git-repo-check`, isolated
-  `--cd`, `--output-schema`, `--color never`, and stdin mode.
-- Disable shell, web-search, app, and multi-agent features for the subprocess.
-  Classification needs model output only.
+- Check in `cmd/batch-enrich/batched_response.schema.json` and embed it with
+  the binary. Materialize it in a private temporary directory for
+  `codex exec --output-schema`; clean the directory when the runner closes.
+- Omit `$schema`; stay within the JSON Schema subset accepted by
+  `codex exec --output-schema`.
+- Require every Go JSON field except `classification.notes`,
+  `canonical_roles[].notes`, and `skills[].requirement`. Those fields may be
+  omitted or `null`; Go normalizes either form to an empty string.
+- Enum only the stable seniority values. Keep dynamic taxonomy membership,
+  including role dimensions, in Go validation.
+- Set `additionalProperties: false` on every schema object, including the
+  wrapper and array-item objects.
+- Invoke exactly: `codex exec --model <model> --sandbox read-only --ephemeral
+  --ignore-user-config --ignore-rules --skip-git-repo-check --cd <temp-cwd>
+  --output-schema <schema-file> --color never --disable shell_tool -c
+  web_search="disabled" --disable apps --disable multi_agent -`.
+- This configuration was verified with `codex exec --strict-config -c
+  'web_search="disabled"' --help` against codex-cli 0.137.0.
+- `--ignore-user-config` prevents user-configured MCP loading. The isolated
+  temporary cwd prevents project config and project instruction discovery.
+  Global Codex instructions may still load; do not treat these flags as a full
+  instruction-isolation boundary.
 - Write the complete classification contract and input to stdin. Delimit posting
   content as untrusted data that cannot override the contract.
 - Capture final stdout as `agentText` and `rawStdout`. Include stderr in returned
@@ -125,6 +147,11 @@ Add focused Codex runner source and tests under `cmd/batch-enrich`.
 - Fail construction before dispatch when temporary schema setup fails.
 - Use a fake command boundary or Go helper process in tests. Never invoke the
   installed CLI.
+- Add schema-sync tests with representative existing responses. Cover omitted,
+  `null`, and string forms of `classification.notes`,
+  `canonical_roles[].notes`, and `skills[].requirement`.
+- Prove every required Go JSON field has a schema property and is required
+  there. Prove every schema object shape rejects additional properties.
 
 Do not:
 
@@ -135,15 +162,28 @@ Do not:
 ### Task 3: Failure-boundary hardening
 
 Update `dispatch.go`, `dispatch_test.go`, `validate.go`, and
-`validate_test.go`.
+`validate_test.go`. `dispatch.go` remains the direct `claudeRunner`
+implementation owner.
 
 - Add an agent-timeout sentinel shared by both production runners.
-- Preserve parent `context.Canceled` as a no-attempt terminal cancellation.
-- Treat a runner-owned per-call timeout as a completed failed attempt eligible
-  for the existing single-posting retry loop.
-- Make `ParseBatchedResponse` reject duplicate expected posting IDs.
-- Cover timeout, parent cancellation, duplicate IDs, non-zero subprocess exit,
-  malformed stdout, and successful structured output.
+- Each runner creates its child deadline only when `AgentTimeout` is non-zero.
+  After its subprocess returns, inspect the parent context first. Return parent
+  cancellation when present; otherwise translate an expired child deadline to
+  the shared agent-timeout sentinel.
+- Preserve parent `context.Canceled` as a terminal cancellation: add zero to
+  `PostingResult.Attempts`, exit, and do not retry.
+- Treat a runner-owned per-call timeout as one completed failed attempt in
+  `PostingResult.Attempts`; follow the existing single-posting retry budget.
+- Add dispatch-level tests proving `errAgentTimeout` consumes an attempt and
+  retries for both an initial batched call and a single-posting retry. Prove
+  parent cancellation remains a zero-attempt terminal result.
+- Make `ParseBatchedResponse` reject any repeated `posting_id` before
+  expected/unexpected routing.
+- Add direct Claude runner and Go helper-process tests. Cover both runners'
+  successful output, non-zero exit with stderr, parent cancellation, and
+  runner timeout.
+- Cover Claude malformed JSON envelopes and `is_error=true`, duplicate IDs,
+  and successful structured output.
 
 Do not:
 
@@ -161,18 +201,28 @@ Update `main.go`, `report.go`, and their focused tests after Tasks 1-3 land.
 - Keep model and prompt version plumbing into `WriteBack`, `BuildReport`, and
   `AppendFailures` unchanged.
 - Preserve signal handling, wave ordering, taxonomy reloads, and exit codes.
+- Reconcile provider-neutral comments in `main.go`, `dispatch.go`, `types.go`,
+  `validate.go`, and `prompt.go`. Keep Claude-specific comments only around
+  `claudeRunner`.
 
 ### Task 5: Thin Codex skill
 
 Replace `.agents/skills/batch-enrich/SKILL.md` with an operator workflow around
 the Go command.
 
-- Parse `<count>`, optional focus text, and `--force` into documented CLI flags.
-- Run from `apps/tools/` with `--runner=codex-exec` and a finite
-  `--agent-timeout` suitable for interactive operation.
+- Remove every exact `--force` token from supplied arguments, wherever it
+  appears; remember whether any appeared. Add one `--force` to the Go command
+  only when the user supplied it.
+- Treat the first remaining token as a required positive base-10 `<count>`.
+  Use 10 when no count is supplied. Invalid, zero, or negative counts stop
+  without dispatch.
+- Join remaining focus tokens with one space. Pass the result as one `--focus`
+  value.
+- Run from `apps/tools/` with `--runner=codex-exec` and
+  `--agent-timeout=5m`.
 - Treat invocation of the skill with arguments as authorization for the stated
-  batch only. Never add `--force` unless the user supplied it.
-- Surface the Go command's final counts and report path.
+  batch only.
+- Surface the Go command's final counts and its stdout report.
 - Point contract ownership to `cmd/batch-enrich`; remove classification pins and
   duplicated SQL/writeback instructions.
 
@@ -190,8 +240,10 @@ The coordinator owns verification after implementation agents finish.
 - Confirm `codex exec --help` still supports every pinned safety/output flag.
 - Ask for explicit operator approval before any live model call.
 - With approval, run one non-force posting through `--runner=codex-exec` and
-  verify report provenance, one classification row, structured output, and no
-  repository writes from the nested Codex process.
+  verify report provenance, one classification row, and structured output.
+- Compare the tracked-worktree diff before and after the nested `codex exec`
+  call. Exclude only the known parent-owned, gitignored report output. DB
+  writes are parent-owned and checked separately.
 - If the pinned model is unavailable to ChatGPT-managed CLI auth, stop before
   production use. Update the model pin and this plan through review; do not
   silently fall back to a local default.

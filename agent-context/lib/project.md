@@ -34,7 +34,7 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 | Layer | Choice | Notes |
 |---|---|---|
 | Fetcher | Go binary, `apps/tools/cmd/fetcher` | Concurrent HTTP from ATS APIs, cron-scheduled |
-| Classifier | Go binary, `apps/tools/cmd/batch-enrich` | Cron-schedulable. Dispatches Haiku subprocesses via `claude -p` for per-posting classification. No Anthropic SDK or direct REST. Writeback through the sqlc query layer. |
+| Classifier | Go binary, `apps/tools/cmd/batch-enrich` | Cron-schedulable. Default runner calls subscription-authenticated `codex exec`; `claude -p` remains an explicit fallback. Go owns selection, batching, validation, serial sqlc writeback, provenance, and reports. No model SDK or direct REST. |
 | Database | Postgres in Docker | Option to point at Supabase later |
 | DB client | `sqlc` + `database/sql` + `pgx/v5/stdlib` | Write SQL, get generated type-safe Go. No ORM. Standard `database/sql` target (no `sql_package` override); generated models use `sql.NullString`/`sql.NullTime`, translated to `*string`/`*time.Time` at the DB boundary. |
 | Vector search | pgvector extension | Enabled from day one. Similarity queries in raw SQL. |
@@ -47,7 +47,7 @@ Our own first-observed timestamp on a job-posting record is the load-bearing rep
 
 Every fetch is recorded as a fetch-run row, one per company per invocation, capturing the outcome and timing of that attempt. New snapshots link back to the run that produced them; snapshots written before the fetch-run migration carry a NULL run reference. This separation is load-bearing for trend queries: a posting's absence from a fetch only counts as "removed" when the run for that company succeeded. A failed run, or a company we didn't fetch in a given window, is distinguishable from a posting that genuinely disappeared from the board. Without the run record, a network blip looks identical to a wave of closed roles.
 
-Classification runs on its own cadence. The classifier selects unclassified postings, strips per-company boilerplate from each description, and dispatches Haiku subprocesses in parallel waves. Each subprocess validates and retries on its own failure modes. Dispatch is parallel; writeback is serial — one transaction at a time through the sqlc query layer. Serial writeback is load-bearing: parallel writers would collide on newly-introduced taxonomy rows mid-wave and produce duplicates. Between waves, the classifier reloads the taxonomy from the DB so roles introduced by earlier waves are visible to later ones. An append-only `failures.jsonl` log is the cron observability surface; without it, failure history vanishes between runs.
+Classification runs on its own cadence. The classifier selects unclassified postings, strips per-company boilerplate from each description, and dispatches model CLI subprocesses in parallel waves. Each subprocess returns a structured candidate; Go validates and retries failures. Codex runs in an isolated read-only working directory with structured output. Dispatch is parallel; writeback is serial — one transaction at a time through the sqlc query layer. Serial writeback is load-bearing: parallel writers would collide on newly-introduced taxonomy rows mid-wave and produce duplicates. Between waves, the classifier reloads the taxonomy from the DB so roles introduced by earlier waves are visible to later ones. An append-only `failures.jsonl` log is the cron observability surface; without it, failure history vanishes between runs.
 
 ## ATS targets
 
