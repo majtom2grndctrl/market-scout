@@ -7,27 +7,36 @@ import (
 	"time"
 )
 
-// PromptVersion and Model are pinned constants. They are not overridable by
-// flag because classification outputs are keyed to them: changing either
-// without bumping the constant would corrupt provenance in the classifications
-// table. Since these are compile-time constants, runtime format validation
-// is unnecessary — the literal itself enforces the constraint.
+// PromptVersion and per-runner models are pinned constants. The --runner flag
+// selects a supported runner and its associated model. Classification outputs
+// record the prompt version and model. Pins prevent local runtime configuration
+// from silently changing that record. Deliberate pin changes need review with
+// the prompt/version contract. Since the pinned values are compile-time
+// constants, runtime format validation is unnecessary — the literals enforce
+// the constraint.
 //
 // batch-enrich-v4 makes the {"results": [...]} envelope unconditional — the
 // agent must wrap every response in it, including single-posting retries.
 // v3 left the envelope conditional on multiple postings, which caused
 // well-formed single-posting retries to be rejected by the parser.
 const (
-	PromptVersion = "batch-enrich-v4"
-	Model         = "claude-haiku-4-5-20251001"
+	RunnerCodexExec = "codex-exec"
+	RunnerClaude    = "claude"
+
+	PromptVersion  = "batch-enrich-v4"
+	CodexExecModel = "gpt-5.4-mini"
+	ClaudeModel    = "claude-haiku-4-5-20251001"
 )
 
 // Config holds the resolved runtime configuration for a batch-enrich
 // invocation: pinned constants plus flag-derived knobs and CLI inputs.
 type Config struct {
-	// Pinned constants — not overridable by flag.
+	// PromptVersion is a pinned constant.
 	PromptVersion string
-	Model         string
+	// Runner is the validated --runner selection.
+	Runner string
+	// Model is pinned to the selected runner.
+	Model string
 
 	// Flag-derived knobs.
 	WaveSize          int
@@ -36,7 +45,7 @@ type Config struct {
 	MaxParallelAgents int
 	ReportFormat      string
 
-	// AgentTimeout caps a single `claude` subprocess invocation. Zero means
+	// AgentTimeout caps a single agent subprocess invocation. Zero means
 	// no per-call timeout — the call inherits the run-level context only.
 	AgentTimeout time.Duration
 	// StripTimeout caps a single `strip-boilerplate` subprocess invocation.
@@ -59,7 +68,7 @@ type Config struct {
 func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 	cfg := Config{
 		PromptVersion: PromptVersion,
-		Model:         Model,
+		Runner:        RunnerCodexExec,
 	}
 
 	fs.IntVar(&cfg.Count, "count", 10, "Max postings to select for this run.")
@@ -69,6 +78,8 @@ func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 			"Empty string means no filter.")
 	fs.BoolVar(&cfg.Force, "force", false,
 		"Drop the unclassified filter and re-process matching postings.")
+	fs.StringVar(&cfg.Runner, "runner", RunnerCodexExec,
+		"Classification runner: codex-exec|claude.")
 	fs.StringVar(&cfg.ReportFormat, "report-format", "json",
 		"Report output format: json|markdown.")
 	fs.IntVar(&cfg.WaveSize, "wave-size", 10, "Number of postings dispatched per wave.")
@@ -76,7 +87,7 @@ func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 	fs.IntVar(&cfg.MaxRetries, "max-retries", 3, "Retry cap per posting.")
 	fs.IntVar(&cfg.MaxParallelAgents, "max-parallel", 10, "Max parallel classification agents in flight.")
 	fs.DurationVar(&cfg.AgentTimeout, "agent-timeout", 0,
-		"Per-invocation timeout for the `claude` subprocess (e.g. 90s). 0 disables the per-call cap.")
+		"Per-invocation timeout for the classification subprocess (e.g. 90s). 0 disables the per-call cap.")
 	fs.DurationVar(&cfg.StripTimeout, "strip-timeout", 0,
 		"Per-invocation timeout for the `strip-boilerplate` subprocess (e.g. 30s). 0 disables the per-call cap.")
 	fs.DurationVar(&cfg.ProgressInterval, "progress-interval", 2*time.Second,
@@ -85,6 +96,11 @@ func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
+	model, err := modelForRunner(cfg.Runner)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Model = model
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -92,9 +108,23 @@ func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 	return cfg, nil
 }
 
+func modelForRunner(runner string) (string, error) {
+	switch runner {
+	case RunnerCodexExec:
+		return CodexExecModel, nil
+	case RunnerClaude:
+		return ClaudeModel, nil
+	default:
+		return "", fmt.Errorf("invalid --runner %q: must be %s or %s", runner, RunnerCodexExec, RunnerClaude)
+	}
+}
+
 // Validate checks flag inputs that must hold before any work begins. It
 // returns a wrapped error naming the failing field.
 func (c Config) Validate() error {
+	if _, err := modelForRunner(c.Runner); err != nil {
+		return err
+	}
 	if c.Count < 1 {
 		return fmt.Errorf("invalid --count %d: must be >= 1", c.Count)
 	}

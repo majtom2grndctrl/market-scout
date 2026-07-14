@@ -16,8 +16,8 @@ import (
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/classify"
 )
 
-// BatchedAgentResponse is the top-level wrapper the Haiku agent emits when
-// processing multiple postings in a single call.
+// BatchedAgentResponse is the top-level wrapper required for every classification
+// call, including single-posting retries.
 type BatchedAgentResponse struct {
 	Results []AgentResponse `json:"results"`
 }
@@ -45,6 +45,17 @@ func ParseBatchedResponse(agentText string, expected []int64) (results map[int64
 	expectedSet := make(map[int64]struct{}, len(expected))
 	for _, id := range expected {
 		expectedSet[id] = struct{}{}
+	}
+
+	// Reject duplicates before routing expected versus unexpected IDs. Otherwise
+	// a later duplicate silently overwrites the first map entry, including when
+	// the duplicated ID is unexpected and would normally be dropped below.
+	seen := make(map[int64]struct{}, len(wrapper.Results))
+	for _, r := range wrapper.Results {
+		if _, ok := seen[r.PostingID]; ok {
+			return nil, nil, fmt.Errorf("parsing batched agent response: duplicate posting_id %d", r.PostingID)
+		}
+		seen[r.PostingID] = struct{}{}
 	}
 
 	results = make(map[int64]AgentResponse, len(wrapper.Results))

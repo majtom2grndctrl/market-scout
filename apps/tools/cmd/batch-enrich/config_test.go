@@ -19,8 +19,11 @@ func TestConstants_MatchIdentifierPattern(t *testing.T) {
 		name  string
 		value string
 	}{
+		{"RunnerCodexExec", RunnerCodexExec},
+		{"RunnerClaude", RunnerClaude},
 		{"PromptVersion", PromptVersion},
-		{"Model", Model},
+		{"CodexExecModel", CodexExecModel},
+		{"ClaudeModel", ClaudeModel},
 	} {
 		if !testIdentifierPattern.MatchString(tc.value) {
 			t.Errorf("constant %s = %q does not match identifier pattern %s",
@@ -34,7 +37,8 @@ func TestConstants_MatchIdentifierPattern(t *testing.T) {
 func validConfig() Config {
 	return Config{
 		PromptVersion:     PromptVersion,
-		Model:             Model,
+		Runner:            RunnerCodexExec,
+		Model:             CodexExecModel,
 		Count:             10,
 		WaveSize:          10,
 		BatchSize:         5,
@@ -44,9 +48,54 @@ func validConfig() Config {
 	}
 }
 
+func TestParseFlags_DefaultRunnerUsesCodexExecModel(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, nil)
+	if err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if cfg.Runner != RunnerCodexExec {
+		t.Errorf("Runner = %q, want %q", cfg.Runner, RunnerCodexExec)
+	}
+	if cfg.Model != CodexExecModel {
+		t.Errorf("Model = %q, want %q", cfg.Model, CodexExecModel)
+	}
+}
+
+func TestParseFlags_ClaudeRunnerUsesClaudeModel(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	cfg, err := ParseFlags(fs, []string{"--runner=claude"})
+	if err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if cfg.Runner != RunnerClaude {
+		t.Errorf("Runner = %q, want %q", cfg.Runner, RunnerClaude)
+	}
+	if cfg.Model != ClaudeModel {
+		t.Errorf("Model = %q, want %q", cfg.Model, ClaudeModel)
+	}
+}
+
+func TestParseFlags_RejectsUnsupportedRunner(t *testing.T) {
+	fs := flag.NewFlagSet("test", flag.ContinueOnError)
+	_, err := ParseFlags(fs, []string{"--runner=unsupported"})
+	if err == nil || !strings.Contains(err.Error(), "--runner") {
+		t.Fatalf("expected --runner validation error, got: %v", err)
+	}
+}
+
 func TestConfig_Validate_Valid(t *testing.T) {
 	if err := validConfig().Validate(); err != nil {
 		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+func TestConfig_Validate_InvalidRunner(t *testing.T) {
+	cfg := validConfig()
+	cfg.Runner = "unsupported"
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "--runner") {
+		t.Fatalf("expected --runner error, got: %v", err)
 	}
 }
 

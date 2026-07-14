@@ -461,6 +461,24 @@ func TestParseBatchedResponse_UnexpectedPostingID_Dropped(t *testing.T) {
 	}
 }
 
+func TestParseBatchedResponse_DuplicatePostingIDRejectedBeforeRouting(t *testing.T) {
+	first := validResponse()
+	first.PostingID = 999 // unexpected IDs are normally dropped after routing.
+	second := validResponse()
+	second.PostingID = 999
+
+	results, missing, err := ParseBatchedResponse(batchedJSON(t, first, second), []int64{1})
+	if err == nil {
+		t.Fatal("expected duplicate posting_id error")
+	}
+	if !strings.Contains(err.Error(), "duplicate posting_id 999") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if results != nil || missing != nil {
+		t.Fatalf("duplicate response should not route partial results: results=%v missing=%v", results, missing)
+	}
+}
+
 func TestParseBatchedResponse_JSONParseFailure(t *testing.T) {
 	results, missing, err := ParseBatchedResponse("not-json", []int64{1, 2})
 	if err == nil {

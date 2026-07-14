@@ -1,0 +1,73 @@
+{
+  "type": "object",
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "posting_id": {"type": "integer"},
+          "classification": {
+            "type": "object",
+            "properties": {
+              "seniority": {
+                "type": "string",
+                "enum": ["intern", "junior", "mid", "senior", "staff", "principal", "lead", "director", "unknown"]
+              },
+              "notes": {"type": ["string", "null"]}
+            },
+            "required": ["seniority"],
+            "additionalProperties": false
+          },
+          "canonical_roles": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slug": {"type": "string"},
+                "name": {"type": "string"},
+                "dimensions": {
+                  "type": "array",
+                  "items": {"type": "string"}
+                },
+                "notes": {"type": ["string", "null"]}
+              },
+              "required": ["slug", "name", "dimensions"],
+              "additionalProperties": false
+            }
+          },
+          "specializations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slug": {"type": "string"},
+                "name": {"type": "string"}
+              },
+              "required": ["slug", "name"],
+              "additionalProperties": false
+            }
+          },
+          "skills": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "slug": {"type": "string"},
+                "name": {"type": "string"},
+                "requirement": {"type": ["string", "null"]}
+              },
+              "required": ["slug", "name"],
+              "additionalProperties": false
+            }
+          },
+          "summary": {"type": "string"}
+        },
+        "required": ["posting_id", "classification", "canonical_roles", "specializations", "skills", "summary"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["results"],
+  "additionalProperties": false
+}

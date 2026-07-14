@@ -35,9 +35,10 @@ type RunReport struct {
 	Failures         []FailureSummary `json:"failures"`
 }
 
-// RunParams captures the resolved runtime knobs and pinned identifiers for
-// the run so a report alone is enough to reproduce the invocation.
+// RunParams captures runner/model provenance and selected resolved controls
+// reported for the run.
 type RunParams struct {
+	Runner        string `json:"runner"`
 	PromptVersion string `json:"prompt_version"`
 	Model         string `json:"model"`
 	WaveSize      int    `json:"wave_size"`
@@ -126,6 +127,7 @@ type FailureLine struct {
 func BuildReport(cfg Config, selectedCount int, results []PostingResult, taxBefore Taxonomy, taxAfter Taxonomy, alreadyClassified []int64) RunReport {
 	rep := RunReport{
 		RunParams: RunParams{
+			Runner:        cfg.Runner,
 			PromptVersion: cfg.PromptVersion,
 			Model:         cfg.Model,
 			WaveSize:      cfg.WaveSize,
@@ -305,6 +307,7 @@ func emitMarkdown(w io.Writer, r RunReport) error {
 
 	fmt.Fprintf(&sb, "## Run params\n\n")
 	fmt.Fprintf(&sb, "| Field | Value |\n|---|---|\n")
+	fmt.Fprintf(&sb, "| runner | %s |\n", r.RunParams.Runner)
 	fmt.Fprintf(&sb, "| prompt_version | %s |\n", r.RunParams.PromptVersion)
 	fmt.Fprintf(&sb, "| model | %s |\n", r.RunParams.Model)
 	fmt.Fprintf(&sb, "| wave_size | %d |\n", r.RunParams.WaveSize)

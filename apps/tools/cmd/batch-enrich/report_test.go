@@ -16,7 +16,8 @@ import (
 func TestRunReport_RoundTripsAndShape(t *testing.T) {
 	cfg := Config{
 		PromptVersion: PromptVersion,
-		Model:         Model,
+		Runner:        RunnerCodexExec,
+		Model:         CodexExecModel,
 		WaveSize:      10,
 		MaxRetries:    3,
 		Count:         3,
@@ -96,6 +97,7 @@ func TestRunReport_RoundTripsAndShape(t *testing.T) {
 	rawStr := string(raw)
 	wantKeys := []string{
 		`"run_params"`,
+		`"runner"`,
 		`"counts"`,
 		`"posting_summaries"`,
 		`"failures"`,
@@ -122,6 +124,9 @@ func TestRunReport_RoundTripsAndShape(t *testing.T) {
 	}
 	if roundTripped.RunParams.PromptVersion != cfg.PromptVersion {
 		t.Errorf("prompt_version lost across round-trip: %q", roundTripped.RunParams.PromptVersion)
+	}
+	if roundTripped.RunParams.Runner != cfg.Runner {
+		t.Errorf("runner lost across round-trip: got %q, want %q", roundTripped.RunParams.Runner, cfg.Runner)
 	}
 }
 
@@ -161,7 +166,7 @@ func readNonEmptyLines(t *testing.T, path string) []string {
 }
 
 func minimalCfg() Config {
-	return Config{PromptVersion: PromptVersion, Model: Model}
+	return Config{PromptVersion: PromptVersion, Runner: RunnerCodexExec, Model: CodexExecModel}
 }
 
 // TestAppendFailures_WritesValidJSONL verifies that json_failed and
@@ -411,8 +416,9 @@ func TestDiffTaxonomy_CapturesNewSlugs(t *testing.T) {
 func TestEmitReport_JSONIsValid(t *testing.T) {
 	report := RunReport{
 		RunParams: RunParams{
+			Runner:        RunnerCodexExec,
 			PromptVersion: PromptVersion,
-			Model:         Model,
+			Model:         CodexExecModel,
 			ReportFormat:  "json",
 		},
 		Counts:           RunCounts{Selected: 1, Dispatched: 1, Enriched: 1},
@@ -439,7 +445,7 @@ func TestEmitReport_JSONIsValid(t *testing.T) {
 // recognisable output without panicking on a populated report.
 func TestEmitReport_MarkdownIsNonEmpty(t *testing.T) {
 	report := RunReport{
-		RunParams:        RunParams{PromptVersion: PromptVersion, Model: Model, ReportFormat: "markdown"},
+		RunParams:        RunParams{Runner: RunnerCodexExec, PromptVersion: PromptVersion, Model: CodexExecModel, ReportFormat: "markdown"},
 		Counts:           RunCounts{Selected: 2, Dispatched: 2, Enriched: 1, JSONFailed: 1},
 		PostingSummaries: []PostingSummary{{PostingID: 7, Title: "PM", Outcome: OutcomeEnriched}},
 	}
@@ -454,6 +460,9 @@ func TestEmitReport_MarkdownIsNonEmpty(t *testing.T) {
 	}
 	if !strings.Contains(out, "# batch-enrich run report") {
 		t.Errorf("markdown output missing heading; got:\n%s", out)
+	}
+	if !strings.Contains(out, "| runner | codex-exec |") {
+		t.Errorf("markdown output missing runner parameter; got:\n%s", out)
 	}
 }
 

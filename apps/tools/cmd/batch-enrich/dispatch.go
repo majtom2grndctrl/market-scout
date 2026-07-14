@@ -1,5 +1,5 @@
 // Dispatch loop for batch-enrich: fans one wave of postings out to parallel
-// Haiku agents bounded by cfg.MaxParallelAgents, and runs the parse →
+// classification agents bounded by cfg.MaxParallelAgents, and runs the parse →
 // validate → retry cycle per posting. Wave slicing and the per-wave taxonomy
 // reload live in main.go; writeback implementation lives in writeback.go —
 // see the wave loop in main.go for why dispatch/writeback/reload must
@@ -48,6 +48,11 @@ type agentRunner interface {
 // retry path consumes rawStdout for failures.jsonl.
 var errAgentFailure = errors.New("agent subprocess reported failure")
 
+// errAgentTimeout is returned when a runner-owned per-call deadline expires.
+// It is deliberately distinct from parent cancellation: callers charge it as
+// a completed failed attempt and may use their normal retry budget.
+var errAgentTimeout = errors.New("agent subprocess timed out")
+
 // hintReturnJSONOnly is the retry hint used when the agent's response cannot
 // be read or parsed as JSON — whether due to a subprocess error or a
 // json.Unmarshal failure.
@@ -72,8 +77,8 @@ type claudeEnvelope struct {
 	IsError bool   `json:"is_error"`
 }
 
-// claudeRunner is the default agentRunner: it shells out to the `claude`
-// CLI with the configured model and pipes the prompt over stdin.
+// claudeRunner implements agentRunner through the `claude` CLI. The Claude
+// envelope is unwrapped here before shared dispatch parsing begins.
 type claudeRunner struct {
 	model   string
 	timeout time.Duration
@@ -98,12 +103,13 @@ func newClaudeRunner(model string, timeout time.Duration) agentRunner {
 func (r *claudeRunner) Run(ctx context.Context, systemPrompt, userPrompt string) (string, string, error) {
 	// Per-call timeout when configured; otherwise the caller's ctx flows through
 	// unwrapped so we don't allocate a derived context per invocation.
+	childCtx := ctx
 	if r.timeout > 0 {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, r.timeout)
+		childCtx, cancel = context.WithTimeout(ctx, r.timeout)
 		defer cancel()
 	}
-	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "json", "--model", r.model, "--system-prompt", systemPrompt)
+	cmd := exec.CommandContext(childCtx, "claude", "-p", "--output-format", "json", "--model", r.model, "--system-prompt", systemPrompt)
 	cmd.Stdin = bytes.NewReader([]byte(userPrompt))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -111,6 +117,16 @@ func (r *claudeRunner) Run(ctx context.Context, systemPrompt, userPrompt string)
 
 	runErr := cmd.Run()
 	raw := stdout.String()
+
+	// A run-level cancellation wins even when the child deadline fired too.
+	// Keep it unwrapped so dispatch can preserve its terminal, zero-attempt
+	// cancellation behavior.
+	if err := ctx.Err(); err != nil {
+		return "", raw, err
+	}
+	if r.timeout > 0 && errors.Is(childCtx.Err(), context.DeadlineExceeded) {
+		return "", raw, errAgentTimeout
+	}
 
 	if runErr != nil {
 		// errors.Join preserves both sentinels so errors.Is(err, context.Canceled)
@@ -157,8 +173,8 @@ func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg
 		batchSize = 1
 	}
 
-	// Hoist system prompt: stable across the wave so the prompt cache stays
-	// warm and we don't re-render it per batch or per posting.
+	// Hoist the prompt so every call in the wave reuses the same bytes and we
+	// don't re-render it per batch or per posting.
 	systemPrompt := RenderSystemPrompt(taxonomy, cfg.Focus)
 
 	var wg sync.WaitGroup
@@ -222,8 +238,8 @@ func RunWave(ctx context.Context, wave []SelectedPosting, taxonomy Taxonomy, cfg
 	return results
 }
 
-// stripCodeFence removes markdown code fences that the claude CLI sometimes
-// wraps around JSON output despite being asked for raw JSON. It strips the
+// stripCodeFence removes markdown code fences that an agent can wrap around
+// JSON output despite being asked for raw JSON. It strips the
 // opening fence line (e.g. "```json" or "```") and the closing "```", then
 // trims surrounding whitespace. Input without a fence passes through unchanged.
 func stripCodeFence(s string) string {

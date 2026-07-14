@@ -1,5 +1,5 @@
 // Command batch-enrich classifies unclassified job postings in waves by
-// dispatching parallel Haiku agents and writing back canonical role and
+// dispatching parallel classification agents and writing back canonical role and
 // skill rows. This file wires startup, signal handling, and the run flow;
 // selection, dispatch, writeback, and reporting live in sibling files.
 // See: agent-context/lib/ for durable architecture docs.
@@ -23,6 +23,32 @@ import (
 // line so an operator can correlate a record back to a specific invocation.
 const runTimestampFormat = "2006-01-02-1504"
 
+var runnerLookPath = exec.LookPath
+
+// newAgentRunner preflights the executable selected by cfg and returns the
+// corresponding runner. Codex owns an isolated schema directory, so its
+// cleanup must run after dispatch completes; the Claude runner has no cleanup.
+func newAgentRunner(cfg Config) (agentRunner, func() error, error) {
+	switch cfg.Runner {
+	case RunnerCodexExec:
+		if _, err := runnerLookPath("codex"); err != nil {
+			return nil, nil, fmt.Errorf("codex CLI not found in PATH: %w", err)
+		}
+		runner, err := newCodexExecRunner(cfg.Model, cfg.AgentTimeout)
+		if err != nil {
+			return nil, nil, fmt.Errorf("creating codex-exec runner: %w", err)
+		}
+		return runner, runner.Close, nil
+	case RunnerClaude:
+		if _, err := runnerLookPath("claude"); err != nil {
+			return nil, nil, fmt.Errorf("claude CLI not found in PATH: %w", err)
+		}
+		return newClaudeRunner(cfg.Model, cfg.AgentTimeout), func() error { return nil }, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported runner %q", cfg.Runner)
+	}
+}
+
 func main() {
 	os.Exit(run())
 }
@@ -44,6 +70,7 @@ func run() int {
 	}
 
 	logger.Info("[batch-enrich] starting batch-enrich run",
+		"runner", cfg.Runner,
 		"prompt_version", cfg.PromptVersion,
 		"model", cfg.Model,
 		"count", cfg.Count,
@@ -70,13 +97,16 @@ func run() int {
 	}
 	defer pool.Close()
 
-	// Verify the claude CLI before any selection work — there is no fallback
-	// if the binary is missing, so failing fast saves the operator a wasted
-	// taxonomy load.
-	if _, err := exec.LookPath("claude"); err != nil {
-		fmt.Fprintf(os.Stderr, "[batch-enrich] claude CLI not found in PATH: %v\n", err)
+	runner, cleanupRunner, err := newAgentRunner(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[batch-enrich] runner setup: %v\n", err)
 		return 1
 	}
+	defer func() {
+		if err := cleanupRunner(); err != nil {
+			slog.Error("[batch-enrich] close runner", "runner", cfg.Runner, "error", err)
+		}
+	}()
 
 	// Verify strip-boilerplate exists too — StripBoilerplate is invoked
 	// before the first wave dispatch, and a missing binary would otherwise
@@ -107,8 +137,6 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "[batch-enrich] load taxonomy: %v\n", err)
 		return 1
 	}
-
-	runner := newClaudeRunner(cfg.Model, cfg.AgentTimeout)
 
 	// Boilerplate stripping is corpus-wide (it groups by company), so do it
 	// once up front rather than per wave.

@@ -28,7 +28,7 @@ type TaxonomyEntry = classify.TaxonomyEntry
 type Taxonomy = classify.Taxonomy
 
 // AgentResponse and its nested shapes alias the shared classifier contract.
-// The Haiku classifier emits this JSON per posting; the MCP save_enrichment
+// Classification runners emit this JSON per posting; the MCP save_enrichment
 // action accepts the same shape from an agent.
 type AgentResponse = classify.AgentResponse
 type AgentClassification = classify.AgentClassification

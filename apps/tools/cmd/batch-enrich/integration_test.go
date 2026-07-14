@@ -427,7 +427,7 @@ func TestWriteBack_HappyPath(t *testing.T) {
 		Classification: &vc,
 	}}
 
-	cfg := Config{PromptVersion: PromptVersion, Model: Model}
+	cfg := Config{PromptVersion: PromptVersion, Runner: RunnerCodexExec, Model: CodexExecModel}
 	out := WriteBack(ctx, results, pool, cfg, taxonomy)
 
 	if out[0].Outcome != OutcomeEnriched {
@@ -554,7 +554,7 @@ func TestWriteBack_IdempotentTaxonomyUpsert(t *testing.T) {
 		}
 	}
 
-	cfg := Config{PromptVersion: PromptVersion, Model: Model}
+	cfg := Config{PromptVersion: PromptVersion, Runner: RunnerCodexExec, Model: CodexExecModel}
 	// First writeback creates taxonomy rows.
 	first := WriteBack(ctx, []PostingResult{{
 		PostingID:      postingA,
@@ -647,7 +647,7 @@ func TestWriteBack_FailedTransactionCancelledContext(t *testing.T) {
 	cancelCtx, cancel := context.WithCancel(ctx)
 	cancel()
 
-	cfg := Config{PromptVersion: PromptVersion, Model: Model}
+	cfg := Config{PromptVersion: PromptVersion, Runner: RunnerCodexExec, Model: CodexExecModel}
 	out := WriteBack(cancelCtx, []PostingResult{{
 		PostingID:      postingID,
 		CompanyID:      companyID,

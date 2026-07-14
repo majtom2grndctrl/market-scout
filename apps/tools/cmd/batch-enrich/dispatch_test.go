@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fakeRunner is a programmable agentRunner for dispatch loop tests. The
@@ -59,7 +63,8 @@ func dispatchTestPosting() SelectedPosting {
 func dispatchTestConfig() Config {
 	return Config{
 		PromptVersion:     PromptVersion,
-		Model:             Model,
+		Runner:            RunnerCodexExec,
+		Model:             CodexExecModel,
 		WaveSize:          1,
 		BatchSize:         1,
 		MaxRetries:        2, // 3 total attempts
@@ -317,6 +322,205 @@ func TestRunWave_RetryThenSucceed_Enriched(t *testing.T) {
 	}
 	if r.Attempts != 2 {
 		t.Errorf("attempts: want 2, got %d", r.Attempts)
+	}
+}
+
+func TestRunWave_AgentTimeoutOnBatchedCall_ConsumesAttemptAndRetries(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	good := validResponseJSON(t)
+
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			if attempt == 1 {
+				return "", "partial output", errAgentTimeout
+			}
+			return good, good, nil
+		},
+	}
+
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
+	r := results[0]
+	if r.Outcome != OutcomeEnriched {
+		t.Fatalf("outcome: want %q, got %q (reason=%q)", OutcomeEnriched, r.Outcome, r.LastReason)
+	}
+	if r.Attempts != 2 {
+		t.Fatalf("attempts: want 2, got %d", r.Attempts)
+	}
+	if got := atomic.LoadInt32(&runner.calls); got != 2 {
+		t.Fatalf("runner calls: want 2, got %d", got)
+	}
+}
+
+func TestRunWave_AgentTimeoutOnSingleRetry_ConsumesAttempt(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	cfg.MaxRetries = 1 // initial batch plus one single-posting retry
+
+	// The initial response is parseable but omits the expected posting, which
+	// forces one single-posting retry. That retry times out and consumes the
+	// final budget slot rather than being treated as run cancellation.
+	missing := wrapBatched(t)
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			if attempt == 1 {
+				return missing, missing, nil
+			}
+			return "", "partial output", errAgentTimeout
+		},
+	}
+
+	results := RunWave(context.Background(), []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
+	r := results[0]
+	if r.Outcome != OutcomeJSONFailed {
+		t.Fatalf("outcome: want %q, got %q (reason=%q)", OutcomeJSONFailed, r.Outcome, r.LastReason)
+	}
+	if r.Attempts != 2 {
+		t.Fatalf("attempts: want 2, got %d", r.Attempts)
+	}
+	if !strings.Contains(r.LastReason, errAgentTimeout.Error()) {
+		t.Fatalf("last reason should report timeout, got %q", r.LastReason)
+	}
+}
+
+func TestRunWave_ParentCancellationIsTerminalAndZeroAttempt(t *testing.T) {
+	tax := newTestTaxonomy()
+	cfg := dispatchTestConfig()
+	ctx, cancel := context.WithCancel(context.Background())
+
+	runner := &fakeRunner{
+		responder: func(attempt int, systemPrompt, userPrompt string) (string, string, error) {
+			cancel()
+			return "", "partial output", context.Canceled
+		},
+	}
+
+	results := RunWave(ctx, []SelectedPosting{dispatchTestPosting()}, tax, cfg, runner, nil)
+	r := results[0]
+	if r.LastReason != reasonCancelled {
+		t.Fatalf("last reason: want %q, got %q", reasonCancelled, r.LastReason)
+	}
+	if r.Attempts != 0 {
+		t.Fatalf("attempts: want 0, got %d", r.Attempts)
+	}
+	if got := atomic.LoadInt32(&runner.calls); got != 1 {
+		t.Fatalf("runner calls: want 1, got %d", got)
+	}
+}
+
+// TestClaudeRunnerHelperProcess is launched through a temporary executable
+// named claude. It keeps runner tests off the installed CLI while exercising
+// the actual exec.CommandContext boundary.
+func TestClaudeRunnerHelperProcess(t *testing.T) {
+	if os.Getenv("GO_WANT_CLAUDE_HELPER") != "1" {
+		return
+	}
+
+	switch os.Getenv("CLAUDE_HELPER_MODE") {
+	case "success":
+		_, _ = os.Stdout.WriteString(`{"result":"{\"results\":[]}","is_error":false}`)
+		os.Exit(0)
+	case "failure":
+		_, _ = os.Stderr.WriteString("simulated claude failure")
+		os.Exit(23)
+	case "malformed":
+		_, _ = os.Stdout.WriteString("not a claude envelope")
+		os.Exit(0)
+	case "is-error":
+		_, _ = os.Stdout.WriteString(`{"result":"agent rejected prompt","is_error":true}`)
+		os.Exit(0)
+	case "sleep":
+		time.Sleep(500 * time.Millisecond)
+	default:
+		os.Exit(24)
+	}
+}
+
+func installClaudeHelper(t *testing.T, mode string) {
+	t.Helper()
+	dir := t.TempDir()
+	script := filepath.Join(dir, "claude")
+	contents := fmt.Sprintf("#!/bin/sh\nexec %q -test.run='^TestClaudeRunnerHelperProcess$' -- \"$@\"\n", os.Args[0])
+	if err := os.WriteFile(script, []byte(contents), 0o755); err != nil {
+		t.Fatalf("write claude helper: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("GO_WANT_CLAUDE_HELPER", "1")
+	t.Setenv("CLAUDE_HELPER_MODE", mode)
+}
+
+func TestClaudeRunner_SuccessfulStructuredOutput(t *testing.T) {
+	installClaudeHelper(t, "success")
+
+	text, raw, err := newClaudeRunner("test-model", 0).Run(context.Background(), "system", "user")
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if text != `{"results":[]}` {
+		t.Fatalf("agent text: got %q", text)
+	}
+	if raw != `{"result":"{\"results\":[]}","is_error":false}` {
+		t.Fatalf("raw stdout: got %q", raw)
+	}
+}
+
+func TestClaudeRunner_NonzeroExitIncludesStderr(t *testing.T) {
+	installClaudeHelper(t, "failure")
+
+	_, _, err := newClaudeRunner("test-model", 0).Run(context.Background(), "system", "user")
+	if !errors.Is(err, errAgentFailure) {
+		t.Fatalf("expected errAgentFailure, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "simulated claude failure") {
+		t.Fatalf("stderr missing from error: %v", err)
+	}
+}
+
+func TestClaudeRunner_MalformedOrErrorEnvelope(t *testing.T) {
+	for _, mode := range []string{"malformed", "is-error"} {
+		t.Run(mode, func(t *testing.T) {
+			installClaudeHelper(t, mode)
+
+			_, _, err := newClaudeRunner("test-model", 0).Run(context.Background(), "system", "user")
+			if !errors.Is(err, errAgentFailure) {
+				t.Fatalf("expected errAgentFailure, got %v", err)
+			}
+		})
+	}
+}
+
+func TestClaudeRunner_ParentCancellationWins(t *testing.T) {
+	installClaudeHelper(t, "sleep")
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := newClaudeRunner("test-model", time.Second).Run(ctx, "system", "user")
+		done <- err
+	}()
+	// Let the helper enter its deliberate sleep before parent cancellation.
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	err := <-done
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected parent context.Canceled, got %v", err)
+	}
+	if errors.Is(err, errAgentTimeout) {
+		t.Fatalf("parent cancellation must win timeout, got %v", err)
+	}
+}
+
+func TestClaudeRunner_TimeoutReturnsAgentTimeout(t *testing.T) {
+	installClaudeHelper(t, "sleep")
+
+	_, _, err := newClaudeRunner("test-model", 20*time.Millisecond).Run(context.Background(), "system", "user")
+	if !errors.Is(err, errAgentTimeout) {
+		t.Fatalf("expected errAgentTimeout, got %v", err)
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("runner timeout must not be parent deadline exceeded, got %v", err)
 	}
 }
 
