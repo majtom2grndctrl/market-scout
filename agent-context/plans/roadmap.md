@@ -44,3 +44,8 @@ Goal: Agent can discover companies from web sources, investigate them in a brows
 
 - [ ] `discovery-source-recipes`
   Add browser recipes for common sourcing modes. Cover one page that mentions many companies, and recent articles from a tech-news source. Recipes should feed the discovery run workflow rather than define a separate pipeline.
+
+## Epic: Job Classification
+
+- [x] `codex-batch-enrich-runner`
+  Done. Batch enrichment now defaults to a constrained, subscription-authenticated Codex runner. Claude remains an explicit fallback; Go retains selection, validation, writeback, provenance, and reporting.
