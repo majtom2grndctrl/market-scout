@@ -62,6 +62,11 @@ verdict `duplicate`).
       another); each matched company row states which signal(s) produced it.
 - [ ] Verdict for every match produced by the `domain` or `fuzzy_name`
       signal is `stale`, never `duplicate`.
+- [ ] `fuzzy_name` matches surfaced in a candidate's `matches` list are
+      capped at 3, ranked by similarity descending. `match_count` reports
+      the true number of fuzzy matches found at or above the threshold,
+      even when it exceeds 3 — the cap trims what's returned, not what's
+      counted.
 - [ ] Existing behavior is unchanged for candidates that already resolve via
       token match or exact-name match — no regression in `match_kind:
       "token"` or `match_kind: "name_only"` results.
@@ -92,6 +97,14 @@ double-report companies already caught by the stronger signal. A company
 already matched by exact name for a given candidate must not also appear as
 a `fuzzy_name` match for that same candidate.
 
+Cap the `fuzzy_name` rows surfaced per candidate at 3, keeping the highest
+similarity scores. Company-name similarity has a noisy long tail once you're
+near the threshold — a match that far down the ranking rarely changes an
+agent's or reviewer's decision, and an uncapped list risks flooding a
+batch response when a candidate's name is generic enough to score against
+many rows. Preserve the true match count (pre-cap) separately from the
+capped list — see Task 3.
+
 ### Task 2: Accept `careers_url` and add domain matching
 
 Add `careers_url` (optional, string) to `dedupCandidateInput` and its MCP
@@ -116,18 +129,27 @@ Extend `dedupMatchedCompany` with a `match_kind` field (`"token"`,
 `similarity_score` field (populated only for `fuzzy_name` matches). A
 candidate's `matches` list is the union of every signal's matches,
 deduplicated by company `id` — if a company matches on more than one signal,
-keep the strongest (`domain` and `name_only` outrank `fuzzy_name`) and note
-this in the boundary inventory below. The result-level `match_kind` /
-`reason` reflect the strongest signal present across all matches for that
-candidate. Verdict stays `stale` whenever any non-token signal produced a
-match — only a `token` match can produce `duplicate`.
+keep the strongest per the priority order `token > domain > name_only >
+fuzzy_name` and note this in the boundary inventory below. `domain` outranks
+`name_only`: a URL match is stronger evidence than a name match, since
+company names collide far more often than hostnames do. The result-level
+`match_kind` / `reason` reflect the strongest signal present across all
+matches for that candidate. Verdict stays `stale` whenever any non-token
+signal produced a match — only a `token` match can produce `duplicate`.
+
+`match_count` is the true number of matches found across all signals before
+the `fuzzy_name` cap is applied (see Task 1) — it can exceed
+`len(matches)` when a candidate's fuzzy matches were trimmed to 3. This
+keeps the cap from reading as silent under-reporting: the count always
+reflects what was found, only the returned rows are trimmed.
 
 ### Task 4: Document in `watchlist.md`
 
 Add the two new signals to §Dedup: what they compare, the similarity
-threshold value, and that both route to `stale-needs-merge` review, never a
-silent duplicate. State the signal priority: token > domain / name_only >
-fuzzy_name.
+threshold value, the fuzzy-match cap (top 3 by score, true count still
+reported), and that both new signals route to `stale-needs-merge` review,
+never a silent duplicate. State the signal priority: token > domain >
+name_only > fuzzy_name.
 
 ## Sequencing
 
@@ -167,14 +189,3 @@ Threshold starting point: 0.4. `pg_trgm`'s own default
 (`pg_trgm.similarity_threshold`) is 0.3, but company names are often short,
 where trigram similarity on short strings runs noisier — start higher and
 revisit after real usage.
-
-## Open questions
-
-- Should `fuzzy_name` matches be capped (e.g. top 3 by score) per candidate
-  to avoid a noisy long tail on generic names? Leaning yes, but no evidence
-  yet of how noisy real data gets — decide after Task 1 lands with a quick
-  manual check against the current `companies` table.
-- Does `domain` deserve to outrank `name_only` instead of tying with it?
-  A domain match is arguably stronger evidence (URLs collide far less than
-  names) — worth revisiting once Task 3 is implemented and real conflicts
-  (if any) are visible.
