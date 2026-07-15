@@ -59,7 +59,14 @@ verdict `duplicate`).
       supplied, and token/name matching still runs.
 - [ ] A single candidate can surface matches from more than one signal in
       one call (e.g. a domain match to one company and a fuzzy-name match to
-      another); each matched company row states which signal(s) produced it.
+      another); each matched company row states the strongest signal that
+      produced it.
+- [ ] When one company matches a candidate on more than one signal, the
+      merged row's `match_kind` resolves to the highest-priority signal per
+      `token > domain > name_only > fuzzy_name`.
+- [ ] `reason` is set to `matched_by_domain` for a `domain` match and
+      `matched_by_fuzzy_name` for a `fuzzy_name` match, alongside the
+      existing `matched_by_token_*` and `matched_by_name_only` values.
 - [ ] Verdict for every match produced by the `domain` or `fuzzy_name`
       signal is `stale`, never `duplicate`.
 - [ ] `fuzzy_name` matches surfaced in a candidate's `matches` list are
@@ -78,64 +85,88 @@ verdict `duplicate`).
 
 ### Task 1: Enable `pg_trgm` and add fuzzy-name matching
 
-Add a new migration enabling `pg_trgm`
-(`CREATE EXTENSION IF NOT EXISTS pg_trgm;`), mirroring how migration 000001
-enables `vector`. Add a new sqlc query in `onboard.sql`,
-`FindCompaniesByNameSimilarity`, following the existing
-`FindCompaniesByNormalizedNames` shape: batched input array, `WITH
-ORDINALITY` for input ordering, `has_recent_snapshot` computed the same way.
-Use Postgres's `similarity()` function (from `pg_trgm`) between each
-candidate's normalized name and each company's normalized name; keep rows at
-or above a threshold constant (mirror `dedupDefaultRecencyDays`'s pattern —
-a named constant near the top of `dedup_candidates.go`, not a magic number
-inline). Order matches by similarity descending.
+- Add a new migration enabling `pg_trgm`
+  (`CREATE EXTENSION IF NOT EXISTS pg_trgm;`). Mirrors how migration 000001
+  enables `vector`.
+- Add a new sqlc query in `onboard.sql`, `FindCompaniesByNameSimilarity`,
+  matching `FindCompaniesByNormalizedNames`'s shape: batched input array,
+  `WITH ORDINALITY` for input ordering, `has_recent_snapshot` computed via
+  the same `EXISTS` subquery.
+- Compare each candidate's normalized name against each company's
+  normalized name with `pg_trgm`'s `similarity()` function; keep only rows
+  at or above a threshold.
+- Hold the threshold in a named constant next to the existing
+  `dedupDefaultRecencyDays` / `dedupMaxCandidates` constants
+  (`dedup_candidates.go` lines ~17-37) — a magic number buried in a query is
+  invisible to the next person tuning it.
+- Order results by similarity descending, so the cap (below) keeps the
+  strongest matches.
+- Add `FindCompaniesByNameSimilarity` to the `dedupSource` interface
+  (`dedup_candidates.go:79-82`), implement it on `poolDedupSource`, and add
+  a fake to `fakeDedupSource` (`dedup_candidates_test.go`) —
+  `runDedupCandidates` only reaches the DB through `dedupSource`; calling
+  the sqlc function directly bypasses that seam and the existing test
+  doubles.
+- Call this query only for candidates that resolved to verdict `new` after
+  token and exact-name matching.
+- Cap the `fuzzy_name` rows surfaced per candidate at 3, keeping the highest
+  scores. Similarity has a noisy long tail near the threshold, and an
+  uncapped list risks flooding a batch response when a candidate's name is
+  generic enough to score against many rows.
+- Preserve the true fuzzy-match count separately from the capped list for
+  `match_count` — see Task 3.
 
-In `runDedupCandidates`, call this query only for candidates that resolved
-to verdict `new` after token and exact-name matching — running fuzzy
-matching against every candidate regardless of exact-match outcome would
-double-report companies already caught by the stronger signal. A company
-already matched by exact name for a given candidate must not also appear as
-a `fuzzy_name` match for that same candidate.
-
-Cap the `fuzzy_name` rows surfaced per candidate at 3, keeping the highest
-similarity scores. Company-name similarity has a noisy long tail once you're
-near the threshold — a match that far down the ranking rarely changes an
-agent's or reviewer's decision, and an uncapped list risks flooding a
-batch response when a candidate's name is generic enough to score against
-many rows. Preserve the true match count (pre-cap) separately from the
-capped list — see Task 3.
+Do not:
+- Run fuzzy matching against a candidate that already resolved via token or
+  exact-name match. The stronger signal already caught it; re-running fuzzy
+  would double-report the same company.
+- Call sqlc-generated query functions directly from `runDedupCandidates`.
+  Go through `dedupSource`.
 
 ### Task 2: Accept `careers_url` and add domain matching
 
-Add `careers_url` (optional, string) to `dedupCandidateInput` and its MCP
-tool schema entry in `main.go`. Validate with the existing
-`atsdetect.ValidateURL` helper (already used by `add_company.go` for the
-same field name on that tool) — an invalid URL is not a candidate-level
-error; treat it as absent and continue with token/name matching only.
+- Add `careers_url` (optional, string) to `dedupCandidateInput` and its MCP
+  tool schema entry in `main.go`.
+- Validate with the existing `atsdetect.ValidateURL` helper
+  (`apps/tools/internal/atsdetect/detect.go`) — the same validator
+  `add_company.go` uses for its `careers_page_url` field.
+- Treat an invalid or unparsable URL as if `careers_url` were absent for
+  that candidate; do not fail the candidate or the batch.
+- Add a new sqlc query, `FindCompaniesByCareersURLHost`, comparing an
+  extracted host from the candidate-supplied URL against an extracted host
+  from `companies.careers_page_url`. Mirror `FindCompaniesByNormalizedNames`'s
+  pattern of repeating the same extraction expression verbatim in both the
+  candidate subquery and the companies subquery — the existing precedent for
+  this kind of paired normalization in this file, rather than a new SQL
+  helper function.
+- Companies with a `NULL` `careers_page_url` are excluded naturally by this
+  join.
+- Add `FindCompaniesByCareersURLHost` to the `dedupSource` interface,
+  `poolDedupSource`, and `fakeDedupSource`, same as Task 1's fuzzy-name
+  query.
 
-Add a new sqlc query, `FindCompaniesByCareersURLHost`, comparing an
-extracted host from the candidate-supplied URL against an extracted host
-from `companies.careers_page_url`. Mirror
-`FindCompaniesByNormalizedNames`'s pattern of repeating the same extraction
-expression verbatim in both the candidate subquery and the companies
-subquery — that's the existing precedent for this kind of paired
-normalization in this file, rather than introducing a SQL helper function.
-Companies with a `NULL` `careers_page_url` are excluded naturally.
+Do not:
+- Surface a validation error for a malformed `careers_url` as a
+  candidate-level failure. It is a missing optional signal, not an error.
 
 ### Task 3: Merge signals into the result shape
 
-Extend `dedupMatchedCompany` with a `match_kind` field (`"token"`,
-`"name_only"`, `"domain"`, or `"fuzzy_name"`) and a nullable
-`similarity_score` field (populated only for `fuzzy_name` matches). A
-candidate's `matches` list is the union of every signal's matches,
-deduplicated by company `id` — if a company matches on more than one signal,
-keep the strongest per the priority order `token > domain > name_only >
-fuzzy_name` and note this in the boundary inventory below. `domain` outranks
-`name_only`: a URL match is stronger evidence than a name match, since
-company names collide far more often than hostnames do. The result-level
-`match_kind` / `reason` reflect the strongest signal present across all
-matches for that candidate. Verdict stays `stale` whenever any non-token
-signal produced a match — only a `token` match can produce `duplicate`.
+- Add a `match_kind` field (`"token"`, `"name_only"`, `"domain"`, or
+  `"fuzzy_name"`) and a nullable `similarity_score` field to
+  `dedupMatchedCompany`, populated only for `fuzzy_name` matches. This is a
+  new, per-company field — distinct from the existing result-level
+  `MatchKind` on `dedupCandidateResult` (`dedup_candidates.go:61`), which is
+  reused below to carry the strongest signal across the whole candidate.
+- Build each candidate's `matches` list as the union of every signal's
+  matches, deduplicated by company `id`.
+- When one company matches on more than one signal, keep the strongest per
+  the priority order `token > domain > name_only > fuzzy_name`. `domain`
+  outranks `name_only`: a URL match is stronger evidence than a name match,
+  since company names collide far more often than hostnames do.
+- Set the result-level `match_kind` / `reason` (on `dedupCandidateResult`)
+  to the strongest signal present across all matches for that candidate.
+- Verdict stays `stale` whenever any non-token signal produced a match —
+  only a `token` match can produce `duplicate`.
 
 `match_count` is the true number of matches found across all signals before
 the `fuzzy_name` cap is applied (see Task 1) — it can exceed
@@ -169,10 +200,15 @@ design, not its implementation).
 | Name | Go struct field | JSON key | SQL column / expression |
 |---|---|---|---|
 | Candidate careers URL | `CareersURL` | `"careers_url"` | n/a (query param) |
-| Match signal | `MatchKind` (on `dedupMatchedCompany`) | `"match_kind"` | n/a (computed in Go) |
+| Per-company match signal (new) | `MatchKind` (on `dedupMatchedCompany`) | `"match_kind"` | n/a (computed in Go) |
+| Result-level match signal (existing, reused) | `MatchKind` (on `dedupCandidateResult`, `dedup_candidates.go:61`) | `"match_kind"` | n/a — not new, carries the strongest signal |
 | Fuzzy similarity | `SimilarityScore *float64` | `"similarity_score"` | `similarity(...)` (pg_trgm) |
 | New match_kind values | — | `"domain"`, `"fuzzy_name"` | — |
 | New reason values | — | `"matched_by_domain"`, `"matched_by_fuzzy_name"` | — |
+
+`similarity_score` follows the existing `dedupMatchedCompany` field
+precedent (`Industry *string`, `CareersPageURL *string`, neither tagged
+`omitempty`): a nil pointer serializes as JSON `null`, not an omitted key.
 
 ## Rough sketch
 
