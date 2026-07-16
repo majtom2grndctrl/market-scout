@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	dedupDefaultRecencyDays = 30
-	dedupMaxCandidates      = 200
+	dedupDefaultRecencyDays           = 30
+	dedupMaxCandidates                = 200
+	dedupFuzzyNameSimilarityThreshold = 0.4
 
 	dedupVerdictNew       = "new"
 	dedupVerdictDuplicate = "duplicate"
@@ -67,18 +68,52 @@ type dedupCandidateResult struct {
 }
 
 type dedupMatchedCompany struct {
-	ID                int64   `json:"id"`
-	Name              string  `json:"name"`
-	ATS               string  `json:"ats"`
-	BoardToken        string  `json:"board_token"`
-	Industry          *string `json:"industry"`
-	CareersPageURL    *string `json:"careers_page_url"`
-	HasRecentSnapshot bool    `json:"has_recent_snapshot"`
+	ID                int64    `json:"id"`
+	Name              string   `json:"name"`
+	ATS               string   `json:"ats"`
+	BoardToken        string   `json:"board_token"`
+	Industry          *string  `json:"industry"`
+	CareersPageURL    *string  `json:"careers_page_url"`
+	HasRecentSnapshot bool     `json:"has_recent_snapshot"`
+	MatchKind         string   `json:"match_kind"`
+	SimilarityScore   *float64 `json:"similarity_score"`
 }
 
 type dedupSource interface {
 	FindByToken(ctx context.Context, ats, boardToken string, recencyDays int32) (*dedupMatchedCompany, error)
 	FindByNames(ctx context.Context, names []string, recencyDays int32) (map[int][]dedupMatchedCompany, error)
+	FindByNameSimilarity(ctx context.Context, names []string, recencyDays int32) (map[int][]dedupMatchedCompany, error)
+}
+
+func (s poolDedupSource) FindByNameSimilarity(ctx context.Context, names []string, recencyDays int32) (map[int][]dedupMatchedCompany, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, statementTimeout)
+	defer cancel()
+
+	rows, err := db.New(s.pool).FindCompaniesByNameSimilarity(queryCtx, db.FindCompaniesByNameSimilarityParams{
+		RecencyDays:         recencyDays,
+		CandidateNames:      names,
+		SimilarityThreshold: dedupFuzzyNameSimilarityThreshold,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	matches := make(map[int][]dedupMatchedCompany, len(rows))
+	for _, row := range rows {
+		inputIndex := int(row.InputIndex) - 1
+		score := row.Score
+		matches[inputIndex] = append(matches[inputIndex], dedupMatchedCompany{
+			ID:                row.CompanyID,
+			Name:              row.Name,
+			ATS:               row.Ats,
+			BoardToken:        row.BoardToken,
+			Industry:          nullStringPtr(row.Industry),
+			CareersPageURL:    nullStringPtr(row.CareersPageUrl),
+			HasRecentSnapshot: row.HasRecentSnapshot,
+			SimilarityScore:   &score,
+		})
+	}
+	return matches, nil
 }
 
 type poolDedupSource struct {

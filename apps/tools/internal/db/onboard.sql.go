@@ -12,6 +12,105 @@ import (
 	"github.com/lib/pq"
 )
 
+const findCompaniesByNameSimilarity = `-- name: FindCompaniesByNameSimilarity :many
+WITH candidate_names AS (
+    SELECT
+        ordinality::int AS input_index,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM unnest($3::text[]) WITH ORDINALITY AS raw_names(name, ordinality)
+), normalized_companies AS (
+    SELECT
+        id,
+        name,
+        ats,
+        board_token,
+        industry,
+        careers_page_url,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM companies
+), scored_matches AS (
+    SELECT
+        candidate_names.input_index,
+        c.id, c.name, c.ats, c.board_token, c.industry, c.careers_page_url, c.normalized_name,
+        similarity(candidate_names.normalized_name, c.normalized_name)::float8 AS score
+    FROM candidate_names
+    CROSS JOIN normalized_companies c
+)
+SELECT
+    scored_matches.input_index,
+    scored_matches.id AS company_id,
+    scored_matches.name,
+    scored_matches.ats,
+    scored_matches.board_token,
+    scored_matches.industry,
+    scored_matches.careers_page_url,
+    EXISTS (
+        SELECT 1
+        FROM job_postings jp
+        JOIN posting_snapshots ps ON ps.job_posting_id = jp.id
+        WHERE jp.company_id = scored_matches.id
+          AND ps.fetched_at >= now() - make_interval(days => $1::int)
+    ) AS has_recent_snapshot,
+    scored_matches.score
+FROM scored_matches
+WHERE scored_matches.score >= $2::float8
+ORDER BY scored_matches.input_index, scored_matches.score DESC, scored_matches.id
+`
+
+type FindCompaniesByNameSimilarityParams struct {
+	RecencyDays         int32
+	SimilarityThreshold float64
+	CandidateNames      []string
+}
+
+type FindCompaniesByNameSimilarityRow struct {
+	InputIndex        int32
+	CompanyID         int64
+	Name              string
+	Ats               string
+	BoardToken        string
+	Industry          sql.NullString
+	CareersPageUrl    sql.NullString
+	HasRecentSnapshot bool
+	Score             float64
+}
+
+// Given a batch of raw candidate names, returns companies whose normalized
+// names meet the caller's trigram-similarity threshold. input_index is 1-based,
+// matching WITH ORDINALITY from the input array.
+func (q *Queries) FindCompaniesByNameSimilarity(ctx context.Context, arg FindCompaniesByNameSimilarityParams) ([]FindCompaniesByNameSimilarityRow, error) {
+	rows, err := q.db.QueryContext(ctx, findCompaniesByNameSimilarity, arg.RecencyDays, arg.SimilarityThreshold, pq.Array(arg.CandidateNames))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindCompaniesByNameSimilarityRow
+	for rows.Next() {
+		var i FindCompaniesByNameSimilarityRow
+		if err := rows.Scan(
+			&i.InputIndex,
+			&i.CompanyID,
+			&i.Name,
+			&i.Ats,
+			&i.BoardToken,
+			&i.Industry,
+			&i.CareersPageUrl,
+			&i.HasRecentSnapshot,
+			&i.Score,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findCompaniesByNormalizedNames = `-- name: FindCompaniesByNormalizedNames :many
 SELECT
     candidate_names.input_index,

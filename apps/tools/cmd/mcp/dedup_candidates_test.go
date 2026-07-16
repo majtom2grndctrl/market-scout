@@ -23,13 +23,29 @@ type fakeDedupNameCall struct {
 	RecencyDays int32
 }
 
+type fakeDedupSimilarityCall struct {
+	Names       []string
+	RecencyDays int32
+}
+
 type fakeDedupSource struct {
-	tokenMatches map[string]dedupMatchedCompany
-	nameMatches  map[int][]dedupMatchedCompany
-	tokenErr     error
-	nameErr      error
-	tokenCalls   []fakeDedupTokenCall
-	nameCalls    []fakeDedupNameCall
+	tokenMatches      map[string]dedupMatchedCompany
+	nameMatches       map[int][]dedupMatchedCompany
+	similarityMatches map[int][]dedupMatchedCompany
+	tokenErr          error
+	nameErr           error
+	similarityErr     error
+	tokenCalls        []fakeDedupTokenCall
+	nameCalls         []fakeDedupNameCall
+	similarityCalls   []fakeDedupSimilarityCall
+}
+
+func (f *fakeDedupSource) FindByNameSimilarity(ctx context.Context, names []string, recencyDays int32) (map[int][]dedupMatchedCompany, error) {
+	f.similarityCalls = append(f.similarityCalls, fakeDedupSimilarityCall{Names: append([]string(nil), names...), RecencyDays: recencyDays})
+	if f.similarityErr != nil {
+		return nil, f.similarityErr
+	}
+	return f.similarityMatches, nil
 }
 
 func (f *fakeDedupSource) FindByToken(ctx context.Context, ats, boardToken string, recencyDays int32) (*dedupMatchedCompany, error) {

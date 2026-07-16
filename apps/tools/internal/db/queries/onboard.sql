@@ -70,3 +70,50 @@ JOIN (
     FROM companies
 ) c ON c.normalized_name = candidate_names.normalized_name
 ORDER BY candidate_names.input_index, c.id;
+
+-- name: FindCompaniesByNameSimilarity :many
+-- Given a batch of raw candidate names, returns companies whose normalized
+-- names meet the caller's trigram-similarity threshold. input_index is 1-based,
+-- matching WITH ORDINALITY from the input array.
+WITH candidate_names AS (
+    SELECT
+        ordinality::int AS input_index,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM unnest(@candidate_names::text[]) WITH ORDINALITY AS raw_names(name, ordinality)
+), normalized_companies AS (
+    SELECT
+        id,
+        name,
+        ats,
+        board_token,
+        industry,
+        careers_page_url,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM companies
+), scored_matches AS (
+    SELECT
+        candidate_names.input_index,
+        c.*,
+        similarity(candidate_names.normalized_name, c.normalized_name)::float8 AS score
+    FROM candidate_names
+    CROSS JOIN normalized_companies c
+)
+SELECT
+    scored_matches.input_index,
+    scored_matches.id AS company_id,
+    scored_matches.name,
+    scored_matches.ats,
+    scored_matches.board_token,
+    scored_matches.industry,
+    scored_matches.careers_page_url,
+    EXISTS (
+        SELECT 1
+        FROM job_postings jp
+        JOIN posting_snapshots ps ON ps.job_posting_id = jp.id
+        WHERE jp.company_id = scored_matches.id
+          AND ps.fetched_at >= now() - make_interval(days => sqlc.arg(recency_days)::int)
+    ) AS has_recent_snapshot,
+    scored_matches.score
+FROM scored_matches
+WHERE scored_matches.score >= sqlc.arg(similarity_threshold)::float8
+ORDER BY scored_matches.input_index, scored_matches.score DESC, scored_matches.id;
