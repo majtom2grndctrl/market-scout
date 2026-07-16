@@ -156,7 +156,7 @@ Bulk sourcing from research lists (e.g. `research/geekwire-200.md`, a YC batch p
 | `no-careers` | No careers page or no open roles. | Annotator or tool. |
 | `dead` | Company defunct or acquired. | Annotator only. |
 | `duplicate` | Already in the seed file with a working ATS and recent postings (see *Dedup*). | Annotator or tool. |
-| `stale-needs-merge` | Name match in DB but data is stale; needs human merge review. | Tool. |
+| `stale-needs-merge` | Exact-name, domain, or fuzzy-name match needs human merge review. | Tool. |
 | `invalid-token` | Supported ATS detected, but the ATS probe failed. | Tool. |
 
 Statuses are terminal. A record is in progress iff it has neither a `status` nor a `verified_at`.
