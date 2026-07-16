@@ -54,6 +54,9 @@ verdict `duplicate`).
       candidate. When supplied and its host matches the host of an existing
       company's `careers_page_url`, that company is returned with a match
       carrying `match_kind: "domain"`.
+- [ ] Domain matching runs regardless of the exact-name outcome: a candidate
+      whose name exact-matches one company can still receive a separate
+      `domain` match to a different company in the same call.
 - [ ] An invalid or unparsable `careers_url` on a candidate does not fail
       the candidate or the batch — it is treated as if no `careers_url` was
       supplied, and token/name matching still runs.
@@ -71,8 +74,9 @@ verdict `duplicate`).
       signal is `stale`, never `duplicate`.
 - [ ] `fuzzy_name` matches surfaced in a candidate's `matches` list are
       capped at 3, ranked by similarity descending. `match_count` reports
-      the true number of fuzzy matches found at or above the threshold,
-      even when it exceeds 3 — the cap trims what's returned, not what's
+      the true number of distinct companies matched across all signals for
+      that candidate, deduplicated by company id, before the fuzzy cap
+      trims the returned list — the cap trims what's returned, not what's
       counted.
 - [ ] Existing behavior is unchanged for candidates that already resolve via
       token match or exact-name match — no regression in `match_kind:
@@ -107,8 +111,11 @@ verdict `duplicate`).
   `runDedupCandidates` only reaches the DB through `dedupSource`; calling
   the sqlc function directly bypasses that seam and the existing test
   doubles.
-- Call this query only for candidates that resolved to verdict `new` after
-  token and exact-name matching.
+- This query is the last one called per candidate, after token, exact-name,
+  and domain matching have all had a chance to match — Task 3 pins the
+  exact call order. Fuzzy is the last-resort signal; a candidate already
+  flagged for review by a stronger signal doesn't need a noisier one spent
+  on it too.
 - Cap the `fuzzy_name` rows surfaced per candidate at 3, keeping the highest
   scores. Similarity has a noisy long tail near the threshold, and an
   uncapped list risks flooding a batch response when a candidate's name is
@@ -117,9 +124,9 @@ verdict `duplicate`).
   `match_count` — see Task 3.
 
 Do not:
-- Run fuzzy matching against a candidate that already resolved via token or
-  exact-name match. The stronger signal already caught it; re-running fuzzy
-  would double-report the same company.
+- Run fuzzy matching against a candidate that already resolved via token,
+  domain, or exact-name match. A stronger signal already caught it;
+  re-running fuzzy would only add noise.
 - Call sqlc-generated query functions directly from `runDedupCandidates`.
   Go through `dedupSource`.
 
@@ -144,13 +151,27 @@ Do not:
 - Add `FindCompaniesByCareersURLHost` to the `dedupSource` interface,
   `poolDedupSource`, and `fakeDedupSource`, same as Task 1's fuzzy-name
   query.
+- Run this query for every candidate with a `careers_url`, regardless of
+  the token or exact-name outcome. `watchlist.md` §Dedup already treats the
+  board/careers URL as the strongest disambiguation signal after token —
+  gating it behind a name-match miss would mean it never fires for a
+  candidate whose name happens to collide with an unrelated company (the
+  exact case that signal exists to catch).
 
 Do not:
 - Surface a validation error for a malformed `careers_url` as a
   candidate-level failure. It is a missing optional signal, not an error.
+- Gate domain matching on the exact-name result. Unlike fuzzy matching,
+  domain isn't a last-resort signal — it needs to run unconditionally to
+  correct a wrong name match, not just catch a missed one.
 
 ### Task 3: Merge signals into the result shape
 
+- Pin the call order in `runDedupCandidates`: token match (existing) first,
+  short-circuiting on a hit. Otherwise, run exact-name matching (existing)
+  and domain matching (Task 2) unconditionally — domain never waits on the
+  exact-name result. Only if both come back empty, run fuzzy-name matching
+  (Task 1) as the final fallback.
 - Add a `match_kind` field (`"token"`, `"name_only"`, `"domain"`, or
   `"fuzzy_name"`) and a nullable `similarity_score` field to
   `dedupMatchedCompany`, populated only for `fuzzy_name` matches. This is a
@@ -168,11 +189,14 @@ Do not:
 - Verdict stays `stale` whenever any non-token signal produced a match —
   only a `token` match can produce `duplicate`.
 
-`match_count` is the true number of matches found across all signals before
-the `fuzzy_name` cap is applied (see Task 1) — it can exceed
-`len(matches)` when a candidate's fuzzy matches were trimmed to 3. This
-keeps the cap from reading as silent under-reporting: the count always
-reflects what was found, only the returned rows are trimmed.
+`match_count` is the number of distinct companies matched across all
+signals for that candidate, counted after the cross-signal dedup-by-id
+above but before the `fuzzy_name` cap (see Task 1) trims the returned list
+— it can exceed `len(matches)` when a candidate's fuzzy matches were
+trimmed to 3. Domain and name_only are never capped, so `match_count` and
+`len(matches)` only diverge because of the fuzzy trim. This keeps the cap
+from reading as silent under-reporting: the count always reflects what was
+found, only the returned rows are trimmed.
 
 ### Task 4: Document in `watchlist.md`
 
