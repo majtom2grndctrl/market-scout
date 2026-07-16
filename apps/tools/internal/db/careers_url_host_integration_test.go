@@ -14,7 +14,7 @@ import (
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
 )
 
-func TestFindCompaniesByCareersURLHost_MatchesHostAndNormalizesWWW(t *testing.T) {
+func TestFindCompaniesByCareersURLHost_MatchesNormalizedHostname(t *testing.T) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping integration test")
@@ -43,24 +43,35 @@ func TestFindCompaniesByCareersURLHost_MatchesHostAndNormalizesWWW(t *testing.T)
 		INSERT INTO companies (name, ats, board_token, careers_page_url)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id
-	`, "MS Domain "+suffix, "greenhouse", "dedup-domain-"+suffix, "https://www."+host+"/careers").Scan(&companyID); err != nil {
+	`, "MS Domain "+suffix, "greenhouse", "dedup-domain-"+suffix, "https://WWW."+host+":8443/careers?team=eng#openings").Scan(&companyID); err != nil {
 		t.Fatalf("insert company: %v", err)
 	}
 
+	candidateURLs := []string{
+		"http://" + host + "/jobs",
+		"https://WWW." + host + "/jobs",
+		"https://" + host + "?team=eng",
+		"https://" + host + "#openings",
+		"https://" + host + ":9443/jobs",
+		"https://unmatched.example/jobs",
+	}
 	rows, err := db.New(tx).FindCompaniesByCareersURLHost(ctx, db.FindCompaniesByCareersURLHostParams{
 		RecencyDays:   30,
-		CandidateUrls: []string{"http://" + host + "/jobs", "https://unmatched.example/jobs"},
+		CandidateUrls: candidateURLs,
 	})
 	if err != nil {
 		t.Fatalf("FindCompaniesByCareersURLHost: %v", err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("len(rows) = %d, want 1; rows=%+v", len(rows), rows)
+	if len(rows) != 5 {
+		t.Fatalf("len(rows) = %d, want 5; rows=%+v", len(rows), rows)
 	}
-	if rows[0].InputIndex != 1 || rows[0].CompanyID != companyID {
-		t.Fatalf("row = %+v, want input_index=1 company_id=%d", rows[0], companyID)
-	}
-	if rows[0].HasRecentSnapshot {
-		t.Fatal("HasRecentSnapshot = true, want false")
+	for i, row := range rows {
+		wantInputIndex := int32(i + 1)
+		if row.InputIndex != wantInputIndex || row.CompanyID != companyID {
+			t.Fatalf("rows[%d] = %+v, want input_index=%d company_id=%d", i, row, wantInputIndex, companyID)
+		}
+		if row.HasRecentSnapshot {
+			t.Fatalf("rows[%d].HasRecentSnapshot = true, want false", i)
+		}
 	}
 }

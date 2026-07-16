@@ -31,7 +31,7 @@ SELECT
 FROM (
     SELECT
         ordinality::int AS input_index,
-        lower(regexp_replace(url, '^https?://(www\.)?([^/]+).*$', '\2')) AS careers_url_host
+        lower((regexp_match(url, '^https?://(?:www\.)?([^/:?#]+)(?::[0-9]+)?(?:[/?#]|$)', 'i'))[1]) AS careers_url_host
     FROM unnest($2::text[]) WITH ORDINALITY AS raw_urls(url, ordinality)
 ) candidate_urls
 JOIN (
@@ -42,7 +42,7 @@ JOIN (
         board_token,
         industry,
         careers_page_url,
-        lower(regexp_replace(careers_page_url, '^https?://(www\.)?([^/]+).*$', '\2')) AS careers_url_host
+        lower((regexp_match(careers_page_url, '^https?://(?:www\.)?([^/:?#]+)(?::[0-9]+)?(?:[/?#]|$)', 'i'))[1]) AS careers_url_host
     FROM companies
 ) c ON c.careers_url_host = candidate_urls.careers_url_host
 ORDER BY candidate_urls.input_index, c.id
