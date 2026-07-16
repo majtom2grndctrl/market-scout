@@ -356,6 +356,8 @@ func runDedupCandidates(ctx context.Context, req dedupCandidatesRequest, source 
 	var fuzzyLookupNames []string
 	var fuzzyLookupResultIndexes []int
 	for lookupIndex, resultIndex := range nameLookupResultIndexes {
+		// Fuzzy matches are noisier, so use them only when stronger signals have not
+		// already identified a company for review.
 		if len(matchesByResult[resultIndex]) == 0 {
 			fuzzyLookupNames = append(fuzzyLookupNames, nameLookupNames[lookupIndex])
 			fuzzyLookupResultIndexes = append(fuzzyLookupResultIndexes, resultIndex)
