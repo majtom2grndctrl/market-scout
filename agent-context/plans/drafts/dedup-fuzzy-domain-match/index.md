@@ -81,6 +81,11 @@ verdict `duplicate`).
 - [ ] Existing behavior is unchanged for candidates that already resolve via
       token match or exact-name match — no regression in `match_kind:
       "token"` or `match_kind: "name_only"` results.
+- [ ] The trigram similarity query and the host-extraction query each have
+      an `integration`-tagged test against a real Postgres, verifying the
+      actual scoring/ordering and host-matching behavior. The existing
+      `dedup_candidates_test.go` suite only exercises orchestration against
+      a faked `dedupSource` and never proves the SQL itself is correct.
 - [ ] `agent-context/lib/watchlist.md` §Dedup documents the new signals,
       the similarity threshold, and how they rank against the existing
       token/exact-name signals.
@@ -97,27 +102,45 @@ verdict `duplicate`).
   `WITH ORDINALITY` for input ordering, `has_recent_snapshot` computed via
   the same `EXISTS` subquery.
 - Compare each candidate's normalized name against each company's
-  normalized name with `pg_trgm`'s `similarity()` function; keep only rows
-  at or above a threshold.
-- Hold the threshold in a named constant next to the existing
+  normalized name with `pg_trgm`'s `similarity()` function. Cast the
+  result — `similarity(...)::float8 AS score` — so sqlc generates a Go
+  `float64`. Uncast, `similarity()` returns Postgres `real` and sqlc
+  generates `float32` instead, which won't assign to the `*float64` field
+  below.
+- Keep only rows scoring at or above `0.4`. Hold this value in a named
+  constant, `dedupFuzzyNameSimilarityThreshold`, next to the existing
   `dedupDefaultRecencyDays` / `dedupMaxCandidates` constants
   (`dedup_candidates.go` lines ~17-37) — a magic number buried in a query is
-  invisible to the next person tuning it.
+  invisible to the next person tuning it. `pg_trgm`'s own default
+  (`pg_trgm.similarity_threshold`) is 0.3; start higher because company
+  names are often short, where trigram similarity runs noisier.
 - Order results by similarity descending, so the cap (below) keeps the
   strongest matches.
-- Add `FindCompaniesByNameSimilarity` to the `dedupSource` interface
+- Add a `MatchKind` field (`"token"`, `"name_only"`, `"domain"`, or
+  `"fuzzy_name"`) and a nullable `SimilarityScore *float64` field to
+  `dedupMatchedCompany` now, in this task — Task 2's domain query and Task
+  3's merge both need these fields to already exist when their phases run.
+  Populate `SimilarityScore` from this query's cast score; leave
+  `MatchKind` unset here — Task 3 stamps it centrally during the merge.
+- Add `FindByNameSimilarity` to the `dedupSource` interface
   (`dedup_candidates.go:79-82`), implement it on `poolDedupSource`, and add
   a fake to `fakeDedupSource` (`dedup_candidates_test.go`) —
   `runDedupCandidates` only reaches the DB through `dedupSource`; calling
   the sqlc function directly bypasses that seam and the existing test
   doubles.
+- Add an `integration`-tagged test exercising the real `similarity()` query
+  against Postgres (testing-guide.md §1 pattern). The unit tests in
+  `dedup_candidates_test.go` only exercise orchestration against a faked
+  `dedupSource` and never prove the SQL itself scores or orders correctly.
 - This query is the last one called per candidate, after token, exact-name,
   and domain matching have all had a chance to match — Task 3 pins the
   exact call order. Fuzzy is the last-resort signal; a candidate already
   flagged for review by a stronger signal doesn't need a noisier one spent
   on it too.
 - Cap the `fuzzy_name` rows surfaced per candidate at 3, keeping the highest
-  scores. Similarity has a noisy long tail near the threshold, and an
+  scores, applied in Go after the true count is recorded — not a SQL
+  `LIMIT`, which would destroy the true count `match_count` needs (see
+  Task 3). Similarity has a noisy long tail near the threshold, and an
   uncapped list risks flooding a batch response when a candidate's name is
   generic enough to score against many rows.
 - Preserve the true fuzzy-match count separately from the capped list for
@@ -132,25 +155,39 @@ Do not:
 
 ### Task 2: Accept `careers_url` and add domain matching
 
-- Add `careers_url` (optional, string) to `dedupCandidateInput` and its MCP
-  tool schema entry in `main.go`.
+- Add `careers_url` (optional, string) to `dedupCandidateInput`.
+- Add `careers_url` to the MCP tool schema in `main.go` — nested inside the
+  `candidates` array's `mcp.Items(map[string]any{"properties": {...}})`
+  per-item property map (`main.go` ~205-213), alongside `name`/`ats`/
+  `board_token`. This is a different location from `detect_ats`'s
+  `careers_url` field (`main.go:222`), which is a top-level
+  `mcp.WithString` tool option, not a per-item array property — don't
+  copy that pattern; it would make `careers_url` a batch-level field
+  instead of a per-candidate one.
 - Validate with the existing `atsdetect.ValidateURL` helper
   (`apps/tools/internal/atsdetect/detect.go`) — the same validator
   `add_company.go` uses for its `careers_page_url` field.
 - Treat an invalid or unparsable URL as if `careers_url` were absent for
-  that candidate; do not fail the candidate or the batch.
+  that candidate; do not fail the candidate or the batch. This validation
+  runs inline in `runDedupCandidates`'s per-candidate loop, where Task 3
+  collects candidates for the batched domain lookup.
 - Add a new sqlc query, `FindCompaniesByCareersURLHost`, comparing an
   extracted host from the candidate-supplied URL against an extracted host
-  from `companies.careers_page_url`. Mirror `FindCompaniesByNormalizedNames`'s
-  pattern of repeating the same extraction expression verbatim in both the
-  candidate subquery and the companies subquery — the existing precedent for
-  this kind of paired normalization in this file, rather than a new SQL
-  helper function.
+  from `companies.careers_page_url`, using this expression on both sides:
+  `lower(regexp_replace(url, '^https?://(www\.)?([^/]+).*$', '\2'))`.
+  Mirror `FindCompaniesByNormalizedNames`'s pattern of repeating the same
+  extraction expression verbatim in both the candidate subquery and the
+  companies subquery — the existing precedent for this kind of paired
+  normalization in this file, rather than a new SQL helper function.
 - Companies with a `NULL` `careers_page_url` are excluded naturally by this
   join.
-- Add `FindCompaniesByCareersURLHost` to the `dedupSource` interface,
+- Add `FindByCareersURLHost` to the `dedupSource` interface,
   `poolDedupSource`, and `fakeDedupSource`, same as Task 1's fuzzy-name
   query.
+- Add an `integration`-tagged test exercising the real host-extraction
+  query against Postgres, same as Task 1. The extraction regex is
+  load-bearing — it decides whether `www.acme.com` matches `acme.com` — and
+  is never exercised by the faked unit tests.
 - Run this query for every candidate with a `careers_url`, regardless of
   the token or exact-name outcome. `watchlist.md` §Dedup already treats the
   board/careers URL as the strongest disambiguation signal after token —
@@ -167,25 +204,37 @@ Do not:
 
 ### Task 3: Merge signals into the result shape
 
-- Pin the call order in `runDedupCandidates`: token match (existing) first,
-  short-circuiting on a hit. Otherwise, run exact-name matching (existing)
-  and domain matching (Task 2) unconditionally — domain never waits on the
-  exact-name result. Only if both come back empty, run fuzzy-name matching
-  (Task 1) as the final fallback.
-- Add a `match_kind` field (`"token"`, `"name_only"`, `"domain"`, or
-  `"fuzzy_name"`) and a nullable `similarity_score` field to
-  `dedupMatchedCompany`, populated only for `fuzzy_name` matches. This is a
-  new, per-company field — distinct from the existing result-level
-  `MatchKind` on `dedupCandidateResult` (`dedup_candidates.go:61`), which is
-  reused below to carry the strongest signal across the whole candidate.
+- `runDedupCandidates` is two-phase today: a per-candidate loop resolves
+  token matches and collects the rest for one batched `FindByNames` call
+  after the loop. Extend this to four phases, in order:
+  1. Per-candidate loop (existing): resolve `token` matches by
+     short-circuiting as today. For every candidate without a token match,
+     collect it into the existing name-lookup batch — and, if it has a
+     validated `careers_url` (Task 2), into the domain-lookup batch too.
+  2. Batched lookups: run the existing `FindByNames` and Task 2's
+     `FindByCareersURLHost` unconditionally, for every candidate that
+     reached this phase — domain never waits on the name-batch result.
+  3. Compute the still-unresolved set: candidates with no result from
+     either batch in step 2.
+  4. Batched fallback: run Task 1's `FindByNameSimilarity` only against the
+     step-3 set.
+- `dedupMatchedCompany` already has `MatchKind` and `SimilarityScore` —
+  Task 1 added both fields. Stamp `MatchKind` on every row this merge
+  handles, including the **existing** exact-name-match rows from step 2's
+  `FindByNames` call: those rows carry no per-row `match_kind` today
+  (`runDedupCandidates` only sets the result-level field), so this task
+  must add `"name_only"` tagging to that existing path too, not just to the
+  two new signals.
 - Build each candidate's `matches` list as the union of every signal's
-  matches, deduplicated by company `id`.
+  matches from steps 2 and 4, deduplicated by company `id`.
 - When one company matches on more than one signal, keep the strongest per
   the priority order `token > domain > name_only > fuzzy_name`. `domain`
   outranks `name_only`: a URL match is stronger evidence than a name match,
   since company names collide far more often than hostnames do.
-- Set the result-level `match_kind` / `reason` (on `dedupCandidateResult`)
-  to the strongest signal present across all matches for that candidate.
+- Set the result-level `match_kind` / `reason` (on `dedupCandidateResult`,
+  the existing field at `dedup_candidates.go:61` — distinct from the new
+  per-company field on `dedupMatchedCompany`) to the strongest signal
+  present across all matches for that candidate.
 - Verdict stays `stale` whenever any non-token signal produced a match —
   only a `token` match can produce `duplicate`.
 
@@ -201,18 +250,19 @@ found, only the returned rows are trimmed.
 ### Task 4: Document in `watchlist.md`
 
 Add the two new signals to §Dedup: what they compare, the similarity
-threshold value, the fuzzy-match cap (top 3 by score, true count still
-reported), and that both new signals route to `stale-needs-merge` review,
-never a silent duplicate. State the signal priority: token > domain >
-name_only > fuzzy_name.
+threshold value (`0.4`), the fuzzy-match cap (top 3 by score, true count
+still reported), and that both new signals route to `stale-needs-merge`
+review, never a silent duplicate. State the signal priority: token >
+domain > name_only > fuzzy_name.
 
 ## Sequencing
 
-**Phase 1 (sequential):** Task 1 — establishes the migration and the fuzzy
-query pattern other tasks don't depend on, but should land first since it
-touches the schema.
-**Phase 2 (concurrent):** Task 2 — independent of Task 1; different query,
-different input field.
+**Phase 1 (sequential):** Task 1 — establishes the migration, the fuzzy
+query pattern, and the `MatchKind` / `SimilarityScore` fields on
+`dedupMatchedCompany` that Task 3 depends on. Lands first since it touches
+the schema and the shared struct.
+**Phase 2 (concurrent):** Task 2 — independent of Task 1's query and
+fields; adds its own query and input field.
 **Phase 3 (sequential):** Task 3 — consumes the query results from Tasks 1
 and 2 to build the merged response shape.
 **Phase 4 (concurrent):** Task 4 — documentation, independent of code once
@@ -233,6 +283,10 @@ design, not its implementation).
 `similarity_score` follows the existing `dedupMatchedCompany` field
 precedent (`Industry *string`, `CareersPageURL *string`, neither tagged
 `omitempty`): a nil pointer serializes as JSON `null`, not an omitted key.
+
+The `*float64` type depends on `FindCompaniesByNameSimilarity` casting the
+SQL `similarity()` output to `float8` (Task 1) — uncast, sqlc infers
+`float32` for Postgres `real`, which won't assign to a `*float64` field.
 
 ## Rough sketch
 
