@@ -28,16 +28,32 @@ type fakeDedupSimilarityCall struct {
 	RecencyDays int32
 }
 
+type fakeDedupDomainCall struct {
+	CareersURLs []string
+	RecencyDays int32
+}
+
 type fakeDedupSource struct {
 	tokenMatches      map[string]dedupMatchedCompany
 	nameMatches       map[int][]dedupMatchedCompany
 	similarityMatches map[int][]dedupMatchedCompany
+	domainMatches     map[int][]dedupMatchedCompany
 	tokenErr          error
 	nameErr           error
 	similarityErr     error
+	domainErr         error
 	tokenCalls        []fakeDedupTokenCall
 	nameCalls         []fakeDedupNameCall
 	similarityCalls   []fakeDedupSimilarityCall
+	domainCalls       []fakeDedupDomainCall
+}
+
+func (f *fakeDedupSource) FindByCareersURLHost(ctx context.Context, careersURLs []string, recencyDays int32) (map[int][]dedupMatchedCompany, error) {
+	f.domainCalls = append(f.domainCalls, fakeDedupDomainCall{CareersURLs: append([]string(nil), careersURLs...), RecencyDays: recencyDays})
+	if f.domainErr != nil {
+		return nil, f.domainErr
+	}
+	return f.domainMatches, nil
 }
 
 func (f *fakeDedupSource) FindByNameSimilarity(ctx context.Context, names []string, recencyDays int32) (map[int][]dedupMatchedCompany, error) {

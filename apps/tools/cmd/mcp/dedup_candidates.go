@@ -11,6 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/atsdetect"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
 )
 
@@ -46,6 +47,7 @@ type dedupCandidateInput struct {
 	Name       string `json:"name"`
 	ATS        string `json:"ats"`
 	BoardToken string `json:"board_token"`
+	CareersURL string `json:"careers_url"`
 }
 
 type dedupCandidatesEnvelope struct {
@@ -82,7 +84,36 @@ type dedupMatchedCompany struct {
 type dedupSource interface {
 	FindByToken(ctx context.Context, ats, boardToken string, recencyDays int32) (*dedupMatchedCompany, error)
 	FindByNames(ctx context.Context, names []string, recencyDays int32) (map[int][]dedupMatchedCompany, error)
+	FindByCareersURLHost(ctx context.Context, careersURLs []string, recencyDays int32) (map[int][]dedupMatchedCompany, error)
 	FindByNameSimilarity(ctx context.Context, names []string, recencyDays int32) (map[int][]dedupMatchedCompany, error)
+}
+
+func (s poolDedupSource) FindByCareersURLHost(ctx context.Context, careersURLs []string, recencyDays int32) (map[int][]dedupMatchedCompany, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, statementTimeout)
+	defer cancel()
+
+	rows, err := db.New(s.pool).FindCompaniesByCareersURLHost(queryCtx, db.FindCompaniesByCareersURLHostParams{
+		RecencyDays:   recencyDays,
+		CandidateUrls: careersURLs,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	matches := make(map[int][]dedupMatchedCompany, len(rows))
+	for _, row := range rows {
+		inputIndex := int(row.InputIndex) - 1
+		matches[inputIndex] = append(matches[inputIndex], dedupMatchedCompany{
+			ID:                row.CompanyID,
+			Name:              row.Name,
+			ATS:               row.Ats,
+			BoardToken:        row.BoardToken,
+			Industry:          nullStringPtr(row.Industry),
+			CareersPageURL:    nullStringPtr(row.CareersPageUrl),
+			HasRecentSnapshot: row.HasRecentSnapshot,
+		})
+	}
+	return matches, nil
 }
 
 func (s poolDedupSource) FindByNameSimilarity(ctx context.Context, names []string, recencyDays int32) (map[int][]dedupMatchedCompany, error) {
@@ -232,6 +263,10 @@ func runDedupCandidates(ctx context.Context, req dedupCandidatesRequest, source 
 		name := strings.TrimSpace(candidate.Name)
 		ats := strings.TrimSpace(candidate.ATS)
 		boardToken := strings.TrimSpace(candidate.BoardToken)
+		careersURL := strings.TrimSpace(candidate.CareersURL)
+		if careersURL != "" && atsdetect.ValidateURL(careersURL) != nil {
+			careersURL = ""
+		}
 		results[i] = dedupCandidateResult{
 			Name:       name,
 			ATS:        ats,
@@ -272,6 +307,10 @@ func runDedupCandidates(ctx context.Context, req dedupCandidatesRequest, source 
 				continue
 			}
 		}
+
+		// Task 3 consumes this validated optional signal when it assembles the
+		// independent batched domain lookup alongside exact-name matching.
+		_ = careersURL
 
 		nameLookupResultIndexes = append(nameLookupResultIndexes, i)
 		nameLookupNames = append(nameLookupNames, name)

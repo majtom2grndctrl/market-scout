@@ -200,7 +200,7 @@ func newMCPServer(pools dbPools) *server.MCPServer {
 		mcp.WithDescription("Classify discovered company candidates as new, duplicate, stale, or invalid without probing, writing, or opening a browser."),
 		mcp.WithArray("candidates",
 			mcp.Required(),
-			mcp.Description("Candidate companies to classify, in order. Max 200. Each item has required name and optional ats/board_token."),
+			mcp.Description("Candidate companies to classify, in order. Max 200. Each item has required name and optional ats/board_token/careers_url."),
 			mcp.MaxItems(dedupMaxCandidates),
 			mcp.Items(map[string]any{
 				"type": "object",
@@ -208,6 +208,7 @@ func newMCPServer(pools dbPools) *server.MCPServer {
 					"name":        map[string]any{"type": "string", "description": "Company display name."},
 					"ats":         map[string]any{"type": "string", "description": "Optional ATS key when already known."},
 					"board_token": map[string]any{"type": "string", "description": "Optional ATS board token when already known."},
+					"careers_url": map[string]any{"type": "string", "description": "Optional absolute http(s) careers-page URL used for host matching."},
 				},
 				"required": []string{"name"},
 			}),

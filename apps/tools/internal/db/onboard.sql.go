@@ -12,6 +12,93 @@ import (
 	"github.com/lib/pq"
 )
 
+const findCompaniesByCareersURLHost = `-- name: FindCompaniesByCareersURLHost :many
+SELECT
+    candidate_urls.input_index,
+    c.id AS company_id,
+    c.name,
+    c.ats,
+    c.board_token,
+    c.industry,
+    c.careers_page_url,
+    EXISTS (
+        SELECT 1
+        FROM job_postings jp
+        JOIN posting_snapshots ps ON ps.job_posting_id = jp.id
+        WHERE jp.company_id = c.id
+          AND ps.fetched_at >= now() - make_interval(days => $1::int)
+    ) AS has_recent_snapshot
+FROM (
+    SELECT
+        ordinality::int AS input_index,
+        lower(regexp_replace(url, '^https?://(www\.)?([^/]+).*$', '\2')) AS careers_url_host
+    FROM unnest($2::text[]) WITH ORDINALITY AS raw_urls(url, ordinality)
+) candidate_urls
+JOIN (
+    SELECT
+        id,
+        name,
+        ats,
+        board_token,
+        industry,
+        careers_page_url,
+        lower(regexp_replace(careers_page_url, '^https?://(www\.)?([^/]+).*$', '\2')) AS careers_url_host
+    FROM companies
+) c ON c.careers_url_host = candidate_urls.careers_url_host
+ORDER BY candidate_urls.input_index, c.id
+`
+
+type FindCompaniesByCareersURLHostParams struct {
+	RecencyDays   int32
+	CandidateUrls []string
+}
+
+type FindCompaniesByCareersURLHostRow struct {
+	InputIndex        int32
+	CompanyID         int64
+	Name              string
+	Ats               string
+	BoardToken        string
+	Industry          sql.NullString
+	CareersPageUrl    sql.NullString
+	HasRecentSnapshot bool
+}
+
+// Given a batch of candidate careers URLs, returns companies whose careers-page
+// host matches after lowercasing and removing an optional www prefix.
+// input_index is 1-based, matching WITH ORDINALITY from the input array.
+func (q *Queries) FindCompaniesByCareersURLHost(ctx context.Context, arg FindCompaniesByCareersURLHostParams) ([]FindCompaniesByCareersURLHostRow, error) {
+	rows, err := q.db.QueryContext(ctx, findCompaniesByCareersURLHost, arg.RecencyDays, pq.Array(arg.CandidateUrls))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindCompaniesByCareersURLHostRow
+	for rows.Next() {
+		var i FindCompaniesByCareersURLHostRow
+		if err := rows.Scan(
+			&i.InputIndex,
+			&i.CompanyID,
+			&i.Name,
+			&i.Ats,
+			&i.BoardToken,
+			&i.Industry,
+			&i.CareersPageUrl,
+			&i.HasRecentSnapshot,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findCompaniesByNameSimilarity = `-- name: FindCompaniesByNameSimilarity :many
 WITH candidate_names AS (
     SELECT
