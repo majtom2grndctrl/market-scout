@@ -17,8 +17,10 @@ import (
 )
 
 const (
-	dedupDefaultRecencyDays           = 30
-	dedupMaxCandidates                = 200
+	dedupDefaultRecencyDays = 30
+	dedupMaxCandidates      = 200
+	// Short company names make trigram matches noisy, so use a stricter threshold
+	// than pg_trgm's 0.3 default.
 	dedupFuzzyNameSimilarityThreshold = 0.4
 
 	dedupVerdictNew       = "new"
