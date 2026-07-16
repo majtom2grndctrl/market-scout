@@ -43,8 +43,16 @@ func TestFindCompaniesByCareersURLHost_MatchesNormalizedHostname(t *testing.T) {
 		INSERT INTO companies (name, ats, board_token, careers_page_url)
 		VALUES ($1, $2, $3, $4)
 		RETURNING id
-	`, "MS Domain "+suffix, "greenhouse", "dedup-domain-"+suffix, "https://WWW."+host+":8443/careers?team=eng#openings").Scan(&companyID); err != nil {
+	`, "MS Domain "+suffix, "greenhouse", "dedup-domain-"+suffix, "https://user:pass@WWW."+host+":8443/careers?team=eng#openings").Scan(&companyID); err != nil {
 		t.Fatalf("insert company: %v", err)
+	}
+	var ipv6CompanyID int64
+	if err := tx.QueryRowContext(ctx, `
+		INSERT INTO companies (name, ats, board_token, careers_page_url)
+		VALUES ($1, $2, $3, $4)
+		RETURNING id
+	`, "MS IPv6 "+suffix, "greenhouse", "dedup-ipv6-"+suffix, "https://user@[2001:DB8::1]:8443/careers").Scan(&ipv6CompanyID); err != nil {
+		t.Fatalf("insert IPv6 company: %v", err)
 	}
 
 	candidateURLs := []string{
@@ -53,7 +61,10 @@ func TestFindCompaniesByCareersURLHost_MatchesNormalizedHostname(t *testing.T) {
 		"https://" + host + "?team=eng",
 		"https://" + host + "#openings",
 		"https://" + host + ":9443/jobs",
+		"https://candidate:secret@" + host + "/jobs",
 		"https://unmatched.example/jobs",
+		"http://[2001:db8::1]/jobs",
+		"https://candidate@[2001:DB8::1]:9443/jobs?team=eng#openings",
 	}
 	rows, err := db.New(tx).FindCompaniesByCareersURLHost(ctx, db.FindCompaniesByCareersURLHostParams{
 		RecencyDays:   30,
@@ -62,13 +73,25 @@ func TestFindCompaniesByCareersURLHost_MatchesNormalizedHostname(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FindCompaniesByCareersURLHost: %v", err)
 	}
-	if len(rows) != 5 {
-		t.Fatalf("len(rows) = %d, want 5; rows=%+v", len(rows), rows)
+	if len(rows) != 8 {
+		t.Fatalf("len(rows) = %d, want 8; rows=%+v", len(rows), rows)
+	}
+	want := []struct {
+		inputIndex int32
+		companyID  int64
+	}{
+		{1, companyID},
+		{2, companyID},
+		{3, companyID},
+		{4, companyID},
+		{5, companyID},
+		{6, companyID},
+		{8, ipv6CompanyID},
+		{9, ipv6CompanyID},
 	}
 	for i, row := range rows {
-		wantInputIndex := int32(i + 1)
-		if row.InputIndex != wantInputIndex || row.CompanyID != companyID {
-			t.Fatalf("rows[%d] = %+v, want input_index=%d company_id=%d", i, row, wantInputIndex, companyID)
+		if row.InputIndex != want[i].inputIndex || row.CompanyID != want[i].companyID {
+			t.Fatalf("rows[%d] = %+v, want input_index=%d company_id=%d", i, row, want[i].inputIndex, want[i].companyID)
 		}
 		if row.HasRecentSnapshot {
 			t.Fatalf("rows[%d].HasRecentSnapshot = true, want false", i)

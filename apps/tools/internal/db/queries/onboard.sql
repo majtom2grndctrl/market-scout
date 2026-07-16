@@ -73,7 +73,9 @@ ORDER BY candidate_names.input_index, c.id;
 
 -- name: FindCompaniesByCareersURLHost :many
 -- Given a batch of candidate careers URLs, returns companies whose careers-page
--- host matches after lowercasing and removing an optional www prefix.
+-- hostname identity matches after lowercasing and removing an optional www prefix.
+-- Scheme, credentials, port, path, query, and fragment are deliberately ignored
+-- so careers URLs on the same site converge.
 -- input_index is 1-based, matching WITH ORDINALITY from the input array.
 SELECT
     candidate_urls.input_index,
@@ -93,7 +95,7 @@ SELECT
 FROM (
     SELECT
         ordinality::int AS input_index,
-        lower((regexp_match(url, '^https?://(?:www\.)?([^/:?#]+)(?::[0-9]+)?(?:[/?#]|$)', 'i'))[1]) AS careers_url_host
+        lower((regexp_match(url, '^https?://(?:[^/?#@]*@)?(?:www\.)?(\[[^]]+\]|[^/:?#]+)(?::[0-9]+)?(?:[/?#]|$)', 'i'))[1]) AS careers_url_host
     FROM unnest(@candidate_urls::text[]) WITH ORDINALITY AS raw_urls(url, ordinality)
 ) candidate_urls
 JOIN (
@@ -104,7 +106,7 @@ JOIN (
         board_token,
         industry,
         careers_page_url,
-        lower((regexp_match(careers_page_url, '^https?://(?:www\.)?([^/:?#]+)(?::[0-9]+)?(?:[/?#]|$)', 'i'))[1]) AS careers_url_host
+        lower((regexp_match(careers_page_url, '^https?://(?:[^/?#@]*@)?(?:www\.)?(\[[^]]+\]|[^/:?#]+)(?::[0-9]+)?(?:[/?#]|$)', 'i'))[1]) AS careers_url_host
     FROM companies
 ) c ON c.careers_url_host = candidate_urls.careers_url_host
 ORDER BY candidate_urls.input_index, c.id;
@@ -113,6 +115,9 @@ ORDER BY candidate_urls.input_index, c.id;
 -- Given a batch of raw candidate names, returns companies whose normalized
 -- names meet the caller's trigram-similarity threshold. input_index is 1-based,
 -- matching WITH ORDINALITY from the input array.
+-- SQL returns every above-threshold row ordered by score. Go caps presentation
+-- at three matches while preserving the uncapped distinct match count, so this
+-- query must not add a LIMIT.
 WITH candidate_names AS (
     SELECT
         ordinality::int AS input_index,
