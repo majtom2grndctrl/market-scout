@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -25,14 +26,18 @@ const (
 	dedupVerdictStale     = "stale"
 	dedupVerdictInvalid   = "invalid"
 
-	dedupMatchKindNone     = "none"
-	dedupMatchKindToken    = "token"
-	dedupMatchKindNameOnly = "name_only"
+	dedupMatchKindNone      = "none"
+	dedupMatchKindToken     = "token"
+	dedupMatchKindNameOnly  = "name_only"
+	dedupMatchKindDomain    = "domain"
+	dedupMatchKindFuzzyName = "fuzzy_name"
 
 	dedupReasonNoMatch              = "no_match"
 	dedupReasonMatchedByTokenRecent = "matched_by_token_with_recent_snapshot"
 	dedupReasonMatchedByTokenStale  = "matched_by_token_without_recent_snapshot"
 	dedupReasonMatchedByNameOnly    = "matched_by_name_only"
+	dedupReasonMatchedByDomain      = "matched_by_domain"
+	dedupReasonMatchedByFuzzyName   = "matched_by_fuzzy_name"
 	dedupReasonMissingRequiredName  = "missing_required_name"
 	codeInvalidRecencyDays          = "invalid_recency_days"
 	codeTooManyCandidates           = "too_many_candidates"
@@ -258,6 +263,8 @@ func runDedupCandidates(ctx context.Context, req dedupCandidatesRequest, source 
 	results := make([]dedupCandidateResult, len(req.Candidates))
 	var nameLookupNames []string
 	var nameLookupResultIndexes []int
+	var domainLookupURLs []string
+	var domainLookupResultIndexes []int
 
 	for i, candidate := range req.Candidates {
 		name := strings.TrimSpace(candidate.Name)
@@ -293,6 +300,7 @@ func runDedupCandidates(ctx context.Context, req dedupCandidatesRequest, source 
 				return dedupCandidatesDBFailure(err)
 			}
 			if match != nil {
+				match.MatchKind = dedupMatchKindToken
 				results[i].Matched = match
 				results[i].MatchCount = 1
 				results[i].Matches = []dedupMatchedCompany{*match}
@@ -308,32 +316,77 @@ func runDedupCandidates(ctx context.Context, req dedupCandidatesRequest, source 
 			}
 		}
 
-		// Task 3 consumes this validated optional signal when it assembles the
-		// independent batched domain lookup alongside exact-name matching.
-		_ = careersURL
-
 		nameLookupResultIndexes = append(nameLookupResultIndexes, i)
 		nameLookupNames = append(nameLookupNames, name)
+		if careersURL != "" {
+			domainLookupResultIndexes = append(domainLookupResultIndexes, i)
+			domainLookupURLs = append(domainLookupURLs, careersURL)
+		}
 	}
 
+	nameMatches := map[int][]dedupMatchedCompany{}
 	if len(nameLookupNames) > 0 {
-		matches, err := source.FindByNames(ctx, nameLookupNames, int32(recencyDays))
+		var err error
+		nameMatches, err = source.FindByNames(ctx, nameLookupNames, int32(recencyDays))
 		if err != nil {
 			return dedupCandidatesDBFailure(err)
 		}
-		// Names collide across real companies, so name-only matches are never silent duplicates.
-		// Recency is returned as evidence, but the verdict stays stale.
-		for lookupIndex, resultIndex := range nameLookupResultIndexes {
-			if matchRows := matches[lookupIndex]; len(matchRows) > 0 {
-				results[resultIndex].Verdict = dedupVerdictStale
-				results[resultIndex].MatchKind = dedupMatchKindNameOnly
-				results[resultIndex].Reason = dedupReasonMatchedByNameOnly
-				results[resultIndex].Matched = &matchRows[0]
-				results[resultIndex].MatchCount = len(matchRows)
-				results[resultIndex].Matches = matchRows
-			} else {
-				results[resultIndex].Verdict = dedupVerdictNew
-				results[resultIndex].Reason = dedupReasonNoMatch
+	}
+
+	domainMatches := map[int][]dedupMatchedCompany{}
+	if len(domainLookupURLs) > 0 {
+		var err error
+		domainMatches, err = source.FindByCareersURLHost(ctx, domainLookupURLs, int32(recencyDays))
+		if err != nil {
+			return dedupCandidatesDBFailure(err)
+		}
+	}
+
+	matchesByResult := make(map[int][]dedupMatchedCompany, len(nameLookupResultIndexes))
+	matchPositions := make(map[int]map[int64]int, len(nameLookupResultIndexes))
+	for lookupIndex, resultIndex := range nameLookupResultIndexes {
+		mergeDedupMatches(matchesByResult, matchPositions, resultIndex, nameMatches[lookupIndex], dedupMatchKindNameOnly)
+	}
+	for lookupIndex, resultIndex := range domainLookupResultIndexes {
+		mergeDedupMatches(matchesByResult, matchPositions, resultIndex, domainMatches[lookupIndex], dedupMatchKindDomain)
+	}
+
+	var fuzzyLookupNames []string
+	var fuzzyLookupResultIndexes []int
+	for lookupIndex, resultIndex := range nameLookupResultIndexes {
+		if len(matchesByResult[resultIndex]) == 0 {
+			fuzzyLookupNames = append(fuzzyLookupNames, nameLookupNames[lookupIndex])
+			fuzzyLookupResultIndexes = append(fuzzyLookupResultIndexes, resultIndex)
+		}
+	}
+
+	if len(fuzzyLookupNames) > 0 {
+		fuzzyMatches, err := source.FindByNameSimilarity(ctx, fuzzyLookupNames, int32(recencyDays))
+		if err != nil {
+			return dedupCandidatesDBFailure(err)
+		}
+		for lookupIndex, resultIndex := range fuzzyLookupResultIndexes {
+			mergeDedupMatches(matchesByResult, matchPositions, resultIndex, fuzzyMatches[lookupIndex], dedupMatchKindFuzzyName)
+		}
+	}
+
+	for _, resultIndex := range nameLookupResultIndexes {
+		allMatches := matchesByResult[resultIndex]
+		if len(allMatches) == 0 {
+			results[resultIndex].Verdict = dedupVerdictNew
+			results[resultIndex].Reason = dedupReasonNoMatch
+			continue
+		}
+
+		results[resultIndex].Verdict = dedupVerdictStale
+		results[resultIndex].MatchCount = len(allMatches)
+		results[resultIndex].Matches = capDedupFuzzyMatches(allMatches, 3)
+		results[resultIndex].MatchKind = strongestDedupMatchKind(allMatches)
+		results[resultIndex].Reason = dedupReasonForMatchKind(results[resultIndex].MatchKind)
+		for matchIndex := range results[resultIndex].Matches {
+			if results[resultIndex].Matches[matchIndex].MatchKind == results[resultIndex].MatchKind {
+				results[resultIndex].Matched = &results[resultIndex].Matches[matchIndex]
+				break
 			}
 		}
 	}
@@ -342,6 +395,89 @@ func runDedupCandidates(ctx context.Context, req dedupCandidatesRequest, source 
 		Ok:      true,
 		Results: results,
 		Errors:  []actionError{},
+	}
+}
+
+func mergeDedupMatches(matchesByResult map[int][]dedupMatchedCompany, positionsByResult map[int]map[int64]int, resultIndex int, rows []dedupMatchedCompany, matchKind string) {
+	positions := positionsByResult[resultIndex]
+	if positions == nil {
+		positions = make(map[int64]int)
+		positionsByResult[resultIndex] = positions
+	}
+	for _, row := range rows {
+		row.MatchKind = matchKind
+		position, exists := positions[row.ID]
+		if exists {
+			if dedupMatchKindPriority(matchKind) > dedupMatchKindPriority(matchesByResult[resultIndex][position].MatchKind) {
+				matchesByResult[resultIndex][position] = row
+			}
+			continue
+		}
+		positions[row.ID] = len(matchesByResult[resultIndex])
+		matchesByResult[resultIndex] = append(matchesByResult[resultIndex], row)
+	}
+}
+
+func capDedupFuzzyMatches(matches []dedupMatchedCompany, cap int) []dedupMatchedCompany {
+	nonFuzzy := make([]dedupMatchedCompany, 0, len(matches))
+	fuzzy := make([]dedupMatchedCompany, 0, len(matches))
+	for _, match := range matches {
+		if match.MatchKind == dedupMatchKindFuzzyName {
+			fuzzy = append(fuzzy, match)
+		} else {
+			nonFuzzy = append(nonFuzzy, match)
+		}
+	}
+	sort.SliceStable(fuzzy, func(i, j int) bool {
+		if fuzzy[i].SimilarityScore == nil {
+			return false
+		}
+		if fuzzy[j].SimilarityScore == nil {
+			return true
+		}
+		return *fuzzy[i].SimilarityScore > *fuzzy[j].SimilarityScore
+	})
+	if len(fuzzy) > cap {
+		fuzzy = fuzzy[:cap]
+	}
+	return append(nonFuzzy, fuzzy...)
+}
+
+func strongestDedupMatchKind(matches []dedupMatchedCompany) string {
+	strongest := dedupMatchKindNone
+	for _, match := range matches {
+		if dedupMatchKindPriority(match.MatchKind) > dedupMatchKindPriority(strongest) {
+			strongest = match.MatchKind
+		}
+	}
+	return strongest
+}
+
+func dedupMatchKindPriority(matchKind string) int {
+	switch matchKind {
+	case dedupMatchKindToken:
+		return 4
+	case dedupMatchKindDomain:
+		return 3
+	case dedupMatchKindNameOnly:
+		return 2
+	case dedupMatchKindFuzzyName:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func dedupReasonForMatchKind(matchKind string) string {
+	switch matchKind {
+	case dedupMatchKindDomain:
+		return dedupReasonMatchedByDomain
+	case dedupMatchKindNameOnly:
+		return dedupReasonMatchedByNameOnly
+	case dedupMatchKindFuzzyName:
+		return dedupReasonMatchedByFuzzyName
+	default:
+		return dedupReasonNoMatch
 	}
 }
 

@@ -107,6 +107,7 @@ func TestRunDedupCandidates_TokenMatchMapsRecencyToVerdict(t *testing.T) {
 				ATS:               "greenhouse",
 				BoardToken:        "acme",
 				HasRecentSnapshot: tc.hasRecentSnapshot,
+				MatchKind:         dedupMatchKindToken,
 			}
 			source := &fakeDedupSource{
 				tokenMatches: map[string]dedupMatchedCompany{
@@ -161,6 +162,7 @@ func TestRunDedupCandidates_NameMatchMapsToStaleWithAllMatchedCompanies(t *testi
 		ATS:               "ashby",
 		BoardToken:        "acme-inc",
 		HasRecentSnapshot: true,
+		MatchKind:         dedupMatchKindNameOnly,
 	}
 	secondary := dedupMatchedCompany{
 		ID:                93,
@@ -168,6 +170,7 @@ func TestRunDedupCandidates_NameMatchMapsToStaleWithAllMatchedCompanies(t *testi
 		ATS:               "greenhouse",
 		BoardToken:        "acme",
 		HasRecentSnapshot: false,
+		MatchKind:         dedupMatchKindNameOnly,
 	}
 	source := &fakeDedupSource{
 		nameMatches: map[int][]dedupMatchedCompany{
@@ -271,6 +274,7 @@ func TestRunDedupCandidates_InvalidNameReturnsInvalidResultAndKeepsSiblings(t *t
 		ATS:               "greenhouse",
 		BoardToken:        "acme",
 		HasRecentSnapshot: true,
+		MatchKind:         dedupMatchKindToken,
 	}
 	source := &fakeDedupSource{
 		tokenMatches: map[string]dedupMatchedCompany{
@@ -419,6 +423,141 @@ func TestRunDedupCandidates_RejectsNonPositiveRecencyDays(t *testing.T) {
 	}
 }
 
+func TestRunDedupCandidates_BatchesNameAndDomainIndependentlyThenSkipsFuzzy(t *testing.T) {
+	source := &fakeDedupSource{
+		nameMatches:   map[int][]dedupMatchedCompany{0: {{ID: 1, Name: "Same Name"}}},
+		domainMatches: map[int][]dedupMatchedCompany{0: {{ID: 2, Name: "Domain Company"}}},
+	}
+
+	env := runDedupCandidates(t.Context(), dedupCandidatesRequest{Candidates: []dedupCandidateInput{
+		{Name: "Same Name", CareersURL: "https://www.example.com/jobs"},
+		{Name: "No URL"},
+	}}, source)
+
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
+	}
+	assertDedupNameCalls(t, source.nameCalls, []fakeDedupNameCall{{
+		Names: []string{"Same Name", "No URL"}, RecencyDays: dedupDefaultRecencyDays,
+	}})
+	if !reflect.DeepEqual(source.domainCalls, []fakeDedupDomainCall{{
+		CareersURLs: []string{"https://www.example.com/jobs"}, RecencyDays: dedupDefaultRecencyDays,
+	}}) {
+		t.Fatalf("domain calls = %+v", source.domainCalls)
+	}
+	if !reflect.DeepEqual(source.similarityCalls, []fakeDedupSimilarityCall{{
+		Names: []string{"No URL"}, RecencyDays: dedupDefaultRecencyDays,
+	}}) {
+		t.Fatalf("similarity calls = %+v", source.similarityCalls)
+	}
+	got := env.Results[0]
+	if got.MatchKind != dedupMatchKindDomain || got.Reason != dedupReasonMatchedByDomain || got.Verdict != dedupVerdictStale {
+		t.Fatalf("result = %+v, want stale domain result", got)
+	}
+	if got.MatchCount != 2 || len(got.Matches) != 2 || got.Matched == nil || got.Matched.ID != 2 {
+		t.Fatalf("result matches = %+v, want union with domain primary", got)
+	}
+	if got.Matches[0].MatchKind != dedupMatchKindNameOnly || got.Matches[1].MatchKind != dedupMatchKindDomain {
+		t.Fatalf("match kinds = %+v, want stamped name/domain", got.Matches)
+	}
+}
+
+func TestRunDedupCandidates_MergesSameCompanyAtStrongestPriority(t *testing.T) {
+	source := &fakeDedupSource{
+		nameMatches:   map[int][]dedupMatchedCompany{0: {{ID: 7, Name: "Acme by name"}}},
+		domainMatches: map[int][]dedupMatchedCompany{0: {{ID: 7, Name: "Acme by domain"}}},
+	}
+
+	env := runDedupCandidates(t.Context(), dedupCandidatesRequest{Candidates: []dedupCandidateInput{{
+		Name: "Acme", CareersURL: "https://acme.example/careers",
+	}}}, source)
+
+	got := env.Results[0]
+	if got.MatchCount != 1 || len(got.Matches) != 1 {
+		t.Fatalf("matches = count %d rows %+v, want one distinct company", got.MatchCount, got.Matches)
+	}
+	if got.Matches[0].MatchKind != dedupMatchKindDomain || got.Matches[0].Name != "Acme by domain" {
+		t.Fatalf("match = %+v, want domain row retained", got.Matches[0])
+	}
+}
+
+func TestRunDedupCandidates_InvalidCareersURLIgnoredWithoutBlockingOtherSignals(t *testing.T) {
+	source := &fakeDedupSource{nameMatches: map[int][]dedupMatchedCompany{0: {{ID: 9, Name: "Acme"}}}}
+
+	env := runDedupCandidates(t.Context(), dedupCandidatesRequest{Candidates: []dedupCandidateInput{{
+		Name: "Acme", CareersURL: "://invalid",
+	}}}, source)
+
+	if !env.Ok || env.Results[0].MatchKind != dedupMatchKindNameOnly {
+		t.Fatalf("env = %+v, want successful name match", env)
+	}
+	if len(source.domainCalls) != 0 {
+		t.Fatalf("domain calls = %+v, want none for invalid URL", source.domainCalls)
+	}
+}
+
+func TestRunDedupCandidates_FuzzyFallbackCapsReturnedRowsAfterTrueDistinctCount(t *testing.T) {
+	scores := []float64{0.41, 0.92, 0.63, 0.81, 0.7}
+	rows := make([]dedupMatchedCompany, len(scores))
+	for i := range scores {
+		rows[i] = dedupMatchedCompany{ID: int64(i + 1), Name: fmt.Sprintf("Acme %d", i), SimilarityScore: &scores[i]}
+	}
+	source := &fakeDedupSource{similarityMatches: map[int][]dedupMatchedCompany{0: rows}}
+
+	env := runDedupCandidates(t.Context(), dedupCandidatesRequest{Candidates: []dedupCandidateInput{{Name: "Acme"}}}, source)
+
+	got := env.Results[0]
+	if got.Verdict != dedupVerdictStale || got.MatchKind != dedupMatchKindFuzzyName || got.Reason != dedupReasonMatchedByFuzzyName {
+		t.Fatalf("result = %+v, want stale fuzzy result", got)
+	}
+	if got.MatchCount != 5 || len(got.Matches) != 3 {
+		t.Fatalf("matches = count %d rows %d, want true count 5 and cap 3", got.MatchCount, len(got.Matches))
+	}
+	wantScores := []float64{0.92, 0.81, 0.7}
+	for i, want := range wantScores {
+		if got.Matches[i].MatchKind != dedupMatchKindFuzzyName || got.Matches[i].SimilarityScore == nil || *got.Matches[i].SimilarityScore != want {
+			t.Fatalf("matches[%d] = %+v, want fuzzy score %v", i, got.Matches[i], want)
+		}
+	}
+}
+
+func TestRunDedupCandidates_TokenShortCircuitSkipsAllBatchSignals(t *testing.T) {
+	source := &fakeDedupSource{tokenMatches: map[string]dedupMatchedCompany{
+		dedupTokenKey("greenhouse", "acme"): {ID: 1, Name: "Acme", HasRecentSnapshot: true},
+	}}
+
+	env := runDedupCandidates(t.Context(), dedupCandidatesRequest{Candidates: []dedupCandidateInput{{
+		Name: "Acme", ATS: "greenhouse", BoardToken: "acme", CareersURL: "https://acme.example/jobs",
+	}}}, source)
+
+	if env.Results[0].Verdict != dedupVerdictDuplicate || env.Results[0].Matches[0].MatchKind != dedupMatchKindToken {
+		t.Fatalf("result = %+v, want token duplicate", env.Results[0])
+	}
+	if len(source.nameCalls)+len(source.domainCalls)+len(source.similarityCalls) != 0 {
+		t.Fatalf("batch calls after token match: names=%+v domains=%+v fuzzy=%+v", source.nameCalls, source.domainCalls, source.similarityCalls)
+	}
+}
+
+func TestRunDedupCandidates_EachBatchLookupErrorFailsTheCall(t *testing.T) {
+	tests := []struct {
+		name   string
+		source *fakeDedupSource
+		input  dedupCandidateInput
+	}{
+		{"name", &fakeDedupSource{nameErr: errors.New("name failed")}, dedupCandidateInput{Name: "Acme"}},
+		{"domain", &fakeDedupSource{domainErr: errors.New("domain failed")}, dedupCandidateInput{Name: "Acme", CareersURL: "https://acme.example/jobs"}},
+		{"fuzzy", &fakeDedupSource{similarityErr: errors.New("fuzzy failed")}, dedupCandidateInput{Name: "Acme"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			env := runDedupCandidates(t.Context(), dedupCandidatesRequest{Candidates: []dedupCandidateInput{tc.input}}, tc.source)
+			if env.Ok || len(env.Results) != 0 || !hasError(env.Errors, "db", codeDBError) {
+				t.Fatalf("env = %+v, want call-level DB failure", env)
+			}
+		})
+	}
+}
+
 func TestDedupCandidatesHandlerWithDeps_ResponseMapping(t *testing.T) {
 	recencyDays := 12
 	match := dedupMatchedCompany{
@@ -427,6 +566,7 @@ func TestDedupCandidatesHandlerWithDeps_ResponseMapping(t *testing.T) {
 		ATS:               "workday",
 		BoardToken:        "example.wd5.myworkdayjobs.com/Careers",
 		HasRecentSnapshot: false,
+		MatchKind:         dedupMatchKindToken,
 	}
 	source := &fakeDedupSource{
 		tokenMatches: map[string]dedupMatchedCompany{
