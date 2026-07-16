@@ -31,15 +31,19 @@ Required fields:
 
 ### Dedup
 
-Before visiting any careers pages, query the `companies` table for the candidate names. Normalize both sides: strip punctuation and whitespace, lowercase, compare for equality. Substring matches are not duplicates.
+Before browser work, call `dedup_candidates`. It checks four signals in priority order: exact `(ats, board_token)`, careers-page domain, exact normalized name, then fuzzy normalized name. Name normalization strips punctuation and whitespace and lowercases both sides. Substring matches are not exact-name matches.
 
-For manual or sidecar review, retain enough context to disambiguate: name, ATS, board token, industry, and careers page URL. Names collide across unrelated companies. Disambiguate using ATS board URL plus industry — the board URL is the strongest signal. `dedup_candidates` returns matched company identity, `match_count`, all name-match rows, `match_kind`, and `reason`; use those fields to decide whether to drop, review, or investigate a candidate.
+Domain matching compares normalized hosts from candidate and stored careers-page URLs. An invalid candidate careers URL is treated as absent; token and name matching still run. Fuzzy matching is a last resort when exact name and domain find no match. It uses trigram similarity with a `0.4` threshold.
+
+For manual or sidecar review, retain enough context to disambiguate: name, ATS, board token, industry, and careers page URL. Names and domains can collide across unrelated companies. `dedup_candidates` returns matched company identity, `match_count`, `matches`, `match_kind`, and `reason`. When signals converge on one company, its strongest signal wins: `token > domain > name_only > fuzzy_name`.
 
 **Skip rule.** A candidate is a duplicate when the DB already has a company with the same `(ats, board_token)` pair and a `posting_snapshots` row within the last 30 days. `(ats, board_token)` is the DB's unique constraint and the strongest dedup signal; name is used to surface matches for human inspection but is not part of the dedup tuple. Drop confirmed duplicates.
 
 **Recency threshold.** "Recent postings" means at least one `posting_snapshots` row for any of the company's job postings with `fetched_at` within the last 30 days. A company with an `(ats, board_token)` match but no snapshot within 30 days is stale.
 
-**Name-only matches.** A normalized name match is stale even when the matched company has recent postings. The MCP result includes `match_kind` and `reason`; use those fields to distinguish token duplicates from name-only review cases.
+**Review-only matches.** Exact-name, domain, and fuzzy-name matches are stale even when the matched company has recent postings. They never silently produce a duplicate verdict. Use `match_kind` and `reason` to distinguish these review cases from token duplicates.
+
+**Fuzzy result cap.** At most the top three fuzzy-name matches are returned, ordered by similarity. `match_count` preserves the true distinct-company count across all signals before that cap.
 
 **Stale matches.** A match whose DB row has no recent postings, a non-matching ATS, or a domain that no longer resolves is *not* a dedup case — it is a merge problem. Flag with the `stale-needs-merge` status (see annotation section) for human review. Merging stale DB rows with fresh research is out of scope for the onboarding pass.
 
