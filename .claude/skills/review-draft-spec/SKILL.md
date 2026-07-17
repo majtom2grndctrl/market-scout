@@ -46,6 +46,7 @@ Receives:
   - Scope-boundary violations
   - Plumbing handwaves — "edit X to do Y" without stating how X gets access
   - Missing wire-format or FFI pins
+  - Task prose violating `style-guide.md` §Task Instructions — multi-constraint sentences, parenthetical constraint-stacking, prohibitions scattered inline instead of one Do-not list. Implementing models lossy-compress dense prose. Severity: Complicates.
   - Anything else that forces an implementer to guess
 
 Output: list of `{ location, problem, fix }` triples. "No issues found" if clean. No padding, no praise.
@@ -74,7 +75,7 @@ Then split into two buckets:
 
 | Bucket | Examples | Default action |
 |---|---|---|
-| Mechanical | Casing fix, missing AC bullet, wire-format pin, deletion of stale phrase | Auto-apply via Sonnet (unless `--no-auto-apply`) |
+| Mechanical | Casing fix, missing AC bullet, wire-format pin, deletion of stale phrase, decomposing a multi-constraint sentence into bullets | Auto-apply via Sonnet (unless `--no-auto-apply`) |
 | Architectural | Reshape a contract, decide between two paths, change scope | Surface to caller; do not auto-apply |
 
 Triage is a 30-second judgment, not a heuristic. Make the call inline. Don't delegate it to a sub-agent.
@@ -91,10 +92,10 @@ After the agent reports back, re-read the spec to confirm edits landed.
 
 | Outcome | Recommendation |
 |---|---|
-| No findings, or only nits already auto-applied | Promote to `ready/` |
+| No findings, or only nits already auto-applied | Run `/review-implementability`, then promote to `ready/` |
 | Mechanical fixes applied, no architectural findings | Re-run this skill once to verify fixes are clean |
 | Architectural findings present | Surface to caller with locations and suggested directions. Do not auto-apply. Do not recommend promotion. |
-| Findings only emerge from source-reading; spec text alone reveals nothing | Spec has hit diminishing returns. Promote. |
+| Findings only emerge from source-reading; spec text alone reveals nothing | Spec has hit diminishing returns. Run `/review-implementability`, then promote. |
 
 Last row is the explicit stopping rule.
 
