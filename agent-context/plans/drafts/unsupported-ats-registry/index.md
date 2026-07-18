@@ -2,7 +2,7 @@
 
 ## Goal
 
-Persist companies with a known-unsupported ATS, or no discoverable careers page, so `dedup_candidates` can warn agents off re-investigating them in the browser. Surfaced as informational metadata only — never a hard skip — matching the Deterministic trust tier the rest of `dedup_candidates` already holds itself to.
+Persist companies with a known-unsupported ATS, or no discoverable careers page, so `dedup_candidates` can warn agents off re-investigating them in the browser. Surfaced as informational metadata only — never a hard skip — consistent with the trust-tier discipline the rest of `dedup_candidates` already holds itself to. Each `reason` carries its own tier (see Task 4): `unsupported_ats` is Deterministic, `no_careers` is Agent-asserted.
 
 ## Scope
 
@@ -34,9 +34,40 @@ Persist companies with a known-unsupported ATS, or no discoverable careers page,
 
 ### Task 1: Unsupported companies table and write path
 
-- Add a migration creating `unsupported_companies` and a functional unique index on `lower(regexp_replace(name, '[^[:alnum:]]', '', 'g'))` — the same normalization `FindCompaniesByNormalizedNames` uses (see Rough sketch for exact DDL). Reusing it keeps write-time and read-time identity checks consistent.
+- Add a migration creating `unsupported_companies` and a functional unique index on the same normalization `FindCompaniesByNormalizedNames` uses. Reusing it keeps write-time and read-time identity checks consistent.
+
+  ```sql
+  CREATE TABLE unsupported_companies (
+      id                bigserial PRIMARY KEY,
+      name              text NOT NULL,
+      url               text,
+      detected_platform text,
+      reason            text NOT NULL CHECK (reason IN ('unsupported_ats', 'no_careers')),
+      first_seen_at     timestamptz NOT NULL DEFAULT now(),
+      last_checked_at   timestamptz NOT NULL DEFAULT now()
+  );
+
+  CREATE UNIQUE INDEX uq_unsupported_companies_normalized_name
+      ON unsupported_companies (lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')));
+  ```
+
+  Pair it with a `.down.sql` dropping the index and table, matching every other migration in `internal/db/migrations/`.
 - Add `mcp.record_unsupported_company` as a SECURITY DEFINER function in a companion migration. Harden it exactly like `mcp.add_company` (see Mirror table) — the same threat model applies, since both are write functions the action role invokes.
-- On conflict against the unique index, overwrite `url`, `detected_platform`, and `reason` with the incoming call's values and bump `last_checked_at` to `now()` — do not merge with the stored row (see Rough sketch). Merging would let a company re-sighted as `no_careers` keep a stale `url` / `detected_platform` from an earlier `unsupported_ats` sighting. Do not overwrite `name` or `first_seen_at` on conflict — they identify and date the first sighting.
+
+  ```sql
+  INSERT INTO public.unsupported_companies (name, url, detected_platform, reason)
+  VALUES (p_name, p_url, p_detected_platform, p_reason)
+  ON CONFLICT (lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')))
+  DO UPDATE SET
+      url               = EXCLUDED.url,
+      detected_platform = EXCLUDED.detected_platform,
+      reason            = EXCLUDED.reason,
+      last_checked_at   = now()
+  RETURNING id, name, url, detected_platform, reason, first_seen_at, last_checked_at
+  ```
+
+  No `was_new` flag in the response: `add_company`'s insert/conflict distinction relies on `ON CONFLICT DO NOTHING`'s all-or-nothing `RETURNING`, which doesn't carry over to `DO UPDATE` (every call returns a row), and nothing in this spec's AC needs to distinguish first-sight from repeat-sight at the response layer. The success response returns exactly the seven columns the `RETURNING` clause above produces.
+- On conflict against the unique index, overwrite `url`, `detected_platform`, and `reason` with the incoming call's values and bump `last_checked_at` to `now()` — do not merge with the stored row. Merging would let a company re-sighted as `no_careers` keep a stale `url` / `detected_platform` from an earlier `unsupported_ats` sighting. Do not overwrite `name` or `first_seen_at` on conflict — they identify and date the first sighting.
 - This function has a multi-column `RETURNS TABLE`, which sqlc's offline parser cannot expand without a live database (`developer-guide.md` §5.7) — the same limitation `add_company` already works around. Call it with a fixed, fully-parameterized `QueryRowContext`, not a sqlc query file.
 - Add the MCP action tool `record_unsupported_company` in a new `apps/tools/cmd/mcp/record_unsupported_company.go`, registered in `main.go` bound to `pools.action` — it writes through an approved function, same reasoning as `add_company`'s pool binding.
 - Request fields (see table below). Validate `url` with `atsdetect.ValidateURL` when present.
@@ -49,7 +80,7 @@ Persist companies with a known-unsupported ATS, or no discoverable careers page,
 | `detected_platform` | Never | Free text |
 
 - Name the Go constant backing the `"unsupported_ats"` reason value distinctly from `add_company.go`'s existing `codeUnsupportedATS` — the two share a string but different meanings (an action error code vs. a stored reason), and reusing the const would conflate them.
-- Add an `integration`-tagged test against a live Postgres instance covering `record_unsupported_company`'s insert and conflict-update paths.
+- Add an `integration`-tagged test against a live Postgres instance covering `record_unsupported_company`'s insert and conflict-update paths. This calls the function through the action pool, so `internal/db/setup/action_role.sql` must be rerun against the test database after the new migration applies — same operational step `add_company`'s grant already requires (`developer-guide.md` §2).
 
 Mirror table:
 
@@ -66,10 +97,23 @@ Do not:
 ### Task 2: Surface known_unsupported in dedup_candidates
 
 - Add `FindUnsupportedByNames(ctx, names []string) (map[int]dedupUnsupportedRecord, error)` to `dedupSource`, mirroring `FindByNames`'s shape. Back it with a new sqlc `:many` query in `onboard.sql` reusing `FindCompaniesByNormalizedNames`'s normalization expression. The unique index from Task 1 guarantees at most one row per candidate.
-- Add `FindUnsupportedByURLHost(ctx, urls []string) (map[int]dedupUnsupportedRecord, error)` to `dedupSource`, backed by a new sqlc `:many` query reusing `FindCompaniesByCareersURLHost`'s host-extraction expression. `unsupported_companies` has no unique constraint on host, so more than one row can share one — use `DISTINCT ON (input_index) ... ORDER BY input_index, last_checked_at DESC`, the same "latest row wins" pattern `developer-guide.md` §6.2 documents for `classifications`, so the most recently checked row wins per candidate.
+- Add `FindUnsupportedByURLHost(ctx, urls []string) (map[int]dedupUnsupportedRecord, error)` to `dedupSource`, backed by a new sqlc `:many` query reusing `FindCompaniesByCareersURLHost`'s host-extraction expression. `unsupported_companies` has no unique constraint on host, so more than one row can share one — use `DISTINCT ON (input_index) ... ORDER BY input_index, last_checked_at DESC`, the same "latest row wins" pattern `developer-guide.md` §6.2 documents for `classifications`, so the most recently checked row wins per candidate. Both new queries are plain `:many` SELECTs, not `RETURNS TABLE` functions, so sqlc's offline parser generates them the same way it already generates `FindCompaniesByNormalizedNames` and `FindCompaniesByCareersURLHost` — no `add_company`-style hand-written `QueryRowContext` needed here.
+- `dedup_candidates` reads through `pools.readOnly`, but the new table needs no extra grant: `internal/db/setup/readonly_role.sql`'s `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES` (`readonly_role.sql` §Read-only MCP role) covers any table created after the script last ran, as long as the migration runs under the same owner role used for setup — no rerun required, unlike the action role's per-function grant in Task 1.
 - In `runDedupCandidates`, call both against the `nameLookupNames` / `domainLookupURLs` batches already gathered for company matching — no new input-gathering logic needed. Run this only for candidates that did not resolve via token match; a token match means the company is already tracked, so it cannot also be in `unsupported_companies`.
 - When both lookups hit for the same candidate, the URL-host result wins — mirrors the existing `domain > name_only` priority for company matches.
-- Add `KnownUnsupported *dedupUnsupportedRecord` (`json:"known_unsupported"`) to `dedupCandidateResult`, and a new `dedupUnsupportedRecord` struct (see Boundary inventory). Compute `Stale` in `runDedupCandidates` by parsing the looked-up row's `last_checked_at` timestamp and comparing its age against a new constant `dedupUnsupportedRevisitDays = 90`, placed near `dedupFuzzyNameSimilarityThreshold`. `LastCheckedAt` on `dedupUnsupportedRecord` stays an RFC3339 string (see Boundary inventory) — parse it at the point `Stale` is computed, don't add a second timestamp field.
+- Add `KnownUnsupported *dedupUnsupportedRecord` (`json:"known_unsupported"`) to `dedupCandidateResult`, and a new `dedupUnsupportedRecord` struct:
+
+  | Go field | Type | JSON key | Nullable |
+  |---|---|---|---|
+  | `Name` | `string` | `"name"` | no |
+  | `URL` | `*string` | `"url"` | yes |
+  | `DetectedPlatform` | `*string` | `"detected_platform"` | yes |
+  | `Reason` | `string` | `"reason"` | no |
+  | `FirstSeenAt` | `string` (RFC3339) | `"first_seen_at"` | no |
+  | `LastCheckedAt` | `string` (RFC3339) | `"last_checked_at"` | no |
+  | `Stale` | `bool` | `"stale"` | no (computed, not a column) |
+
+  Compute `Stale` in `runDedupCandidates` by parsing `LastCheckedAt` and comparing its age against a new constant `dedupUnsupportedRevisitDays = 90`, placed near `dedupFuzzyNameSimilarityThreshold`. `LastCheckedAt` stays an RFC3339 string — parse it at the point `Stale` is computed, don't add a second timestamp field.
 - Update `fakeDedupSource` in `dedup_candidates_test.go` to implement `FindUnsupportedByNames` and `FindUnsupportedByURLHost`, returning empty maps by default so existing unit tests keep passing unchanged.
 - Add an `integration`-tagged test against a live Postgres instance covering both new queries, including the host tie-break when two rows share a host.
 
@@ -101,48 +145,11 @@ Do not:
 
 ## Rough sketch
 
-```sql
-CREATE TABLE unsupported_companies (
-    id                bigserial PRIMARY KEY,
-    name              text NOT NULL,
-    url               text,
-    detected_platform text,
-    reason            text NOT NULL CHECK (reason IN ('unsupported_ats', 'no_careers')),
-    first_seen_at     timestamptz NOT NULL DEFAULT now(),
-    last_checked_at   timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE UNIQUE INDEX uq_unsupported_companies_normalized_name
-    ON unsupported_companies (lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')));
-```
-
-`mcp.record_unsupported_company(p_name, p_url, p_detected_platform, p_reason)` mirrors `mcp.add_company`'s shape:
-
-```sql
-INSERT INTO public.unsupported_companies (name, url, detected_platform, reason)
-VALUES (p_name, p_url, p_detected_platform, p_reason)
-ON CONFLICT (lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')))
-DO UPDATE SET
-    url               = EXCLUDED.url,
-    detected_platform = EXCLUDED.detected_platform,
-    reason            = EXCLUDED.reason,
-    last_checked_at   = now()
-```
-
-returning the row. No `was_new` flag — `add_company`'s insert/conflict distinction relies on `ON CONFLICT DO NOTHING`'s all-or-nothing `RETURNING`, which doesn't carry over to `DO UPDATE` (every call returns a row). Nothing in this spec's AC or Boundary inventory needs to distinguish first-sight from repeat-sight at the response layer.
+Inlined into Task 1: migration DDL and the `mcp.record_unsupported_company` `ON CONFLICT DO UPDATE` statement.
 
 ## Boundary inventory
 
-| Name | Go struct field | JSON key | SQL column |
-|---|---|---|---|
-| Unsupported record | `dedupUnsupportedRecord` | `"known_unsupported"` (on `dedupCandidateResult`) | — (assembled, not a column) |
-| Company/URL name | `Name` | `"name"` | `name` |
-| Evidence URL | `URL *string` | `"url"` | `url` |
-| Detected platform | `DetectedPlatform *string` | `"detected_platform"` | `detected_platform` |
-| Trigger reason | `Reason string` | `"reason"` | `reason` (`CHECK IN ('unsupported_ats', 'no_careers')`) |
-| First seen | `FirstSeenAt string` (RFC3339) | `"first_seen_at"` | `first_seen_at` |
-| Last checked | `LastCheckedAt string` (RFC3339) | `"last_checked_at"` | `last_checked_at` |
-| Revisit flag | `Stale bool` | `"stale"` | — (computed in Go against `dedupUnsupportedRevisitDays`) |
+Inlined into Task 2: the `dedupUnsupportedRecord` field / JSON-key / type table.
 
 `reason` wire values are exactly `unsupported_ats` and `no_careers` — same casing on the `record_unsupported_company` request, the SQL `CHECK` constraint, and the `dedup_candidates` response.
 
