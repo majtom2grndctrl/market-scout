@@ -35,6 +35,8 @@ Before browser work, call `dedup_candidates`. It checks four signals in priority
 
 Domain matching compares normalized hosts from candidate and stored careers-page URLs. An invalid candidate careers URL is treated as absent; token and name matching still run. Fuzzy matching is a last resort when exact name and domain find no match. It uses trigram similarity with a `0.4` threshold.
 
+`known_unsupported` is an independent, informational field for browser triage. It reports a prior unsupported finding: name, nullable URL, nullable detected platform, reason, first-seen time, last-checked time, and whether the finding is stale. Lookup prefers a matching URL host over a matching name. It never changes `verdict`, `match_kind`, `matches`, or `match_count`.
+
 For manual or sidecar review, retain enough context to disambiguate: name, ATS, board token, industry, and careers page URL. Names and domains can collide across unrelated companies. `dedup_candidates` returns matched company identity, `match_count`, `matches`, `match_kind`, and `reason`. When signals converge on one company, its strongest signal wins: `token > domain > name_only > fuzzy_name`.
 
 **Skip rule.** A candidate is a duplicate when the DB already has a company with the same `(ats, board_token)` pair and a `posting_snapshots` row within the last 30 days. `(ats, board_token)` is the DB's unique constraint and the strongest dedup signal; name is used to surface matches for human inspection but is not part of the dedup tuple. Drop confirmed duplicates.
@@ -48,6 +50,14 @@ For manual or sidecar review, retain enough context to disambiguate: name, ATS, 
 **Stale matches.** A match whose DB row has no recent postings, a non-matching ATS, or a domain that no longer resolves is *not* a dedup case — it is a merge problem. Flag with the `stale-needs-merge` status (see annotation section) for human review. Merging stale DB rows with fresh research is out of scope for the onboarding pass.
 
 Flag uncertain matches; never silently skip or crawl.
+
+### Unsupported-company registry
+
+The registry records unsupported findings. Write an entry when `detect_ats` returns `unsupported-ats` or browser investigation concludes `no-careers`.
+
+Each entry captures the company name, nullable URL, nullable detected platform, reason, first-seen time, and last-checked time. A finding is stale after 90 days without a check. `stale: true` means a re-check may be worthwhile; it never requires one.
+
+Trust tiers differ by reason. `unsupported_ats` is Deterministic: `detect_ats` derives it from URL parsing. `no_careers` is Agent-asserted: the live path has no tool observation. Treat `no_careers` as prior browser judgment, not verified fact.
 
 ### Board token verification
 

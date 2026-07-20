@@ -126,3 +126,13 @@ type Specialization struct {
 	Name      string
 	CreatedAt time.Time
 }
+
+type UnsupportedCompany struct {
+	ID               int64
+	Name             string
+	Url              sql.NullString
+	DetectedPlatform sql.NullString
+	Reason           string
+	FirstSeenAt      time.Time
+	LastCheckedAt    time.Time
+}

@@ -26,6 +26,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -129,6 +130,114 @@ func TestAddCompanyHandler_ActionRoleInsertsAndIsIdempotent(t *testing.T) {
 	// #7: exactly one row for this board token, scoped to test-specific data.
 	if got := countCompaniesByToken(t, readOnly, boardToken); got != 1 {
 		t.Fatalf("company rows for board_token %q = %d, want exactly 1", boardToken, got)
+	}
+}
+
+// TestRecordUnsupportedCompanyHandler_ActionRoleInsertsAndRefreshes drives the
+// registry write path through the action pool. A normalized-name conflict must
+// retain the first display name and timestamp while replacing the current
+// observation fields.
+func TestRecordUnsupportedCompanyHandler_ActionRoleInsertsAndRefreshes(t *testing.T) {
+	owner, _, action := openActionTestPools(t)
+
+	name := "MCP Unsupported Registry " + uniqueToken("co")
+	t.Cleanup(func() {
+		if _, err := owner.ExecContext(context.Background(),
+			"DELETE FROM unsupported_companies WHERE name = $1", name); err != nil {
+			t.Errorf("cleanup unsupported company %q: %v", name, err)
+		}
+	})
+
+	handler := recordUnsupportedCompanyHandler(action)
+	first := callRecordUnsupportedCompany(t, handler, newCallToolRequest(map[string]any{
+		"name":              name,
+		"url":               "https://unsupported.example/careers",
+		"detected_platform": "rippling",
+		"reason":            "unsupported_ats",
+	}))
+	if !first.Ok || first.UnsupportedCompany == nil {
+		t.Fatalf("first record_unsupported_company = %+v, want success", first)
+	}
+	if first.UnsupportedCompany.URL == nil || *first.UnsupportedCompany.URL != "https://unsupported.example/careers" || first.UnsupportedCompany.DetectedPlatform == nil || *first.UnsupportedCompany.DetectedPlatform != "rippling" {
+		t.Fatalf("first unsupported_company = %+v, want url and platform", first.UnsupportedCompany)
+	}
+
+	secondName := strings.ToLower(name) + "!!!"
+	second := callRecordUnsupportedCompany(t, handler, newCallToolRequest(map[string]any{
+		"name":   secondName,
+		"reason": "no_careers",
+	}))
+	if !second.Ok || second.UnsupportedCompany == nil {
+		t.Fatalf("second record_unsupported_company = %+v, want success", second)
+	}
+	if second.UnsupportedCompany.ID != first.UnsupportedCompany.ID || second.UnsupportedCompany.Name != name {
+		t.Fatalf("conflict row = %+v, want original id/name %d/%q", second.UnsupportedCompany, first.UnsupportedCompany.ID, name)
+	}
+	if second.UnsupportedCompany.Reason != "no_careers" || second.UnsupportedCompany.URL != nil || second.UnsupportedCompany.DetectedPlatform != nil {
+		t.Fatalf("refreshed row = %+v, want overwritten no_careers metadata", second.UnsupportedCompany)
+	}
+
+	var firstSeen, lastChecked time.Time
+	if err := owner.QueryRowContext(t.Context(),
+		"SELECT first_seen_at, last_checked_at FROM unsupported_companies WHERE id = $1", first.UnsupportedCompany.ID).
+		Scan(&firstSeen, &lastChecked); err != nil {
+		t.Fatalf("read refreshed unsupported company: %v", err)
+	}
+	if firstSeen.UTC().Format(time.RFC3339) != first.UnsupportedCompany.FirstSeenAt {
+		t.Fatalf("first_seen_at = %s, want preserved %s", firstSeen, first.UnsupportedCompany.FirstSeenAt)
+	}
+	if !lastChecked.After(firstSeen) {
+		t.Fatalf("last_checked_at = %s, want after first_seen_at %s", lastChecked, firstSeen)
+	}
+}
+
+// TestRecordUnsupportedCompanyFunction_ActionRoleRejectsInvalidInputs calls the
+// approved function directly through the action DSN. The database boundary must
+// preserve registry invariants even when a caller bypasses the Go handler.
+func TestRecordUnsupportedCompanyFunction_ActionRoleRejectsInvalidInputs(t *testing.T) {
+	owner, _, action := openActionTestPools(t)
+
+	namePrefix := "MCP Invalid Unsupported " + uniqueToken("co")
+	t.Cleanup(func() {
+		if _, err := owner.ExecContext(context.Background(),
+			"DELETE FROM unsupported_companies WHERE name = $1 OR name LIKE $2",
+			" \t\n", namePrefix+"%"); err != nil {
+			t.Errorf("cleanup invalid unsupported-company calls: %v", err)
+		}
+	})
+
+	tests := []struct {
+		name   string
+		input  string
+		url    any
+		reason string
+	}{
+		{name: "blank name", input: " \t\n", url: nil, reason: "no_careers"},
+		{name: "invalid reason", input: namePrefix + " invalid reason", url: nil, reason: "other"},
+		{name: "unsupported ATS missing URL", input: namePrefix + " missing URL", url: nil, reason: "unsupported_ats"},
+		{name: "unsupported ATS blank URL", input: namePrefix + " blank URL", url: " \t", reason: "unsupported_ats"},
+		{name: "unsupported ATS relative URL", input: namePrefix + " relative URL", url: "/careers", reason: "unsupported_ats"},
+		{name: "unsupported ATS malformed URL", input: namePrefix + " malformed URL", url: "https://example.com:bad/careers", reason: "unsupported_ats"},
+		{name: "no careers malformed supplied URL", input: namePrefix + " no careers malformed URL", url: "ftp://example.com/careers", reason: "no_careers"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var id int64
+			err := action.QueryRowContext(t.Context(),
+				"SELECT id FROM mcp.record_unsupported_company($1, $2, $3, $4)",
+				tt.input, tt.url, nil, tt.reason).Scan(&id)
+			assertSQLState(t, err, "22023")
+
+			var count int64
+			if err := owner.QueryRowContext(t.Context(),
+				"SELECT count(*) FROM unsupported_companies WHERE name = $1", tt.input).Scan(&count); err != nil {
+				t.Fatalf("count rejected unsupported company: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("rejected call persisted %d rows, want 0", count)
+			}
+		})
 	}
 }
 
@@ -336,6 +445,21 @@ func assertPermissionDenied(t *testing.T, err error) {
 	}
 }
 
+func assertSQLState(t *testing.T, err error, want string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("statement succeeded, want SQLSTATE %s", want)
+	}
+
+	var sqlStateError interface{ SQLState() string }
+	if !errors.As(err, &sqlStateError) {
+		t.Fatalf("error = %q, want SQLSTATE %s", err.Error(), want)
+	}
+	if got := sqlStateError.SQLState(); got != want {
+		t.Fatalf("SQLSTATE = %s, want %s (error: %q)", got, want, err.Error())
+	}
+}
+
 // newCallToolRequest builds a CallToolRequest carrying the given arguments,
 // matching what the MCP transport hands a tool handler. BindArguments
 // JSON-roundtrips Params.Arguments, so a map[string]any populates the typed DTO.
@@ -351,6 +475,13 @@ func newCallToolRequest(args map[string]any) mcp.CallToolRequest {
 func callAddCompany(t *testing.T, handler server.ToolHandlerFunc, req mcp.CallToolRequest) addCompanyEnvelope {
 	t.Helper()
 	var env addCompanyEnvelope
+	decodeHandlerResult(t, handler, req, &env)
+	return env
+}
+
+func callRecordUnsupportedCompany(t *testing.T, handler server.ToolHandlerFunc, req mcp.CallToolRequest) recordUnsupportedCompanyEnvelope {
+	t.Helper()
+	var env recordUnsupportedCompanyEnvelope
 	decodeHandlerResult(t, handler, req, &env)
 	return env
 }

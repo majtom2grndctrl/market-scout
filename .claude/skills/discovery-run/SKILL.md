@@ -15,7 +15,7 @@ argument-hint: "<source url | company names | pasted notes>"
 Turn one source into fetcher candidates. A source is an article, company list
 page, pasted notes, a query prompt, or an explicit list of company names.
 
-You coordinate three MCP tools and a browser. The MCP tools own dedup, detection,
+You coordinate four MCP tools and a browser. The MCP tools own dedup, detection,
 and the write gate. The browser is only for gathering URL evidence — it never
 writes anything.
 
@@ -29,6 +29,7 @@ Confirm the Market Scout MCP server is connected. Required tools:
 - `mcp__market-scout-postgres__dedup_candidates`
 - `mcp__market-scout-postgres__detect_ats`
 - `mcp__market-scout-postgres__add_company`
+- `mcp__market-scout-postgres__record_unsupported_company`
 
 If those are unavailable, stop and tell the user the MCP server must be configured
 for this client before the skill can write to the fetch list. Do not invent DB
@@ -49,16 +50,31 @@ names alone.
 4. Drop `duplicate` results.
 5. Set aside `stale` results for human merge or disambiguation review. Do not call
    `add_company` for a stale or name-only match unless the user explicitly asks.
-6. Browser-investigate `new` survivors — **one at a time**, since the browser is a
+6. For each `new` survivor, review `known_unsupported` before browser work. Weigh
+   its `stale` flag and reason trust tier: `unsupported_ats` is Deterministic;
+   `no_careers` is Agent-asserted prior browser judgment. This is advisory only —
+   re-investigate when the agent judges fresh evidence is warranted.
+7. Browser-investigate `new` survivors — **one at a time**, since the browser is a
    single shared surface. Find the homepage, careers page, any redirect target, and
    visible ATS job-board URLs. Inspect redirects, page links, scripts, and network
    requests for the board URL.
-7. Call `detect_ats` with the observed URL evidence (`careers_url` plus
+8. Call `detect_ats` with the observed URL evidence (`careers_url` plus
    `observed_urls`). It parses evidence only — it does not browse, probe, or write.
-8. Call `add_company` only when `detect_ats` returns a supported ATS and a board
-   token that matches the company under investigation. Leave `probe` at its default
-   (true).
-9. Treat `add_company` probe success as the write gate. A failed probe inserts
+9. When `detect_ats` returns `unsupported-ats`, call
+   `record_unsupported_company` before recording final status. Pass the candidate
+   `name`, `reason: "unsupported_ats"`, and the observed careers or ATS URL as
+   `url`. Omit `detected_platform` unless browser evidence independently identifies
+   it.
+10. When browser investigation concludes `no-careers`, call
+   `record_unsupported_company` before recording final status. Pass the candidate
+   `name`, `reason: "no_careers"`, and the observed homepage URL when available;
+   otherwise omit `url`. Omit `detected_platform`.
+11. Do not call `record_unsupported_company` for `invalid-token` or `ambiguous`
+    outcomes.
+12. Call `add_company` only when `detect_ats` returns a supported ATS and a board
+    token that matches the company under investigation. Leave `probe` at its default
+    (true).
+13. Treat `add_company` probe success as the write gate. A failed probe inserts
    nothing — report it as unresolved.
 
 ## Safety rules
@@ -67,6 +83,8 @@ names alone.
 - Do not treat name-only matches as safe duplicates. They are review items.
 - Do not add a company from name similarity alone.
 - Do not add unsupported ATS platforms.
+- Call `record_unsupported_company` for `unsupported-ats` and `no-careers` so
+  later runs do not repeat the same browser investigation.
 - Do not add a board token when the careers page belongs to a parent, subsidiary,
   staffing firm, or unrelated company unless the user confirms the relationship.
 - Do not parallelize browser investigation across subagents — one browser, one

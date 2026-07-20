@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -33,19 +34,55 @@ type fakeDedupDomainCall struct {
 	RecencyDays int32
 }
 
+type fakeDedupUnsupportedNameCall struct {
+	Names []string
+}
+
+type fakeDedupUnsupportedDomainCall struct {
+	URLs []string
+}
+
 type fakeDedupSource struct {
-	tokenMatches      map[string]dedupMatchedCompany
-	nameMatches       map[int][]dedupMatchedCompany
-	similarityMatches map[int][]dedupMatchedCompany
-	domainMatches     map[int][]dedupMatchedCompany
-	tokenErr          error
-	nameErr           error
-	similarityErr     error
-	domainErr         error
-	tokenCalls        []fakeDedupTokenCall
-	nameCalls         []fakeDedupNameCall
-	similarityCalls   []fakeDedupSimilarityCall
-	domainCalls       []fakeDedupDomainCall
+	tokenMatches             map[string]dedupMatchedCompany
+	nameMatches              map[int][]dedupMatchedCompany
+	similarityMatches        map[int][]dedupMatchedCompany
+	domainMatches            map[int][]dedupMatchedCompany
+	unsupportedNameMatches   map[int]dedupUnsupportedRecord
+	unsupportedDomainMatches map[int]dedupUnsupportedRecord
+	tokenErr                 error
+	nameErr                  error
+	similarityErr            error
+	domainErr                error
+	unsupportedNameErr       error
+	unsupportedDomainErr     error
+	tokenCalls               []fakeDedupTokenCall
+	nameCalls                []fakeDedupNameCall
+	similarityCalls          []fakeDedupSimilarityCall
+	domainCalls              []fakeDedupDomainCall
+	unsupportedNameCalls     []fakeDedupUnsupportedNameCall
+	unsupportedDomainCalls   []fakeDedupUnsupportedDomainCall
+}
+
+func (f *fakeDedupSource) FindUnsupportedByNames(ctx context.Context, names []string) (map[int]dedupUnsupportedRecord, error) {
+	f.unsupportedNameCalls = append(f.unsupportedNameCalls, fakeDedupUnsupportedNameCall{Names: append([]string(nil), names...)})
+	if f.unsupportedNameErr != nil {
+		return nil, f.unsupportedNameErr
+	}
+	if f.unsupportedNameMatches == nil {
+		return map[int]dedupUnsupportedRecord{}, nil
+	}
+	return f.unsupportedNameMatches, nil
+}
+
+func (f *fakeDedupSource) FindUnsupportedByURLHost(ctx context.Context, urls []string) (map[int]dedupUnsupportedRecord, error) {
+	f.unsupportedDomainCalls = append(f.unsupportedDomainCalls, fakeDedupUnsupportedDomainCall{URLs: append([]string(nil), urls...)})
+	if f.unsupportedDomainErr != nil {
+		return nil, f.unsupportedDomainErr
+	}
+	if f.unsupportedDomainMatches == nil {
+		return map[int]dedupUnsupportedRecord{}, nil
+	}
+	return f.unsupportedDomainMatches, nil
 }
 
 func (f *fakeDedupSource) FindByCareersURLHost(ctx context.Context, careersURLs []string, recencyDays int32) (map[int][]dedupMatchedCompany, error) {
@@ -536,6 +573,112 @@ func TestRunDedupCandidates_TokenShortCircuitSkipsAllBatchSignals(t *testing.T) 
 	if len(source.nameCalls)+len(source.domainCalls)+len(source.similarityCalls) != 0 {
 		t.Fatalf("batch calls after token match: names=%+v domains=%+v fuzzy=%+v", source.nameCalls, source.domainCalls, source.similarityCalls)
 	}
+	if len(source.unsupportedNameCalls)+len(source.unsupportedDomainCalls) != 0 {
+		t.Fatalf("unsupported lookups after token match: names=%+v domains=%+v", source.unsupportedNameCalls, source.unsupportedDomainCalls)
+	}
+}
+
+func TestRunDedupCandidates_KnownUnsupportedIsIndependentSignal(t *testing.T) {
+	lastCheckedAt := time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)
+	source := &fakeDedupSource{unsupportedNameMatches: map[int]dedupUnsupportedRecord{
+		0: {
+			Name:             "Unsupported Acme",
+			Reason:           unsupportedCompanyReasonUnsupportedATS,
+			FirstSeenAt:      "2026-01-01T00:00:00Z",
+			LastCheckedAt:    lastCheckedAt,
+			DetectedPlatform: dedupTestStringPtr("rippling"),
+		},
+	}}
+
+	env := runDedupCandidates(t.Context(), dedupCandidatesRequest{Candidates: []dedupCandidateInput{{Name: "Unsupported Acme"}}}, source)
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
+	}
+	got := env.Results[0]
+	if got.Verdict != dedupVerdictNew || got.MatchKind != dedupMatchKindNone || got.Reason != dedupReasonNoMatch || got.MatchCount != 0 || got.Matched != nil || len(got.Matches) != 0 {
+		t.Fatalf("dedup result = %+v, want unchanged new/no-match result", got)
+	}
+	if got.KnownUnsupported == nil {
+		t.Fatal("known_unsupported = nil, want populated independent signal")
+	}
+	if got.KnownUnsupported.Name != "Unsupported Acme" || got.KnownUnsupported.DetectedPlatform == nil || *got.KnownUnsupported.DetectedPlatform != "rippling" || got.KnownUnsupported.Stale {
+		t.Fatalf("known_unsupported = %+v, want current registry record", got.KnownUnsupported)
+	}
+}
+
+func TestRunDedupCandidates_KnownUnsupportedHostWinsOverName(t *testing.T) {
+	source := &fakeDedupSource{
+		unsupportedNameMatches: map[int]dedupUnsupportedRecord{0: {
+			Name:          "Name Match",
+			Reason:        unsupportedCompanyReasonNoCareers,
+			FirstSeenAt:   "2026-01-01T00:00:00Z",
+			LastCheckedAt: time.Now().UTC().Format(time.RFC3339),
+		}},
+		unsupportedDomainMatches: map[int]dedupUnsupportedRecord{0: {
+			Name:          "Host Match",
+			Reason:        unsupportedCompanyReasonUnsupportedATS,
+			FirstSeenAt:   "2026-01-02T00:00:00Z",
+			LastCheckedAt: time.Now().UTC().Format(time.RFC3339),
+		}},
+	}
+
+	env := runDedupCandidates(t.Context(), dedupCandidatesRequest{Candidates: []dedupCandidateInput{{
+		Name: "Name Match", CareersURL: "https://unsupported.example/careers",
+	}}}, source)
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
+	}
+	if got := env.Results[0].KnownUnsupported; got == nil || got.Name != "Host Match" || got.Reason != unsupportedCompanyReasonUnsupportedATS {
+		t.Fatalf("known_unsupported = %+v, want host match", got)
+	}
+}
+
+func TestRunDedupCandidates_KnownUnsupportedDoesNotChangeExistingMatch(t *testing.T) {
+	companyMatch := dedupMatchedCompany{ID: 17, Name: "Tracked Acme"}
+	source := &fakeDedupSource{
+		nameMatches: map[int][]dedupMatchedCompany{0: {companyMatch}},
+		unsupportedNameMatches: map[int]dedupUnsupportedRecord{0: {
+			Name: "Unsupported Acme", Reason: unsupportedCompanyReasonNoCareers,
+			FirstSeenAt: "2026-01-01T00:00:00Z", LastCheckedAt: time.Now().UTC().Format(time.RFC3339),
+		}},
+	}
+
+	env := runDedupCandidates(t.Context(), dedupCandidatesRequest{Candidates: []dedupCandidateInput{{Name: "Acme"}}}, source)
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
+	}
+	got := env.Results[0]
+	if got.Verdict != dedupVerdictStale || got.MatchKind != dedupMatchKindNameOnly || got.Reason != dedupReasonMatchedByNameOnly || got.MatchCount != 1 || got.Matched == nil || got.Matched.ID != companyMatch.ID || got.Matched.MatchKind != dedupMatchKindNameOnly {
+		t.Fatalf("dedup result = %+v, want unchanged name-match result", got)
+	}
+	if got.KnownUnsupported == nil || got.KnownUnsupported.Name != "Unsupported Acme" {
+		t.Fatalf("known_unsupported = %+v, want independent registry signal", got.KnownUnsupported)
+	}
+}
+
+func TestRunDedupCandidates_KnownUnsupportedStaleAfterRevisitThreshold(t *testing.T) {
+	now := time.Now().UTC()
+	source := &fakeDedupSource{unsupportedNameMatches: map[int]dedupUnsupportedRecord{
+		0: {
+			Name: "Current", Reason: unsupportedCompanyReasonNoCareers,
+			FirstSeenAt: "2026-01-01T00:00:00Z", LastCheckedAt: now.Add(-dedupUnsupportedRevisitDays*24*time.Hour + time.Hour).Format(time.RFC3339),
+		},
+		1: {
+			Name: "Stale", Reason: unsupportedCompanyReasonNoCareers,
+			FirstSeenAt: "2026-01-01T00:00:00Z", LastCheckedAt: now.Add(-dedupUnsupportedRevisitDays*24*time.Hour - time.Hour).Format(time.RFC3339),
+		},
+	}}
+
+	env := runDedupCandidates(t.Context(), dedupCandidatesRequest{Candidates: []dedupCandidateInput{{Name: "Current"}, {Name: "Stale"}}}, source)
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
+	}
+	if env.Results[0].KnownUnsupported == nil || env.Results[0].KnownUnsupported.Stale {
+		t.Fatalf("current record = %+v, want stale=false", env.Results[0].KnownUnsupported)
+	}
+	if env.Results[1].KnownUnsupported == nil || !env.Results[1].KnownUnsupported.Stale {
+		t.Fatalf("stale record = %+v, want stale=true", env.Results[1].KnownUnsupported)
+	}
 }
 
 func TestRunDedupCandidates_EachBatchLookupErrorFailsTheCall(t *testing.T) {
@@ -546,6 +689,8 @@ func TestRunDedupCandidates_EachBatchLookupErrorFailsTheCall(t *testing.T) {
 	}{
 		{"name", &fakeDedupSource{nameErr: errors.New("name failed")}, dedupCandidateInput{Name: "Acme"}},
 		{"domain", &fakeDedupSource{domainErr: errors.New("domain failed")}, dedupCandidateInput{Name: "Acme", CareersURL: "https://acme.example/jobs"}},
+		{"unsupported name", &fakeDedupSource{unsupportedNameErr: errors.New("unsupported name failed")}, dedupCandidateInput{Name: "Acme"}},
+		{"unsupported domain", &fakeDedupSource{unsupportedDomainErr: errors.New("unsupported domain failed")}, dedupCandidateInput{Name: "Acme", CareersURL: "https://acme.example/jobs"}},
 		{"fuzzy", &fakeDedupSource{similarityErr: errors.New("fuzzy failed")}, dedupCandidateInput{Name: "Acme"}},
 	}
 	for _, tc := range tests {
@@ -682,4 +827,8 @@ func formatDedupNameCalls(calls []fakeDedupNameCall) string {
 		return fmt.Sprintf("%+v", calls)
 	}
 	return string(payload)
+}
+
+func dedupTestStringPtr(value string) *string {
+	return &value
 }

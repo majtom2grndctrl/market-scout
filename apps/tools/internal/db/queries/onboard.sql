@@ -111,6 +111,69 @@ JOIN (
 ) c ON c.careers_url_host = candidate_urls.careers_url_host
 ORDER BY candidate_urls.input_index, c.id;
 
+-- name: FindUnsupportedByNames :many
+-- Given a batch of raw candidate names, returns the matching unsupported
+-- registry record for each normalized name. The registry's functional unique
+-- index guarantees at most one result for an input index.
+SELECT
+    candidate_names.input_index,
+    c.name,
+    c.url,
+    c.detected_platform,
+    c.reason,
+    c.first_seen_at,
+    c.last_checked_at
+FROM (
+    SELECT
+        ordinality::int AS input_index,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM unnest(@candidate_names::text[]) WITH ORDINALITY AS raw_names(name, ordinality)
+) candidate_names
+JOIN (
+    SELECT
+        name,
+        url,
+        detected_platform,
+        reason,
+        first_seen_at,
+        last_checked_at,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM unsupported_companies
+) c ON c.normalized_name = candidate_names.normalized_name
+ORDER BY candidate_names.input_index;
+
+-- name: FindUnsupportedByURLHost :many
+-- Given a batch of candidate careers URLs, returns the most recently checked
+-- unsupported registry record whose normalized URL host matches each input.
+-- Multiple registry records may share a host, so DISTINCT ON selects one row
+-- per input index with the latest last_checked_at.
+SELECT DISTINCT ON (candidate_urls.input_index)
+    candidate_urls.input_index,
+    c.name,
+    c.url,
+    c.detected_platform,
+    c.reason,
+    c.first_seen_at,
+    c.last_checked_at
+FROM (
+    SELECT
+        ordinality::int AS input_index,
+        lower((regexp_match(url, '^https?://(?:[^/?#@]*@)?(?:www\.)?(\[[^]]+\]|[^/:?#]+)(?::[0-9]+)?(?:[/?#]|$)', 'i'))[1]) AS careers_url_host
+    FROM unnest(@candidate_urls::text[]) WITH ORDINALITY AS raw_urls(url, ordinality)
+) candidate_urls
+JOIN (
+    SELECT
+        name,
+        url,
+        detected_platform,
+        reason,
+        first_seen_at,
+        last_checked_at,
+        lower((regexp_match(url, '^https?://(?:[^/?#@]*@)?(?:www\.)?(\[[^]]+\]|[^/:?#]+)(?::[0-9]+)?(?:[/?#]|$)', 'i'))[1]) AS careers_url_host
+    FROM unsupported_companies
+) c ON c.careers_url_host = candidate_urls.careers_url_host
+ORDER BY candidate_urls.input_index, c.last_checked_at DESC;
+
 -- name: FindCompaniesByNameSimilarity :many
 -- Given a batch of raw candidate names, returns companies whose normalized
 -- names meet the caller's trigram-similarity threshold. input_index is 1-based,

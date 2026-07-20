@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -22,6 +23,7 @@ const (
 	// Short company names make trigram matches noisy, so use a stricter threshold
 	// than pg_trgm's 0.3 default.
 	dedupFuzzyNameSimilarityThreshold = 0.4
+	dedupUnsupportedRevisitDays       = 90
 
 	dedupVerdictNew       = "new"
 	dedupVerdictDuplicate = "duplicate"
@@ -64,16 +66,17 @@ type dedupCandidatesEnvelope struct {
 }
 
 type dedupCandidateResult struct {
-	Name       string                `json:"name"`
-	ATS        string                `json:"ats"`
-	BoardToken string                `json:"board_token"`
-	Verdict    string                `json:"verdict"`
-	MatchKind  string                `json:"match_kind"`
-	Reason     string                `json:"reason"`
-	Matched    *dedupMatchedCompany  `json:"matched"`
-	MatchCount int                   `json:"match_count"`
-	Matches    []dedupMatchedCompany `json:"matches"`
-	Error      *actionError          `json:"error"`
+	Name             string                  `json:"name"`
+	ATS              string                  `json:"ats"`
+	BoardToken       string                  `json:"board_token"`
+	Verdict          string                  `json:"verdict"`
+	MatchKind        string                  `json:"match_kind"`
+	Reason           string                  `json:"reason"`
+	Matched          *dedupMatchedCompany    `json:"matched"`
+	MatchCount       int                     `json:"match_count"`
+	Matches          []dedupMatchedCompany   `json:"matches"`
+	KnownUnsupported *dedupUnsupportedRecord `json:"known_unsupported"`
+	Error            *actionError            `json:"error"`
 }
 
 type dedupMatchedCompany struct {
@@ -88,11 +91,69 @@ type dedupMatchedCompany struct {
 	SimilarityScore   *float64 `json:"similarity_score"`
 }
 
+type dedupUnsupportedRecord struct {
+	Name             string  `json:"name"`
+	URL              *string `json:"url"`
+	DetectedPlatform *string `json:"detected_platform"`
+	Reason           string  `json:"reason"`
+	FirstSeenAt      string  `json:"first_seen_at"`
+	LastCheckedAt    string  `json:"last_checked_at"`
+	Stale            bool    `json:"stale"`
+}
+
 type dedupSource interface {
 	FindByToken(ctx context.Context, ats, boardToken string, recencyDays int32) (*dedupMatchedCompany, error)
 	FindByNames(ctx context.Context, names []string, recencyDays int32) (map[int][]dedupMatchedCompany, error)
 	FindByCareersURLHost(ctx context.Context, careersURLs []string, recencyDays int32) (map[int][]dedupMatchedCompany, error)
 	FindByNameSimilarity(ctx context.Context, names []string, recencyDays int32) (map[int][]dedupMatchedCompany, error)
+	FindUnsupportedByNames(ctx context.Context, names []string) (map[int]dedupUnsupportedRecord, error)
+	FindUnsupportedByURLHost(ctx context.Context, urls []string) (map[int]dedupUnsupportedRecord, error)
+}
+
+func (s poolDedupSource) FindUnsupportedByNames(ctx context.Context, names []string) (map[int]dedupUnsupportedRecord, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, statementTimeout)
+	defer cancel()
+
+	rows, err := db.New(s.pool).FindUnsupportedByNames(queryCtx, names)
+	if err != nil {
+		return nil, err
+	}
+
+	matches := make(map[int]dedupUnsupportedRecord, len(rows))
+	for _, row := range rows {
+		matches[int(row.InputIndex)-1] = dedupUnsupportedRecord{
+			Name:             row.Name,
+			URL:              nullStringPtr(row.Url),
+			DetectedPlatform: nullStringPtr(row.DetectedPlatform),
+			Reason:           row.Reason,
+			FirstSeenAt:      row.FirstSeenAt.UTC().Format(time.RFC3339),
+			LastCheckedAt:    row.LastCheckedAt.UTC().Format(time.RFC3339),
+		}
+	}
+	return matches, nil
+}
+
+func (s poolDedupSource) FindUnsupportedByURLHost(ctx context.Context, urls []string) (map[int]dedupUnsupportedRecord, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, statementTimeout)
+	defer cancel()
+
+	rows, err := db.New(s.pool).FindUnsupportedByURLHost(queryCtx, urls)
+	if err != nil {
+		return nil, err
+	}
+
+	matches := make(map[int]dedupUnsupportedRecord, len(rows))
+	for _, row := range rows {
+		matches[int(row.InputIndex)-1] = dedupUnsupportedRecord{
+			Name:             row.Name,
+			URL:              nullStringPtr(row.Url),
+			DetectedPlatform: nullStringPtr(row.DetectedPlatform),
+			Reason:           row.Reason,
+			FirstSeenAt:      row.FirstSeenAt.UTC().Format(time.RFC3339),
+			LastCheckedAt:    row.LastCheckedAt.UTC().Format(time.RFC3339),
+		}
+	}
+	return matches, nil
 }
 
 func (s poolDedupSource) FindByCareersURLHost(ctx context.Context, careersURLs []string, recencyDays int32) (map[int][]dedupMatchedCompany, error) {
@@ -344,6 +405,36 @@ func runDedupCandidates(ctx context.Context, req dedupCandidatesRequest, source 
 		}
 	}
 
+	unsupportedNameMatches := map[int]dedupUnsupportedRecord{}
+	if len(nameLookupNames) > 0 {
+		var err error
+		unsupportedNameMatches, err = source.FindUnsupportedByNames(ctx, nameLookupNames)
+		if err != nil {
+			return dedupCandidatesDBFailure(err)
+		}
+	}
+
+	unsupportedDomainMatches := map[int]dedupUnsupportedRecord{}
+	if len(domainLookupURLs) > 0 {
+		var err error
+		unsupportedDomainMatches, err = source.FindUnsupportedByURLHost(ctx, domainLookupURLs)
+		if err != nil {
+			return dedupCandidatesDBFailure(err)
+		}
+	}
+
+	for lookupIndex, resultIndex := range nameLookupResultIndexes {
+		if record, ok := unsupportedNameMatches[lookupIndex]; ok {
+			results[resultIndex].KnownUnsupported = dedupUnsupportedRecordWithStaleness(record)
+		}
+	}
+	for lookupIndex, resultIndex := range domainLookupResultIndexes {
+		if record, ok := unsupportedDomainMatches[lookupIndex]; ok {
+			// A URL host is a stronger identity signal than a company name.
+			results[resultIndex].KnownUnsupported = dedupUnsupportedRecordWithStaleness(record)
+		}
+	}
+
 	matchesByResult := make(map[int][]dedupMatchedCompany, len(nameLookupResultIndexes))
 	matchPositions := make(map[int]map[int64]int, len(nameLookupResultIndexes))
 	for lookupIndex, resultIndex := range nameLookupResultIndexes {
@@ -495,6 +586,14 @@ func dedupCandidatesDBFailure(err error) dedupCandidatesEnvelope {
 			Message: err.Error(),
 		}},
 	}
+}
+
+func dedupUnsupportedRecordWithStaleness(record dedupUnsupportedRecord) *dedupUnsupportedRecord {
+	lastCheckedAt, err := time.Parse(time.RFC3339, record.LastCheckedAt)
+	if err == nil {
+		record.Stale = time.Since(lastCheckedAt) > time.Duration(dedupUnsupportedRevisitDays)*24*time.Hour
+	}
+	return &record
 }
 
 const maxInt32 = 1<<31 - 1

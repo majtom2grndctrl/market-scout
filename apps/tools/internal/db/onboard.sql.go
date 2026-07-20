@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -355,4 +356,151 @@ func (q *Queries) FindCompanyDedupStatus(ctx context.Context, arg FindCompanyDed
 		&i.HasRecentSnapshot,
 	)
 	return i, err
+}
+
+const findUnsupportedByNames = `-- name: FindUnsupportedByNames :many
+SELECT
+    candidate_names.input_index,
+    c.name,
+    c.url,
+    c.detected_platform,
+    c.reason,
+    c.first_seen_at,
+    c.last_checked_at
+FROM (
+    SELECT
+        ordinality::int AS input_index,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM unnest($1::text[]) WITH ORDINALITY AS raw_names(name, ordinality)
+) candidate_names
+JOIN (
+    SELECT
+        name,
+        url,
+        detected_platform,
+        reason,
+        first_seen_at,
+        last_checked_at,
+        lower(regexp_replace(name, '[^[:alnum:]]', '', 'g')) AS normalized_name
+    FROM unsupported_companies
+) c ON c.normalized_name = candidate_names.normalized_name
+ORDER BY candidate_names.input_index
+`
+
+type FindUnsupportedByNamesRow struct {
+	InputIndex       int32
+	Name             string
+	Url              sql.NullString
+	DetectedPlatform sql.NullString
+	Reason           string
+	FirstSeenAt      time.Time
+	LastCheckedAt    time.Time
+}
+
+// Given a batch of raw candidate names, returns the matching unsupported
+// registry record for each normalized name. The registry's functional unique
+// index guarantees at most one result for an input index.
+func (q *Queries) FindUnsupportedByNames(ctx context.Context, candidateNames []string) ([]FindUnsupportedByNamesRow, error) {
+	rows, err := q.db.QueryContext(ctx, findUnsupportedByNames, pq.Array(candidateNames))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindUnsupportedByNamesRow
+	for rows.Next() {
+		var i FindUnsupportedByNamesRow
+		if err := rows.Scan(
+			&i.InputIndex,
+			&i.Name,
+			&i.Url,
+			&i.DetectedPlatform,
+			&i.Reason,
+			&i.FirstSeenAt,
+			&i.LastCheckedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const findUnsupportedByURLHost = `-- name: FindUnsupportedByURLHost :many
+SELECT DISTINCT ON (candidate_urls.input_index)
+    candidate_urls.input_index,
+    c.name,
+    c.url,
+    c.detected_platform,
+    c.reason,
+    c.first_seen_at,
+    c.last_checked_at
+FROM (
+    SELECT
+        ordinality::int AS input_index,
+        lower((regexp_match(url, '^https?://(?:[^/?#@]*@)?(?:www\.)?(\[[^]]+\]|[^/:?#]+)(?::[0-9]+)?(?:[/?#]|$)', 'i'))[1]) AS careers_url_host
+    FROM unnest($1::text[]) WITH ORDINALITY AS raw_urls(url, ordinality)
+) candidate_urls
+JOIN (
+    SELECT
+        name,
+        url,
+        detected_platform,
+        reason,
+        first_seen_at,
+        last_checked_at,
+        lower((regexp_match(url, '^https?://(?:[^/?#@]*@)?(?:www\.)?(\[[^]]+\]|[^/:?#]+)(?::[0-9]+)?(?:[/?#]|$)', 'i'))[1]) AS careers_url_host
+    FROM unsupported_companies
+) c ON c.careers_url_host = candidate_urls.careers_url_host
+ORDER BY candidate_urls.input_index, c.last_checked_at DESC
+`
+
+type FindUnsupportedByURLHostRow struct {
+	InputIndex       int32
+	Name             string
+	Url              sql.NullString
+	DetectedPlatform sql.NullString
+	Reason           string
+	FirstSeenAt      time.Time
+	LastCheckedAt    time.Time
+}
+
+// Given a batch of candidate careers URLs, returns the most recently checked
+// unsupported registry record whose normalized URL host matches each input.
+// Multiple registry records may share a host, so DISTINCT ON selects one row
+// per input index with the latest last_checked_at.
+func (q *Queries) FindUnsupportedByURLHost(ctx context.Context, candidateUrls []string) ([]FindUnsupportedByURLHostRow, error) {
+	rows, err := q.db.QueryContext(ctx, findUnsupportedByURLHost, pq.Array(candidateUrls))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FindUnsupportedByURLHostRow
+	for rows.Next() {
+		var i FindUnsupportedByURLHostRow
+		if err := rows.Scan(
+			&i.InputIndex,
+			&i.Name,
+			&i.Url,
+			&i.DetectedPlatform,
+			&i.Reason,
+			&i.FirstSeenAt,
+			&i.LastCheckedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

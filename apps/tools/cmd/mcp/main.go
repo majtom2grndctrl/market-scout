@@ -240,6 +240,16 @@ func newMCPServer(pools dbPools) *server.MCPServer {
 	)
 	s.AddTool(addCompanyTool, addCompanyHandler(pools.action))
 
+	recordUnsupportedCompanyTool := mcp.NewTool(
+		"record_unsupported_company",
+		mcp.WithDescription("Record informational metadata for a company with an unsupported ATS or no careers page through the approved action function."),
+		mcp.WithString("name", mcp.Required(), mcp.Description("Company display name.")),
+		mcp.WithString("reason", mcp.Required(), mcp.Description("Registry reason: unsupported_ats or no_careers.")),
+		mcp.WithString("url", mcp.Description("Absolute http(s) URL. Required for unsupported_ats and optional for no_careers.")),
+		mcp.WithString("detected_platform", mcp.Description("Optional detected unsupported platform label.")),
+	)
+	s.AddTool(recordUnsupportedCompanyTool, recordUnsupportedCompanyHandler(pools.action))
+
 	// save_enrichment is an action tool: it persists a classification through the
 	// approved mcp.save_enrichment function, so the write binds the action pool.
 	// It also reads taxonomy and posting existence for pre-validation through the

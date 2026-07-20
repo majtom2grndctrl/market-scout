@@ -142,3 +142,9 @@ GRANT EXECUTE ON FUNCTION mcp.add_company(text, text, text, text, text) TO marke
 -- REVOKE-from-PUBLIC is also in the migration; repeated here for self-sufficiency.
 REVOKE ALL ON FUNCTION mcp.save_enrichment(jsonb, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION mcp.save_enrichment(jsonb, text, text) TO market_scout_actions;
+
+-- mcp.record_unsupported_company (migration 000015): records a company whose
+-- ATS is unsupported or whose careers page is absent. Revoke is repeated here
+-- so rerunning the setup script remains self-sufficient.
+REVOKE ALL ON FUNCTION mcp.record_unsupported_company(text, text, text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION mcp.record_unsupported_company(text, text, text, text) TO market_scout_actions;
