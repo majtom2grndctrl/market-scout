@@ -64,6 +64,19 @@ func TestExecuteReadOnlyQuery_SelectReturnsRows(t *testing.T) {
 	}
 }
 
+func TestDedupCandidatesReadOnlyRole_FuzzyLookupIsPermitted(t *testing.T) {
+	pool := openReadOnlyTestDB(t)
+
+	_, err := (poolDedupSource{pool: pool}).FindByNameSimilarity(
+		t.Context(),
+		[]string{"Market Scout fuzzy permission probe"},
+		dedupDefaultRecencyDays,
+	)
+	if err != nil {
+		t.Fatalf("FindByNameSimilarity through read-only pool: %v", err)
+	}
+}
+
 func TestExecuteReadOnlyQuery_WriteStatementRejected(t *testing.T) {
 	pool := openReadOnlyTestDB(t)
 	boardToken := fmt.Sprintf("mcp-readonly-test-%d", time.Now().UnixNano())

@@ -72,3 +72,7 @@ GRANT USAGE ON SCHEMA public TO market_scout_readonly;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO market_scout_readonly;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
     GRANT SELECT ON TABLES TO market_scout_readonly;
+
+-- pg_trgm's similarity() is used by the read-only dedup lookup. Grant only the
+-- required extension function; the role retains no general function access.
+GRANT EXECUTE ON FUNCTION public.similarity(text, text) TO market_scout_readonly;
