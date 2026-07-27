@@ -143,6 +143,42 @@ Define what you're defining, completely. A spec with scattered "TBD" markers pus
 
 **Constraints, not solutions, for low-level details.** Schema column order, index choices, and embedding dimensions are implementation concerns — the implementor sees the full picture when they land. State the constraint ("snapshot writes must be atomic per fetch") not the solution ("wrap the loop in `BEGIN; ... COMMIT;` at line 42"). Prescribing layout prematurely creates conflicts when two specs touch the same table.
 
+## Task Instructions
+
+Plan tasks are consumed by implementing agents with less context — and often a smaller model — than the spec author. Dense prose gets lossy-compressed: a sentence carrying three constraints silently loses one. The implementer won't flag the density; it implements a lossy version with full confidence. Write for reliable parsing.
+
+**One constraint per bullet, why attached.** Each bullet carries one constraint and the one-clause reason protecting it. Rationale fused to its constraint survives; a separate rationale paragraph is the part that gets skipped — then the constraint it protected gets "simplified" away.
+
+**Before:**
+```
+Reuse the existing dedup query (do not duplicate it into a second
+query — extend it additively instead), following the preview tool's
+seam pattern (the detect tool is not a model here; it is DB-free
+and uses a different envelope).
+```
+
+**After:**
+```
+- Reuse the existing dedup query; extend it additively. A second
+  copy drifts from the first.
+- Mirror the preview tool's seam pattern — the only tool with the
+  ok-envelope-plus-seam shape.
+
+Do not:
+- Add a second dedup query.
+- Model the tool on the detect tool (DB-free, different envelope).
+```
+
+**Prohibitions live in one Do-not list per task.** Same principle as non-goals: one list, one place — not caveats sprinkled through prose. Where possible, state the positive rule and omit the tempting alternative entirely; an inline "do not build X" plants X in the implementer's context.
+
+**Precedents as a table** when a task leans on more than one:
+
+| Mirror | Don't mirror |
+|---|---|
+| `enrichment_preview` — envelope + seam | `detect_ats` — DB-free, different envelope |
+
+**Acceptance criteria are complete sentences.** Fragments drop verbs and relationships; a dropped verb becomes ambiguity a verifier can't resolve. Fragment style is for context files, not AC.
+
 ## Document Structure
 
 **Orientation block.** Start each context file with: when to read this, key invariant, related files. Lets any reader (human or agent) decide in seconds whether to keep reading.

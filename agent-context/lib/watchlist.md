@@ -28,6 +28,7 @@ Required fields:
 - Companies on unsupported ATS platforms (Rippling, Jobvite, etc.) are discarded
 - Workday tenants that require a `wday_vps_cookie` session cookie fail with a fetch error in v1; only public Workday boards are supported
 - Companies without a valid board token on a supported ATS are discarded
+- Eligibility is ATS-based only — supported platform plus valid board token. Not filtered by company size, stage, or type. A niche watchlist emerges from what a user chooses to onboard, not from a built-in restriction.
 
 ### Dedup
 

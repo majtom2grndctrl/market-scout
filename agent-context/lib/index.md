@@ -23,6 +23,7 @@
 - **Generated files (sqlc, codegen) — never hand-edit** → `agent-context/lib/developer-guide.md` §5.8
 - **Snapshot storage model** → `agent-context/lib/project.md` §Settled architecture *(append-only, never upsert)*
 - **pgvector / semantic search** → `agent-context/lib/project.md` §The database as AI agent knowledge store
+- **Trust tiers for agent-written data** → `agent-context/lib/project.md` §Evidence trust tiers
 - **Next.js app layer** → `agent-context/lib/project.md` §Settled architecture
 - **What's deferred / out of scope** → `agent-context/lib/project.md` §Non-goals
 

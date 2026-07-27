@@ -51,7 +51,7 @@ Sometimes the spec's approach hits a wall — an ATS API doesn't expose the fiel
 2. Propose options with trade-offs.
 3. On resolution, update docs/specs *before* resuming implementation.
 
-The key principle: **specs are working documents — update them during implementation, never silently deviate.** After the feature ships, durable knowledge lives in architecture docs and code comments; the spec is consumed and removed. See §1.5.
+The key principle: **specs are working documents — update them during implementation, never silently deviate.** After the feature ships, durable knowledge lives in architecture docs and code comments; the spec moves to `done/` as a historical record. See §1.5.
 
 ### 1.3 Clean, not clever
 
@@ -75,23 +75,19 @@ When you defer, create a ticket with enough context for the next agent. Never le
 
 ### 1.5 Documentation lifecycle
 
-Specs are working documents — they align on what to build and why, then get consumed during implementation.
+Normative home: [Style Guide](./style-guide.md) §Documentation Lifecycle. Summary:
 
-**Where specs live:**
-
-- **Default: ticket.** Spec content lives in the parent ticket alongside orchestration guidance (child task breakdown, dependencies, sequencing). One focused space for everything about the epic. Tickets include acceptance criteria — the conditions that must hold for the work to be complete. Vague "done" conditions push ambiguity to the implementer.
-- **Escape hatch: `agent-context/plans/`.** When the spec outgrows ticket format — complex schemas needing cross-referencing, extensive tables, content multiple implementers need open simultaneously — extract to a temporary doc. The parent ticket keeps orchestration and links to the temp doc. Use judgment on when to extract.
-
-**After the feature ships:**
-
-- **Delete the spec.** Temp docs in `agent-context/plans/` are removed when the epic closes. Ticket specs close naturally with the ticket.
+- **Specs live in `agent-context/plans/`**, moving `drafts/` → `ready/` → `in-progress/` → `done/`. Acceptance criteria are part of the spec — vague "done" conditions push ambiguity to the implementer.
+- **After the feature ships:** the plan moves to `done/` and stays as a historical record. Don't maintain it; the implementation is the source of truth.
 - **Architecture docs** (`agent-context/lib/`) capture what's durable — design principles, package boundaries, contracts, snapshot model, schema invariants. Content an agent can't derive by opening the relevant file.
 - **Code comments** capture implementation-level "why" decisions. Rationale a reader can't derive from the code alone. See §7.
 
+**The light lane.** The plan pipeline (draft → review → promote → orchestrate) is institutional memory for stateless agents, not quality control. A change touching no schema, no agent-facing contract, and no data write path skips it: implement directly, then `/review-panel`. When in doubt, the cost of a wrong guess decides — code is rewritable; data and contracts are not.
+
 **What doesn't belong in `agent-context/lib/`:**
 
-- Specs for specific features or epics (use tickets or `agent-context/plans/`)
-- Implementation plans or task breakdowns (use tickets)
+- Specs for specific features or epics (use `agent-context/plans/`)
+- Implementation plans or task breakdowns (use `agent-context/plans/`)
 - Content that names specific functions, types, or file paths as load-bearing detail (see [Style Guide](./style-guide.md))
 
 ---
@@ -224,6 +220,22 @@ go run ./cmd/fetcher
 ```
 
 `go run` recompiles each invocation; for the fetcher's startup time this is fine.
+
+### Cost map
+
+Builds and tests are free — run them liberally. Live-surface commands spend money, hit third-party APIs, or churn provenance — run them deliberately.
+
+| Operation | Cost | Rule |
+|---|---|---|
+| `go build`, `go vet`, `go test ./...` | Free | The primary verification loop. Run freely. |
+| `go test -tags=integration ./...` | Cheap; needs Postgres | Run when touching queries or migrations. |
+| `go run ./cmd/fetcher` | Live ATS traffic | One manual run to verify a change is fine. Never in a loop — rate limits and politeness are real. |
+| `go run ./cmd/batch-enrich` | API dollars per posting — `claude -p` left the Max plan 2026-07 | Never run as a test. Exercise the pipeline with unit tests and fakes; a live run is an operator decision. |
+| `/batch-enrich` skill | Session tokens, subscription-covered | The economical bulk path while the binary bills API. Still an operator decision, never a test. |
+| `batch-enrich --force` (either path) | Paid re-classification, provenance churn | Operator-only, after a contract fix. Never to "re-verify." |
+| `go run ./cmd/migrate down` | Full teardown; blocks on enrichment history | See §2 Teardown and Recovery. Never a casual reset. |
+
+Task agents run the free tier only. Live-surface commands belong to the coordinator or the human.
 
 ---
 

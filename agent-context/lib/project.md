@@ -18,7 +18,7 @@ Initially the author. Open-source so other AI-product builders (designers, PMs, 
 
 Two goals that should shape every suggestion:
 
-1. Developing credible backend skills as a generalist who works at small companies.
+1. Developing credible backend skills as a generalist.
 2. Actionable market intel from day one, compounding into trend analysis over weeks and months.
 
 Not a product to sell. A personal tool that doubles as a portfolio piece and learning vehicle.
@@ -70,6 +70,18 @@ Workable adapter v1 returns the listing-level fields only; the widget endpoint i
 ## The database as AI agent knowledge store
 
 The Postgres DB is also intended to serve as a knowledge store for an AI agent layer. pgvector is load-bearing for this. Semantic search queries are raw SQL — vector ops don't map to ORM query builders.
+
+## Evidence trust tiers
+
+Agent-written records carry signals of three trust tiers. Auditing any agent-written row starts with the tier of each signal.
+
+| Tier | Meaning | Example |
+|---|---|---|
+| Tool-attested | A tool observed it directly. Ground truth. | `add_company` probe result |
+| Deterministic | Computed from agent-supplied evidence. Reproducible — but no more trustworthy than its inputs. | `dedup_candidates`, `detect_ats` verdicts |
+| Agent-asserted | The agent says so. | Browser-observed URLs, notes |
+
+Records that mix tiers keep them distinguishable — never collapse a probe result and an agent claim into one field. Unattended runs are audited by walking each signal down this gradient.
 
 ## Non-goals (current scope)
 
