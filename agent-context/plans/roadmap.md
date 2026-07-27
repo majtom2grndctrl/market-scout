@@ -29,11 +29,11 @@ Goal: Agent can discover companies from web sources, investigate them in a brows
 
 ### Milestone: Discovery Run Foundation
 
-- [ ] `browser-led-discovery-runs`
+- [x] `browser-led-discovery-runs`
   Define the browser-led discovery run. It should cover source inputs, candidate records, provenance, statuses, dedup preflight shape, and run summaries. It is the foundation for multi-company pages and recent-news scouting.
 
-- [ ] `discover-and-onboard-agent-loop`
-  Connect discovered candidates to the fetcher set. It should cover browser-observed URL evidence, shared ATS detection, the `detect_ats` MCP preflight, and `add_company` as the verification and write gate.
+- [x] `discover-and-onboard-agent-loop`
+  Done. Browser-observed URL evidence now flows through shared ATS detection, the non-mutating `detect_ats` MCP preflight, and `add_company` as the verification and write gate.
 
 ### Milestone: Safe Onboarding
 
