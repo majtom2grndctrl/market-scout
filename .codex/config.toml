@@ -1,0 +1,6 @@
+[mcp_servers.market-scout-postgres]
+command = "go"
+args = ["run", "-C", "apps/tools", "./cmd/mcp"]
+cwd = "/Users/dhiester/Projects/Personal/market-scout"
+enabled = true
+enabled_tools = ["dedup_candidates", "detect_ats", "add_company"]
