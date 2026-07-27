@@ -99,6 +99,8 @@ Unresolved items, risks, alternatives considered.
 
 **Plumbing rule.** Every "edit X to do Y" instruction must say how X gets access to what it needs. New side-tables need owners. New struct fields need writer call-sites. Function signature changes need their callers enumerated. Don't punt access plumbing to the implementer — the implementer has less context than the spec author.
 
+**Write tasks for the implementer's tier.** Task prose follows `agent-context/lib/style-guide.md` §Task Instructions: one constraint per bullet with its why attached, prohibitions collected in one Do-not list, precedents as a Mirror/Don't-mirror table. The implementing model lossy-compresses dense paragraphs; it never flags them.
+
 ### 4. Acceptance criteria
 
 AC names observable behavior. Someone who didn't write the plan must be able to verify it without reading the implementation.
@@ -160,3 +162,4 @@ At promotion:
 1. Capture durable decisions in `agent-context/lib/` — new architectural constraints, subsystem contracts, pipeline topology. Agents working the plan find full context in the library, not in the plan document.
 2. `git mv agent-context/plans/drafts/<name> agent-context/plans/ready/<name>`
 3. Commit the move and the `agent-context/lib/` updates together.
+4. Run `/review-implementability` on the promoted spec before `/orchestrate`.

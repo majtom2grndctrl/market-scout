@@ -29,7 +29,7 @@ Read these context library files first:
 Then read `agent-context/plans/ready/$ARGUMENTS/index.md`. If missing, list available plans and ask which to run.
 
 Understand:
-- Shared context section (every agent needs this)
+- Goal section (every agent needs this)
 - Each task's description and acceptance criteria
 - Sequencing: phases, concurrency, and dependencies
 
@@ -49,11 +49,13 @@ For each phase in the sequencing section:
 
 **Concurrent:** Spawn all phase Opus agents simultaneously via multiple Agent tool calls in one message.
 **For each agent, provide:**
-1. The plan's **Shared Context** section
-2. The agent's **specific task** — description, acceptance criteria
-3. Instruction to read relevant `agent-context/lib/` files for architectural guidance
-4. Instruction to follow `agent-context/lib/developer-guide.md` conventions
-5. Instruction to run `go build ./...` and `go test ./...` before considering the task complete
+1. The plan's **Goal** section
+2. The agent's **specific task** description, plus the plan's Acceptance criteria section (AC is plan-level; the templates define no per-task AC)
+3. The relevant `agent-context/lib/` slices **inlined** — route via `agent-context/lib/index.md`, paste the sections that govern the task's subsystems. Agents under task pressure skip "go read X" instructions; paths drift.
+4. The code-grounding rule: any claim about an identifier's shape or behavior comes from a file opened this session, not memory.
+5. §3 Examine dependencies through §6 Report from `.claude/skills/implement-task/SKILL.md`, pasted verbatim — that skill owns the implementer process. Its §1–§2 (context and task loading) are superseded by items 1–3 of this packet.
+
+This list is the dispatch contract. `/review-implementability` simulates it when reviewing specs; if the two drift, this list wins.
 
 **Do NOT provide:**
 - Other tasks' details (the agent doesn't need them)
@@ -63,8 +65,9 @@ For each phase in the sequencing section:
 ### 4. Integrate results
 
 After each phase:
-- Review what agents produced
-- Verify acceptance criteria are met
+- Read each agent's completion report: AC statuses, test output, deviations
+- Verify acceptance criteria are met — trust the report's evidence, not its confidence
+- A deviation that shifts contracts or scope is a surface-to-user event (developer-guide §1.2)
 - If a task completed partially or blocked, surface to the user with context
 - If using worktrees, merge completed work back to the main branch
 
@@ -73,13 +76,16 @@ Between phases, check that prerequisites for the next phase are satisfied.
 ### 5. Complete
 
 When all phases are done:
-- Run preflight checks: `gofmt -l . && go vet ./... && go test ./...`
+- Run `/preflight` — the coordinator's single full gate
 - Run a `/review-panel` on code edited in this session
 - Report review panel findings to user to discuss which feedback to act on
+- Run `/fix-findings` on the findings the user accepts
+- Name the two or three idiomatic Go choices this feature made that are worth the user's understanding — the project is a learning vehicle (project.md §Why it exists)
 
 ### 6. Landing the plane
 
 When the user says "land the plane":
+- Re-run `/preflight` when any code changed after the gate (fix-findings edits, hand fixes)
 - Move the plan to done: `git mv agent-context/plans/in-progress/<plan-name> agent-context/plans/done/<plan-name>`
 - Clean up worktrees from the session
 - Commit & push
@@ -88,7 +94,7 @@ When the user says "land the plane":
 
 - **Agent fails a task:** Surface the error and acceptance criteria to the user. Ask whether to retry, skip, or abort.
 - **Merge conflict from concurrent agents:** Resolve if straightforward; escalate to user if the conflict involves architectural decisions.
-- **Preflight fails:** Fix if the issue is mechanical (formatting, simple clippy lint). Escalate if the fix requires design decisions.
+- **Preflight fails:** Fix if the issue is mechanical (formatting, simple staticcheck lint). Escalate if the fix requires design decisions.
 
 ### Principles
 

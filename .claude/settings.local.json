@@ -64,7 +64,39 @@
       "mcp__plugin_context7_context7__query-docs",
       "Bash(git merge *)",
       "Bash(git *)",
-      "Read(//private/tmp/**)"
+      "Read(//private/tmp/**)",
+      "Bash(pnpm --version)",
+      "WebFetch(domain:ui.shadcn.com)",
+      "Bash(pnpm dlx *)",
+      "Read(//tmp/**)",
+      "Bash(pnpm build *)",
+      "Bash(echo \"BUILD_EXIT=$?\")",
+      "Bash(make clean *)",
+      "Bash(make build *)",
+      "Bash(make check *)",
+      "Bash(make fetcher *)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(sqlc version *)",
+      "Bash(grep -nE '^#{1,3} ' /Users/dhiester/Projects/Personal/market-scout/agent-context/lib/developer-guide.md)",
+      "Bash(echo \"\\(exit: $?\\)\")",
+      "Read(//Users/dhiester/Projects/**)",
+      "Bash(xargs ls)",
+      "Bash(sqlc diff *)",
+      "Bash(cp .claude/workflows/review-panel.js __TRACKED_VAR__/rp-check.mjs)",
+      "Bash(cp .claude/workflows/review-panel.js /private/tmp/claude-501/-Users-dhiester-Projects-Personal-market-scout/afa3ff10-68f0-4fc9-99d8-481f7043ba41/scratchpad/rp-check.mjs)",
+      "Bash(node --check /private/tmp/claude-501/-Users-dhiester-Projects-Personal-market-scout/afa3ff10-68f0-4fc9-99d8-481f7043ba41/scratchpad/rp-check.mjs)",
+      "Bash(node --check __TRACKED_VAR__/rp-check.mjs)",
+      "Skill(claude-in-chrome)",
+      "mcp__market-scout-postgres__dedup_candidates",
+      "mcp__market-scout-postgres__detect_ats",
+      "mcp__market-scout-postgres__add_company",
+      "mcp__market-scout-postgres__record_unsupported_company",
+      "mcp__market-scout-postgres__enrichment_preview",
+      "mcp__market-scout-postgres__query",
+      "mcp__market-scout-postgres__save_enrichment"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "market-scout-postgres"
+  ]
 }

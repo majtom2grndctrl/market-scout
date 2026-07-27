@@ -1,32 +1,32 @@
 ---
 name: review-panel
 description: >
-  Runs a multi-agent review panel: parallel code reviewers plus a dedicated
-  comment drift checker. Aggregates findings with deduplication and severity
-  merging. Runs in a forked context so the active agent's context window stays
-  clean and reviewers have no bias from prior work. Use mid-session after
-  implementing a feature, or before opening a pull request.
-allowed-tools: Read, Glob, Grep, Bash, Agent
+  Runs a multi-agent review panel of specialized review lenses, sized to the
+  diff by a triage step and refutation-checked before reporting. Executes as
+  a deterministic workflow so phases and verification never depend on
+  coordinator attention. Use mid-session after implementing a feature, or
+  before opening a pull request.
+allowed-tools: Read, Glob, Grep, Bash, Workflow, Agent
 argument-hint: "[file-path | plan-name] [reviewers:N] [model:opus|sonnet]"
 ---
 
 # Review Panel
 
-Review panel coordinator, isolated from the implementing agent's context. Reviewers evaluate code on its own merits — no access to prior reasoning or conversation history.
+Coordinator for a lens-based review panel. Partition the diff into slices, hand them to the workflow, present the results. Do not review code yourself.
 
-Spawn parallel review agents, collect findings, present a unified review. Do not review code yourself.
+## Panel model
 
-## Defaults
+A lens is a way of reviewing, not a region of code. The workflow (`.claude/workflows/review-panel.js`) triages each slice and dispatches from what the diff actually contains:
 
-- **Code reviewers:** 2 agents, Opus model
-- **Comment drift checker:** 1 agent, Sonnet model
-- **Total:** 3 agents in parallel
+- **Correctness tracer** (depth) — mentally executes one data flow end to end. Ordering bugs, producer/consumer mismatches, swallowed errors, broken per-source isolation.
+- **Contract verifier** (depth) — checks one changed surface for agreement across every layer: migration, SQL, generated Go, struct tags, JSON envelope, doc, runtime.
+- **Adversarial tester** (depth) — concrete edge-case sequences: empty batches, NULL translation, cancellation mid-run.
+- **Data-integrity reviewer** (depth) — dispatched when a slice writes rows. Append-only violations, atomicity, provenance. A code bug costs a rerun; a write-path bug corrupts history that cannot be refetched.
+- **Hygiene + drift** (breadth, always Sonnet) — checklist pass plus comment integrity.
 
-Override with arguments:
-- `reviewers:3` — run 3 code review agents instead of 2
-- `model:sonnet` — use Sonnet for code reviewers instead of Opus
+One agent per depth lens; one agent for the whole breadth cluster. Mechanical slices get the breadth pass alone — the panel scales down on small diffs.
 
-Comment drift checker: always 1 Sonnet agent, unaffected by overrides.
+Findings are deduped and severity-merged. Red and yellow code findings survive only when a Refuter fails to disprove them against live source with a citation. Comment-drift findings are not refuted — the hygiene reviewer verifies them by quoting live on-disk text instead.
 
 ## Scope detection
 
@@ -46,51 +46,44 @@ Determine review target from first argument (same rules as `/code-review`):
 
 Extract from `$ARGUMENTS`:
 - The review target (plan name, file path, or empty for uncommitted changes)
-- `reviewers:N` — number of code review agents (default: 2)
-- `model:opus|sonnet` — model for code review agents (default: opus)
+- `reviewers:N` — force exactly N depth agents per slice, bypassing the dispatch table
+- `model:opus|sonnet` — model for triage, depth, and refuter agents (default: opus)
 
-### 2. Spawn all agents in parallel
+### 2. Partition slices
 
-Launch all agents simultaneously in a single message. No `isolation: "worktree"` needed — reviewers read code and report findings, they don't write files.
+Slices are `{ name, paths: [string] }` — the workflow rejects any other shape.
 
-**Code review agents (N instances):**
-Use these instructions, plus the review target. Specified model (default: opus).
+`git diff --stat` gives the line and file counts. Under ~1,500 changed lines: one slice, named for the change, `paths` = every touched path from the stat.
 
-> You are a code reviewer for a Go web service. Review for:
-> - **Correctness:** logic errors, nil dereferences, off-by-ones, missing error handling, incorrect SQL or HTTP behavior
-> - **Idiomatic Go:** proper error wrapping, context propagation, interface usage, goroutine safety, defer correctness
-> - **Security:** SQL injection, input validation at system boundaries, credential or secret exposure
-> - **Maintainability:** overly complex logic, misleading identifiers, unnecessary abstraction, dead code
-> - **Test coverage:** missing edge cases, assertions that don't verify observable behavior
->
-> Output: list of `{ file:line, severity (🔴/🟡/🟢), problem, fix }` items. "No findings" if clean. No praise.
+Above that, partition by package path (`cmd/mcp`, `internal/ats`, `internal/db`, …) into ~1–1.5k-line slices, working from the stat alone — don't read the diff to split it. One triage pass can't hold a diff that large: it names the obvious flows and misses the rest. Per-slice keeps triage sharp and each agent's load small.
 
-**Comment drift agent (1 instance, always Sonnet):**
-Comment drift instructions below, plus review target.
+### 3. Run the workflow
 
-### 3. Aggregate results
+```
+Workflow:
+  scriptPath: .claude/workflows/review-panel.js
+  args: { target, diffRef, slices, reviewers, depthModel }
+```
 
-Once all agents complete:
+`diffRef` is `HEAD` for uncommitted changes, or the ref range that covers the target. The `model:` argument maps to `depthModel`; it and `reviewers` pass through only when the user set them.
 
-**Deduplicate:** If multiple reviewers flag the same issue (same file, same concern), keep the most specific description and note how many reviewers caught it. Agreement across reviewers is strong signal.
-
-**Merge severity:** If reviewers disagree on severity for the same issue, use the higher severity. One reviewer seeing a 🔴 outweighs another seeing 🟡.
-
-**Combine comment drift findings** as a separate section — don't mix them into the code review findings.
+If the Workflow tool is unavailable, run the same stages with Agent calls — triage, lenses, seam, dedupe, refute. Replicate the script's dispatch rules (`buildLenses` caps, refute batching), not just its prompts.
 
 ### 4. Present unified review
 
 ```
 ## Review Panel Summary
 
-**Panel:** N code reviewers (model) + 1 comment drift checker (sonnet)
+**Panel:** [per slice: lenses that ran — depth lenses on the model arg, hygiene and dedupe on sonnet]
+**Scope:** [single slice, or "N slices + seam pass"]
 **Target:** [what was reviewed]
+**Refuted:** [count dropped in refutation, one line each]
 **Verdict:** approve / request changes / needs discussion
 
 ## Code Review Findings
 
 ### 🔴 Must fix
-[Deduplicated findings, noting reviewer agreement where applicable]
+[Tag each with lens and agreement, e.g. "(tracer, 2x)"]
 
 ### 🟡 Should fix
 [...]
@@ -100,57 +93,10 @@ Once all agents complete:
 
 ## Comment Drift Findings
 
-### 🔴 Stale or misleading comments
-[Comments that would lead an agent astray]
-
-### 🟡 Comments that need updating
-[Comments weakened by the changes but not yet wrong]
-
-### 🟢 Suggested improvements
-[Opportunities to add context that would help future agents]
+[Same severity structure — keep separate from code findings]
 
 ## What's done well
-[Merged from all reviewers — deduplicated]
+[The workflow's praise array, deduplicated]
 ```
 
-Omit empty severity categories. If the panel unanimously approves with no findings, say so clearly.
-
----
-
-## Comment Drift Checker Instructions
-
-Pass these instructions to the comment drift agent verbatim.
-
-```
-You are a **Comment Integrity Reviewer** for Market Scout. Comments are living documentation — agents read them to make decisions. A stale or misleading comment is worse than no comment; it actively sets agents up for failure.
-
-Read these files first:
-- `agent-context/lib/developer-guide.md` (Code Comments section)
-- `agent-context/lib/style-guide.md` (durable vs ephemeral content)
-
-Review changed files and adjacent code (importers, importees, shared subsystem boundaries).
-
-Check for:
-
-### In changed code:
-- **File headers that reference wrong context files** — does the header point to a context file that still governs this code?
-- **Comments describing behavior that the code no longer implements** — the code changed but the comment didn't
-- **New code missing "why" comments** — non-obvious decisions, ordering dependencies, architectural constraints that a future agent couldn't derive from the code alone
-- **Orphan TODOs** — `// TODO` without a follow-up reference or actionable context
-- **Comments restating code** — if the code is clear, the comment wastes context budget. If the code is unclear, improve the code.
-- **Spec pointers to nonexistent docs** — `See: context/lib/foo.md` where foo.md doesn't exist
-
-### In adjacent code:
-- **Comments that reference contracts changed by this diff** — e.g., "Renderer expects vertex format X" when the diff just changed that format
-- **File headers in adjacent modules whose responsibilities shifted** — did a subsystem boundary move?
-- **Cross-references between modules that are now stale** — "This is consumed by module Y" when module Y no longer does that
-
-### Output format:
-
-Use the same severity format (🔴/🟡/🟢) as the code review:
-- 🔴 **Stale or misleading** — would actively mislead an agent reading this code
-- 🟡 **Needs updating** — weakened by the changes but not yet wrong
-- 🟢 **Suggested improvement** — opportunity to add context that would help future agents
-
-For each finding: name the file, quote the comment, explain what's wrong, and suggest the fix.
-```
+Severity mapping: red → 🔴, yellow → 🟡, green → 🟢. Verdict rule: any surviving red → request changes; only yellows → needs discussion; otherwise approve. Omit empty categories. If the panel approves with no findings, say so clearly.
