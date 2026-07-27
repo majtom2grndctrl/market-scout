@@ -21,10 +21,13 @@ type fakeQuerier struct {
 	calledUnclassified bool
 	calledForced       bool
 	classifiedAmongIDs []int64
+	gotUnclassifiedArg db.ListUnclassifiedPostingsParams
+	gotForcedArg       db.ListUnclassifiedPostingsForcedParams
 }
 
 func (f *fakeQuerier) ListUnclassifiedPostings(ctx context.Context, arg db.ListUnclassifiedPostingsParams) ([]db.ListUnclassifiedPostingsRow, error) {
 	f.calledUnclassified = true
+	f.gotUnclassifiedArg = arg
 	if f.unclassifiedErr != nil {
 		return nil, f.unclassifiedErr
 	}
@@ -33,6 +36,7 @@ func (f *fakeQuerier) ListUnclassifiedPostings(ctx context.Context, arg db.ListU
 
 func (f *fakeQuerier) ListUnclassifiedPostingsForced(ctx context.Context, arg db.ListUnclassifiedPostingsForcedParams) ([]db.ListUnclassifiedPostingsForcedRow, error) {
 	f.calledForced = true
+	f.gotForcedArg = arg
 	if f.forcedErr != nil {
 		return nil, f.forcedErr
 	}
@@ -131,6 +135,39 @@ func TestSelectWith_ForcedEmptySkipsClassifiedCheck(t *testing.T) {
 	}
 	if q.classifiedAmongIDs != nil {
 		t.Fatalf("ListClassifiedAmong called with %v, want skipped for empty selection", q.classifiedAmongIDs)
+	}
+}
+
+func TestSelectRows_SortZeroValueMapsToOldestFirst(t *testing.T) {
+	// Criteria{} (zero value, no Sort set) is the shape cmd/batch-enrich builds
+	// today. It must resolve to NewestFirst=false so existing callers keep the
+	// pre-existing oldest-first behavior without opting in.
+	q := &fakeQuerier{}
+	if _, err := selectRows(t.Context(), q, Criteria{Count: 10}); err != nil {
+		t.Fatalf("selectRows: %v", err)
+	}
+	if q.gotUnclassifiedArg.NewestFirst {
+		t.Fatalf("NewestFirst = true, want false for zero-value Sort")
+	}
+}
+
+func TestSelectRows_SortNewestFirstSetsParam(t *testing.T) {
+	q := &fakeQuerier{}
+	if _, err := selectRows(t.Context(), q, Criteria{Count: 10, Sort: SortNewestFirst}); err != nil {
+		t.Fatalf("selectRows: %v", err)
+	}
+	if !q.gotUnclassifiedArg.NewestFirst {
+		t.Fatalf("NewestFirst = false, want true for SortNewestFirst")
+	}
+}
+
+func TestSelectRows_SortNewestFirstSetsParamOnForcedVariant(t *testing.T) {
+	q := &fakeQuerier{}
+	if _, err := selectRows(t.Context(), q, Criteria{Count: 10, Force: true, Sort: SortNewestFirst}); err != nil {
+		t.Fatalf("selectRows: %v", err)
+	}
+	if !q.gotForcedArg.NewestFirst {
+		t.Fatalf("NewestFirst = false, want true for SortNewestFirst on forced variant")
 	}
 }
 

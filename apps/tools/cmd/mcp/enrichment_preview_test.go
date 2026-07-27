@@ -92,12 +92,76 @@ func TestRunEnrichmentPreview_PassesInputsToSelector(t *testing.T) {
 	if !env.Ok {
 		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
 	}
-	want := selection.Criteria{Count: 50, Focus: "go", Force: true}
+	want := selection.Criteria{Count: 50, Focus: "go", Force: true, Sort: selection.SortOldestFirst}
 	if sel.gotCrit != want {
 		t.Fatalf("selector got crit = %+v, want %+v", sel.gotCrit, want)
 	}
-	if env.Input != (previewEcho{Count: 50, Focus: "go", Force: true}) {
-		t.Fatalf("input echo = %+v, want {50 go true}", env.Input)
+	if env.Input != (previewEcho{Count: 50, Focus: "go", Force: true, Sort: previewSortOldestFirst}) {
+		t.Fatalf("input echo = %+v, want {50 go true oldest_first}", env.Input)
+	}
+}
+
+func TestRunEnrichmentPreview_SortDefaultsToOldestFirst(t *testing.T) {
+	sel := &fakeSelector{}
+	// Sort omitted entirely.
+	env := runEnrichmentPreview(t.Context(), previewRequest{Count: intPtr(10)}, sel)
+
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
+	}
+	if env.Input.Sort != previewSortOldestFirst {
+		t.Fatalf("input.sort = %q, want default %q", env.Input.Sort, previewSortOldestFirst)
+	}
+	if sel.gotCrit.Sort != selection.SortOldestFirst {
+		t.Fatalf("selector got sort = %v, want SortOldestFirst", sel.gotCrit.Sort)
+	}
+}
+
+func TestRunEnrichmentPreview_SortExplicitNewestFirst(t *testing.T) {
+	sel := &fakeSelector{}
+	env := runEnrichmentPreview(t.Context(), previewRequest{Count: intPtr(10), Sort: "newest_first"}, sel)
+
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
+	}
+	if env.Input.Sort != previewSortNewestFirst {
+		t.Fatalf("input.sort = %q, want %q", env.Input.Sort, previewSortNewestFirst)
+	}
+	if sel.gotCrit.Sort != selection.SortNewestFirst {
+		t.Fatalf("selector got sort = %v, want SortNewestFirst", sel.gotCrit.Sort)
+	}
+}
+
+func TestRunEnrichmentPreview_SortExplicitOldestFirst(t *testing.T) {
+	sel := &fakeSelector{}
+	env := runEnrichmentPreview(t.Context(), previewRequest{Count: intPtr(10), Sort: "oldest_first"}, sel)
+
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
+	}
+	if env.Input.Sort != previewSortOldestFirst {
+		t.Fatalf("input.sort = %q, want %q", env.Input.Sort, previewSortOldestFirst)
+	}
+	if sel.gotCrit.Sort != selection.SortOldestFirst {
+		t.Fatalf("selector got sort = %v, want SortOldestFirst", sel.gotCrit.Sort)
+	}
+}
+
+func TestRunEnrichmentPreview_SortInvalidValueRejected(t *testing.T) {
+	sel := &fakeSelector{}
+	env := runEnrichmentPreview(t.Context(), previewRequest{Count: intPtr(10), Sort: "latest"}, sel)
+
+	if env.Ok {
+		t.Fatalf("env.Ok = true, want false for invalid sort value")
+	}
+	if sel.called {
+		t.Fatalf("selector called = true, want false when sort is invalid")
+	}
+	if !hasError(env.Errors, "sort", codeInvalidSort) {
+		t.Fatalf("errors = %+v, want path=sort code=%s", env.Errors, codeInvalidSort)
+	}
+	if env.Input.Sort != "latest" {
+		t.Fatalf("input.sort = %q, want echo of raw invalid value %q", env.Input.Sort, "latest")
 	}
 }
 

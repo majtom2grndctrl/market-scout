@@ -192,6 +192,7 @@ func newMCPServer(pools dbPools) *server.MCPServer {
 		mcp.WithNumber("count", mcp.Description("Max postings to select (1-100). Defaults to 10.")),
 		mcp.WithString("focus", mcp.Description("ILIKE prefilter on title and description; `%` and `_` are SQL wildcards. Empty means no filter.")),
 		mcp.WithBoolean("force", mcp.Description("Include already-classified postings (drops the unclassified filter). Defaults to false.")),
+		mcp.WithString("sort", mcp.Description("Selection order by first_seen_at: \"oldest_first\" (default; processes the backlog in stable priority order) or \"newest_first\" (previews a recency-biased selection). Use newest_first when the batch-enrich run you're previewing will select newest postings first.")),
 	)
 	s.AddTool(enrichmentPreviewTool, enrichmentPreviewHandler(pools.readOnly))
 

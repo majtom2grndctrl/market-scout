@@ -1,7 +1,7 @@
 -- Queries that drive the batch-enrich Go command and the MCP enrichment_preview
 -- tool. Selection uses a LATERAL join to the latest posting_snapshots row per
--- job_posting, an optional ILIKE focus prefilter, and oldest-first ordering to
--- process the backlog in stable priority. The Forced variant drops the NOT
+-- job_posting, an optional ILIKE focus prefilter, and a caller-chosen ordering
+-- to process the backlog in stable priority. The Forced variant drops the NOT
 -- EXISTS classifications guard so already-classified postings are eligible for
 -- re-enrichment under --force.
 --
@@ -11,6 +11,15 @@
 -- @row_limit is named (not `limit`) because `limit` is a reserved word in
 -- sqlc's named-parameter syntax. Column aliases (`posting_id`, `description_text`,
 -- `company_name`) pin the generated struct field names.
+--
+-- @newest_first drives ORDER BY direction without string-interpolating a
+-- column/direction into SQL (sqlc can't parameterize ORDER BY directly). Only
+-- one of the two CASE expressions ever produces a non-NULL value per row —
+-- the other is NULL for every row and so is a no-op tie-breaker — so this
+-- reduces to a plain ASC or DESC sort on first_seen_at (NOT NULL, so no NULLS
+-- ordering concern) depending on the bound boolean. Default false preserves
+-- the pre-existing oldest-first behavior for callers (like cmd/batch-enrich)
+-- that don't set it.
 
 -- name: ListUnclassifiedPostings :many
 SELECT jp.id AS posting_id,
@@ -32,7 +41,8 @@ WHERE s.description_text IS NOT NULL
   AND NOT EXISTS (
       SELECT 1 FROM classifications WHERE job_posting_id = jp.id
   )
-ORDER BY jp.first_seen_at ASC
+ORDER BY CASE WHEN @newest_first::bool THEN jp.first_seen_at END DESC,
+         CASE WHEN NOT @newest_first::bool THEN jp.first_seen_at END ASC
 LIMIT @row_limit::int;
 
 -- name: ListUnclassifiedPostingsForced :many
@@ -52,7 +62,8 @@ JOIN LATERAL (
 ) s ON true
 WHERE s.description_text IS NOT NULL
   AND (@focus::text = '' OR (s.title ILIKE '%' || @focus::text || '%' OR s.description_text ILIKE '%' || @focus::text || '%'))
-ORDER BY jp.first_seen_at ASC
+ORDER BY CASE WHEN @newest_first::bool THEN jp.first_seen_at END DESC,
+         CASE WHEN NOT @newest_first::bool THEN jp.first_seen_at END ASC
 LIMIT @row_limit::int;
 
 -- name: ListClassifiedAmong :many

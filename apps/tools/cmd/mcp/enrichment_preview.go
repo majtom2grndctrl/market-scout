@@ -30,17 +30,32 @@ const (
 	// previewSampleCap limits how many selected postings the sample carries.
 	// selected_count still reflects the full count-limited selection.
 	previewSampleCap = 20
+
+	// previewSortOldestFirst and previewSortNewestFirst are the two accepted
+	// values for the "sort" param. An empty string (param omitted) resolves to
+	// previewSortOldestFirst, matching the pre-existing default behavior.
+	previewSortOldestFirst = "oldest_first"
+	previewSortNewestFirst = "newest_first"
 )
 
 // codeInvalidCount is the action error code for a count outside [1, 100].
 const codeInvalidCount = "invalid_count"
 
+// codeInvalidSort is the action error code for a sort value other than
+// "oldest_first" or "newest_first" (empty string, which means omitted, is
+// valid and resolves to the default).
+const codeInvalidSort = "invalid_sort"
+
 // previewRequest is the MCP tool DTO. Count is a pointer so an omitted value
 // (default 10) is distinguishable from an explicit 0, which is out of range.
+// Sort is a plain string because its own zero value ("") is unambiguous: it
+// means "omitted" and resolves to previewSortOldestFirst, never a rejected
+// input in its own right.
 type previewRequest struct {
 	Count *int   `json:"count"`
 	Focus string `json:"focus"`
 	Force bool   `json:"force"`
+	Sort  string `json:"sort"`
 }
 
 // previewEcho mirrors the resolved inputs back to the caller so the agent can
@@ -49,6 +64,7 @@ type previewEcho struct {
 	Count int    `json:"count"`
 	Focus string `json:"focus"`
 	Force bool   `json:"force"`
+	Sort  string `json:"sort"`
 }
 
 // previewSampleRow is one row of the capped sample: posting id, company id,
@@ -120,15 +136,19 @@ func enrichmentPreviewHandlerWithDeps(sel previewSelector) server.ToolHandlerFun
 }
 
 // runEnrichmentPreview resolves defaults, validates count against the 1..100
-// bound, then runs the shared selection and maps the result into the preview
-// envelope. An invalid count returns an ok=false envelope; it never returns an
-// MCP transport error.
+// bound and sort against its two accepted values, then runs the shared
+// selection and maps the result into the preview envelope. An invalid count or
+// sort returns an ok=false envelope; it never returns an MCP transport error.
 func runEnrichmentPreview(ctx context.Context, req previewRequest, sel previewSelector) previewEnvelope {
 	count := previewDefaultCount
 	if req.Count != nil {
 		count = *req.Count
 	}
-	echo := previewEcho{Count: count, Focus: req.Focus, Force: req.Force}
+	sort := req.Sort
+	if sort == "" {
+		sort = previewSortOldestFirst
+	}
+	echo := previewEcho{Count: count, Focus: req.Focus, Force: req.Force, Sort: sort}
 
 	if count < previewMinCount || count > previewMaxCount {
 		return previewEnvelope{
@@ -143,10 +163,29 @@ func runEnrichmentPreview(ctx context.Context, req previewRequest, sel previewSe
 		}
 	}
 
+	if sort != previewSortOldestFirst && sort != previewSortNewestFirst {
+		return previewEnvelope{
+			Ok:    false,
+			Input: echo,
+			Errors: []actionError{{
+				Path:    "sort",
+				Code:    codeInvalidSort,
+				Message: fmt.Sprintf("sort must be %q or %q", previewSortOldestFirst, previewSortNewestFirst),
+			}},
+			Sample: []previewSampleRow{},
+		}
+	}
+
+	critSort := selection.SortOldestFirst
+	if sort == previewSortNewestFirst {
+		critSort = selection.SortNewestFirst
+	}
+
 	postings, alreadyClassified, err := sel.Select(ctx, selection.Criteria{
 		Count: count,
 		Focus: req.Focus,
 		Force: req.Force,
+		Sort:  critSort,
 	})
 	if err != nil {
 		return previewEnvelope{

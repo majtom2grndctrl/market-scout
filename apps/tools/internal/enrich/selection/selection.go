@@ -14,15 +14,28 @@ import (
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
 )
 
+// Sort selects the ordering Select returns postings in. The zero value,
+// SortOldestFirst, preserves the pre-existing behavior — callers (like
+// cmd/batch-enrich) that never set Sort keep processing the backlog oldest
+// first, in stable priority order.
+type Sort int
+
+const (
+	SortOldestFirst Sort = iota
+	SortNewestFirst
+)
+
 // Criteria are the inputs that determine which postings selection returns. They
 // mirror the batch-enrich flags (--count, --focus, --force) and carry the same
 // semantics: Focus is an ILIKE prefilter where `%` and `_` keep their SQL
 // wildcard meaning, and Force drops the unclassified guard so already-classified
-// postings become eligible.
+// postings become eligible. Sort chooses oldest-first (default) or
+// newest-first ordering by first_seen_at.
 type Criteria struct {
 	Count int
 	Focus string
 	Force bool
+	Sort  Sort
 }
 
 // Posting is one selected posting paired with the latest snapshot's title and
@@ -86,10 +99,12 @@ func SelectWith(ctx context.Context, q Querier, crit Criteria) (postings []Posti
 // absent. CompanyName is non-nullable from the companies join.
 func selectRows(ctx context.Context, q Querier, crit Criteria) ([]Posting, error) {
 	limit := int32(crit.Count)
+	newestFirst := crit.Sort == SortNewestFirst
 	if crit.Force {
 		rows, err := q.ListUnclassifiedPostingsForced(ctx, db.ListUnclassifiedPostingsForcedParams{
-			Focus:    crit.Focus,
-			RowLimit: limit,
+			Focus:       crit.Focus,
+			NewestFirst: newestFirst,
+			RowLimit:    limit,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("listing unclassified postings (forced): %w", err)
@@ -108,8 +123,9 @@ func selectRows(ctx context.Context, q Querier, crit Criteria) ([]Posting, error
 	}
 
 	rows, err := q.ListUnclassifiedPostings(ctx, db.ListUnclassifiedPostingsParams{
-		Focus:    crit.Focus,
-		RowLimit: limit,
+		Focus:       crit.Focus,
+		NewestFirst: newestFirst,
+		RowLimit:    limit,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("listing unclassified postings: %w", err)

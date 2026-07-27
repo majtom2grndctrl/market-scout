@@ -193,13 +193,15 @@ WHERE s.description_text IS NOT NULL
   AND NOT EXISTS (
       SELECT 1 FROM classifications WHERE job_posting_id = jp.id
   )
-ORDER BY jp.first_seen_at ASC
-LIMIT $2::int
+ORDER BY CASE WHEN $2::bool THEN jp.first_seen_at END DESC,
+         CASE WHEN NOT $2::bool THEN jp.first_seen_at END ASC
+LIMIT $3::int
 `
 
 type ListUnclassifiedPostingsParams struct {
-	Focus    string
-	RowLimit int32
+	Focus       string
+	NewestFirst bool
+	RowLimit    int32
 }
 
 type ListUnclassifiedPostingsRow struct {
@@ -212,8 +214,8 @@ type ListUnclassifiedPostingsRow struct {
 
 // Queries that drive the batch-enrich Go command and the MCP enrichment_preview
 // tool. Selection uses a LATERAL join to the latest posting_snapshots row per
-// job_posting, an optional ILIKE focus prefilter, and oldest-first ordering to
-// process the backlog in stable priority. The Forced variant drops the NOT
+// job_posting, an optional ILIKE focus prefilter, and a caller-chosen ordering
+// to process the backlog in stable priority. The Forced variant drops the NOT
 // EXISTS classifications guard so already-classified postings are eligible for
 // re-enrichment under --force.
 //
@@ -223,8 +225,17 @@ type ListUnclassifiedPostingsRow struct {
 // @row_limit is named (not `limit`) because `limit` is a reserved word in
 // sqlc's named-parameter syntax. Column aliases (`posting_id`, `description_text`,
 // `company_name`) pin the generated struct field names.
+//
+// @newest_first drives ORDER BY direction without string-interpolating a
+// column/direction into SQL (sqlc can't parameterize ORDER BY directly). Only
+// one of the two CASE expressions ever produces a non-NULL value per row —
+// the other is NULL for every row and so is a no-op tie-breaker — so this
+// reduces to a plain ASC or DESC sort on first_seen_at (NOT NULL, so no NULLS
+// ordering concern) depending on the bound boolean. Default false preserves
+// the pre-existing oldest-first behavior for callers (like cmd/batch-enrich)
+// that don't set it.
 func (q *Queries) ListUnclassifiedPostings(ctx context.Context, arg ListUnclassifiedPostingsParams) ([]ListUnclassifiedPostingsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listUnclassifiedPostings, arg.Focus, arg.RowLimit)
+	rows, err := q.db.QueryContext(ctx, listUnclassifiedPostings, arg.Focus, arg.NewestFirst, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -269,13 +280,15 @@ JOIN LATERAL (
 ) s ON true
 WHERE s.description_text IS NOT NULL
   AND ($1::text = '' OR (s.title ILIKE '%' || $1::text || '%' OR s.description_text ILIKE '%' || $1::text || '%'))
-ORDER BY jp.first_seen_at ASC
-LIMIT $2::int
+ORDER BY CASE WHEN $2::bool THEN jp.first_seen_at END DESC,
+         CASE WHEN NOT $2::bool THEN jp.first_seen_at END ASC
+LIMIT $3::int
 `
 
 type ListUnclassifiedPostingsForcedParams struct {
-	Focus    string
-	RowLimit int32
+	Focus       string
+	NewestFirst bool
+	RowLimit    int32
 }
 
 type ListUnclassifiedPostingsForcedRow struct {
@@ -287,7 +300,7 @@ type ListUnclassifiedPostingsForcedRow struct {
 }
 
 func (q *Queries) ListUnclassifiedPostingsForced(ctx context.Context, arg ListUnclassifiedPostingsForcedParams) ([]ListUnclassifiedPostingsForcedRow, error) {
-	rows, err := q.db.QueryContext(ctx, listUnclassifiedPostingsForced, arg.Focus, arg.RowLimit)
+	rows, err := q.db.QueryContext(ctx, listUnclassifiedPostingsForced, arg.Focus, arg.NewestFirst, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
