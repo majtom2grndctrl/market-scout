@@ -242,6 +242,62 @@ func TestStrip_OverlappingBoilerplate_PrefersLongest(t *testing.T) {
 	}
 }
 
+func TestStrip_NoParagraphBreaks_StripsSharedBlurbAndFooter(t *testing.T) {
+	// Real descriptions come from internal/ats's HTML-to-text conversion,
+	// which collapses all whitespace (including newlines from stripped
+	// HTML block tags) down to single spaces — production descriptions are
+	// single-line blobs with no blank-line paragraph breaks at all. This
+	// test models that shape directly: no "\n\n" anywhere, a job title
+	// glued directly onto the shared blurb with no separator for one
+	// posting (mirroring an ATS template that omits whitespace between
+	// adjacent HTML blocks), and the shared EEO footer glued onto the end
+	// of the role body the same way.
+	blurb := companyBlurbP1 + " " + companyBlurbP2
+	roleBodies := []string{
+		"You will design and ship the next generation of our scheduling pipeline. Expect to write Go, review pull requests, mentor newer engineers, and partner closely with product on quarterly planning.",
+		"As a backend engineer on the Billing team, you will own the invoicing service end to end, covering on-call rotation, capacity planning, and incremental modernization of legacy Python services.",
+		"This position joins our Platform Reliability group, responsible for the kubernetes fleet, the deployment tooling around it, and progressive delivery patterns that let product teams ship safely.",
+		"Our Data Infrastructure team is hiring an engineer to focus on streaming systems, internal Kafka tooling, and change-data-capture pipeline schemas that the analytics org depends on daily.",
+		"Join the Identity team to harden authentication across our product surface, leading the passkeys rollout and the hardware-token compliance story for regulated financial-services customers.",
+	}
+
+	inputs := make([]string, len(roleBodies))
+	for i, body := range roleBodies {
+		if i == 0 {
+			// One posting glues a job title directly onto the blurb with no
+			// separating space — the exact shape that broke the real
+			// company-166 repro (a job title immediately followed by
+			// "About Vibe...", both on one line with no delimiter).
+			inputs[i] = "Senior Software Engineer, Scheduling" + blurb + " " + body + eeoFooter
+			continue
+		}
+		inputs[i] = blurb + " " + body + eeoFooter
+	}
+
+	got := boilerplate.Strip(inputs)
+	if len(got) != len(inputs) {
+		t.Fatalf("len mismatch: got %d, want %d", len(got), len(inputs))
+	}
+
+	for i, out := range got {
+		if len(out) >= len(inputs[i]) {
+			t.Errorf("input %d: expected cleaned text shorter than original (got %d, want <%d)", i, len(out), len(inputs[i]))
+		}
+		if strings.Contains(out, companyBlurbP1) {
+			t.Errorf("input %d: shared blurb (P1) still present", i)
+		}
+		if strings.Contains(out, companyBlurbP2) {
+			t.Errorf("input %d: shared blurb (P2) still present", i)
+		}
+		if strings.Contains(out, eeoFooter) {
+			t.Errorf("input %d: shared EEO footer still present", i)
+		}
+		if !strings.Contains(out, roleBodies[i]) {
+			t.Errorf("input %d: unique role body missing\n got: %q", i, out)
+		}
+	}
+}
+
 func TestStrip_OrderPreservation(t *testing.T) {
 	roleBodies := []string{
 		"FIRST unique role body covering the platform team's quarterly objectives in granular detail across multiple workstreams.",

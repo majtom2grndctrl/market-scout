@@ -1,4 +1,4 @@
-// Package boilerplate detects and removes boilerplate paragraphs that recur
+// Package boilerplate detects and removes boilerplate text that recurs
 // across a batch of job-posting descriptions (company blurbs, EEO footers,
 // benefits sections, etc.) so downstream enrichment can focus on role-specific
 // content.
@@ -16,16 +16,26 @@ const (
 	minPrevalence = 0.6
 )
 
-// paragraphSplit matches a run of two or more newlines, optionally separated
-// by whitespace-only lines. Used both to split text into paragraphs and to
-// collapse stray blank-line runs left after paragraph removal.
-var paragraphSplit = regexp.MustCompile(`\n[ \t]*(?:\n[ \t]*)+`)
+// multiSpace collapses runs of two or more literal spaces left behind after a
+// qualifying span is excised from the middle of a description. Descriptions
+// arrive already whitespace-collapsed to single spaces (see package doc), so
+// a run only appears where two removed (or a removed and an original) spaces
+// landed adjacent to each other.
+var multiSpace = regexp.MustCompile(` {2,}`)
 
-// Strip removes paragraphs that appear in a strong majority of the supplied
-// descriptions and exceed a minimum length, returning the cleaned strings in
-// the original order. Inputs with no qualifying matches are returned
-// byte-for-byte unchanged. If removal would leave any input empty or
-// whitespace-only, that input is returned unchanged.
+// Strip removes exact substrings that recur, byte-for-byte, across a strong
+// majority of the supplied descriptions and are at least minMatchLen bytes
+// long, returning the cleaned strings in the original order. Inputs with no
+// qualifying matches are returned byte-for-byte unchanged. If removal would
+// leave any input empty or whitespace-only, that input is returned unchanged.
+//
+// Descriptions are plain text produced by internal/ats's HTML-to-text
+// conversion, which collapses all whitespace — including the newlines left
+// by stripped HTML block tags — down to single spaces. Real descriptions
+// essentially never contain blank-line paragraph breaks, so boilerplate is
+// detected as an arbitrary repeated span of text (a shared company-blurb
+// prefix, an EEO-footer suffix, or a block embedded mid-document after a
+// posting-specific job title), not as paragraphs delimited by blank lines.
 func Strip(descriptions []string) []string {
 	if len(descriptions) < minSamples {
 		out := make([]string, len(descriptions))
@@ -36,69 +46,21 @@ func Strip(descriptions []string) []string {
 	n := len(descriptions)
 	threshold := int(math.Ceil(minPrevalence * float64(n)))
 
-	// Per-input normalized paragraphs and the unique set of paragraphs each
-	// input contains.
-	paragraphsPerInput := make([][]string, n)
-	uniquePerInput := make([]map[string]struct{}, n)
-	for i, d := range descriptions {
-		paras := splitParagraphs(d)
-		paragraphsPerInput[i] = paras
-		set := make(map[string]struct{}, len(paras))
-		for _, p := range paras {
-			set[p] = struct{}{}
-		}
-		uniquePerInput[i] = set
-	}
-
-	// Count, by input, how many inputs contain each paragraph.
-	counts := make(map[string]int)
-	for _, set := range uniquePerInput {
-		for p := range set {
-			counts[p]++
-		}
-	}
-
-	// Filter to qualifying paragraphs: prevalence and length.
-	qualifying := make([]string, 0)
-	for p, c := range counts {
-		if c >= threshold && len(p) >= minMatchLen {
-			qualifying = append(qualifying, p)
-		}
-	}
-
+	qualifying := findQualifyingSpans(descriptions, threshold)
 	if len(qualifying) == 0 {
 		out := make([]string, n)
 		copy(out, descriptions)
 		return out
 	}
 
-	// Overlap handling: if paragraph A is a substring of paragraph B (and
-	// they differ), drop A in favor of B.
-	qualifying = dropSubstrings(qualifying)
-
-	qualifyingSet := make(map[string]struct{}, len(qualifying))
-	for _, p := range qualifying {
-		qualifyingSet[p] = struct{}{}
-	}
-
 	out := make([]string, n)
 	for i, d := range descriptions {
-		paras := paragraphsPerInput[i]
-		// Determine whether this input contains any qualifying paragraph.
-		hasMatch := false
-		for _, p := range paras {
-			if _, ok := qualifyingSet[p]; ok {
-				hasMatch = true
-				break
-			}
-		}
-		if !hasMatch {
-			// No modification — return original bytes.
+		cleaned := removeSpans(d, qualifying)
+		if cleaned == d {
+			// No qualifying span occurred in this input — original bytes.
 			out[i] = d
 			continue
 		}
-
-		cleaned := removeQualifying(d, paras, qualifyingSet)
 		if strings.TrimSpace(cleaned) == "" {
 			// Empty-residue safety: return original input unchanged.
 			out[i] = d
@@ -109,106 +71,157 @@ func Strip(descriptions []string) []string {
 	return out
 }
 
-// splitParagraphs normalizes line endings and splits the input on runs of two
-// or more newlines (allowing whitespace-only blank lines between them).
-// Empty paragraphs are dropped. Intra-paragraph whitespace is preserved.
-func splitParagraphs(s string) []string {
-	normalized := normalizeNewlines(s)
-	parts := paragraphSplit.Split(normalized, -1)
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if strings.TrimSpace(p) == "" {
+// findQualifyingSpans locates exact substrings of at least minMatchLen bytes
+// that appear in at least threshold of the supplied descriptions.
+//
+// It anchors on fixed-length (minMatchLen) windows: a single pass records,
+// for every window value, which description indices contain it (map keys are
+// windows sliced directly from the original strings, which Go does not copy,
+// so this stays cheap). A window "qualifies" once it was observed in at
+// least threshold descriptions. A second pass walks each description and
+// merges every run of contiguous qualifying window positions into the
+// maximal matching span — this is what turns many overlapping 200-byte
+// windows covering the same shared blurb into one candidate string.
+func findQualifyingSpans(descriptions []string, threshold int) []string {
+	windowDocs := make(map[string]map[int]struct{})
+	for i, d := range descriptions {
+		if len(d) < minMatchLen {
 			continue
 		}
-		out = append(out, p)
+		for pos := 0; pos+minMatchLen <= len(d); pos++ {
+			w := d[pos : pos+minMatchLen]
+			docs, ok := windowDocs[w]
+			if !ok {
+				docs = make(map[int]struct{})
+				windowDocs[w] = docs
+			}
+			docs[i] = struct{}{}
+		}
 	}
-	return out
+
+	qualifies := func(w string) bool {
+		return len(windowDocs[w]) >= threshold
+	}
+
+	spanSet := make(map[string]struct{})
+	addSpan := func(d string, start, end int) {
+		start, end = trimToCleanBoundary(d, start, end)
+		if end-start >= minMatchLen {
+			spanSet[d[start:end]] = struct{}{}
+		}
+	}
+
+	for _, d := range descriptions {
+		if len(d) < minMatchLen {
+			continue
+		}
+		start := -1
+		for pos := 0; pos+minMatchLen <= len(d); pos++ {
+			if qualifies(d[pos : pos+minMatchLen]) {
+				if start < 0 {
+					start = pos
+				}
+				continue
+			}
+			if start >= 0 {
+				addSpan(d, start, pos+minMatchLen-1)
+				start = -1
+			}
+		}
+		if start >= 0 {
+			addSpan(d, start, len(d))
+		}
+	}
+
+	spans := make([]string, 0, len(spanSet))
+	for s := range spanSet {
+		spans = append(spans, s)
+	}
+	return spans
 }
 
-// normalizeNewlines converts CRLF and lone CR sequences to LF.
-func normalizeNewlines(s string) string {
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	return s
+// isSpaceByte reports whether b is ASCII whitespace.
+func isSpaceByte(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', '\f', '\v':
+		return true
+	}
+	return false
 }
 
-// dropSubstrings removes any paragraph that is a strict substring of another
-// qualifying paragraph, preferring the longest. Sorting longest-first means a
-// shorter paragraph contained in any longer one is filtered out.
-func dropSubstrings(paragraphs []string) []string {
-	// Sort by descending length so we always check shorter against longer.
-	sorted := make([]string, len(paragraphs))
-	copy(sorted, paragraphs)
-	// Simple insertion sort by length desc — paragraph counts here are small.
+// trimToCleanBoundary narrows the half-open range [start, end) within d so
+// neither edge falls inside a contiguous run of non-space characters that
+// continues past the edge. Without this, a coincidentally shared character
+// or two just past the true edge of a boilerplate block — e.g. several
+// unrelated role descriptions happening to start with the same letter, or
+// end with the same plural suffix — gets folded into the matched span and
+// stripped from posting-specific content along with the real boilerplate.
+// The conservative failure mode this produces — occasionally leaving a
+// boilerplate instance unstripped when its surrounding whitespace happens to
+// differ from the majority (e.g. glued directly to a preceding "!" with no
+// space) rather than risking a match — is intentional: under-stripping loses
+// nothing that downstream classification can't tolerate, but over-stripping
+// corrupts posting-specific content.
+func trimToCleanBoundary(d string, start, end int) (int, int) {
+	for start < end && start > 0 && !isSpaceByte(d[start-1]) && !isSpaceByte(d[start]) {
+		start++
+	}
+	for end > start && end < len(d) && !isSpaceByte(d[end-1]) && !isSpaceByte(d[end]) {
+		end--
+	}
+	return start, end
+}
+
+// sortByLengthDesc returns a copy of strs sorted longest-first. Insertion
+// sort is fine here — the qualifying-span list is always small (a handful of
+// boilerplate blocks per company).
+func sortByLengthDesc(strs []string) []string {
+	sorted := make([]string, len(strs))
+	copy(sorted, strs)
 	for i := 1; i < len(sorted); i++ {
 		for j := i; j > 0 && len(sorted[j]) > len(sorted[j-1]); j-- {
 			sorted[j], sorted[j-1] = sorted[j-1], sorted[j]
 		}
 	}
-
-	kept := make([]string, 0, len(sorted))
-	for _, p := range sorted {
-		contained := false
-		for _, k := range kept {
-			if len(p) < len(k) && strings.Contains(k, p) {
-				contained = true
-				break
-			}
-		}
-		if !contained {
-			kept = append(kept, p)
-		}
-	}
-	return kept
+	return sorted
 }
 
-// removeQualifying returns a cleaned version of orig with any qualifying
-// paragraph removed. It works on the normalized form to ensure paragraph
-// boundaries match what splitParagraphs produced; this means returned strings
-// always use LF line endings.
-func removeQualifying(orig string, paras []string, qualifying map[string]struct{}) string {
-	normalized := normalizeNewlines(orig)
+// removeSpans returns a copy of d with every occurrence of every qualifying
+// span removed, longest span first so a longer match is excised whole before
+// a shorter, overlapping span is considered. findQualifyingSpans can produce
+// several different-length variants of what is really the same boilerplate
+// block, because trimToCleanBoundary trims each reference document's
+// occurrence back to its own surrounding content — a document glued to the
+// block with no separating space (see trimToCleanBoundary) may only contain
+// a shorter variant than the one another, cleanly-separated document
+// produced. Trying every variant, longest first, means such a document still
+// gets its (shorter) match removed instead of being skipped just because the
+// single longest variant happens not to occur in it. If d contains none of
+// the spans, d is returned unchanged (same underlying bytes) so the caller
+// can detect "no match" via equality.
+func removeSpans(d string, spans []string) string {
+	sorted := sortByLengthDesc(spans)
 
-	// Walk the normalized string and rebuild it, dropping qualifying
-	// paragraphs while preserving the separators between non-removed ones.
-	// We locate each paragraph in order; everything between the previous
-	// paragraph's end and the current paragraph's start is a separator.
-	var b strings.Builder
-	cursor := 0
-	for _, p := range paras {
-		idx := strings.Index(normalized[cursor:], p)
-		if idx < 0 {
-			// Invariant: every paragraph in paras was split from this normalized
-			// string, so it must appear in it. A miss here means normalizeNewlines
-			// produced a different result between splitParagraphs and removeQualifying
-			// — check for double-normalization.
-			continue
+	changed := false
+	for _, s := range sorted {
+		for {
+			idx := strings.Index(d, s)
+			if idx < 0 {
+				break
+			}
+			changed = true
+			// Trim exactly one adjacent space on either side: descriptions
+			// are single-space-joined prose, so removing a span bounded by
+			// the collapsed word-separator space on each side would
+			// otherwise leave a doubled space at the excision point.
+			before := strings.TrimSuffix(d[:idx], " ")
+			after := strings.TrimPrefix(d[idx+len(s):], " ")
+			d = before + after
 		}
-		start := cursor + idx
-		end := start + len(p)
-		separator := normalized[cursor:start]
-
-		if _, drop := qualifying[p]; drop {
-			// Skip the paragraph; also drop the leading separator so we
-			// don't accumulate orphaned blank lines. The trailing separator
-			// will be handled when we encounter the next paragraph.
-			cursor = end
-			continue
-		}
-
-		b.WriteString(separator)
-		b.WriteString(p)
-		cursor = end
 	}
-	// Append any trailing content after the last paragraph (typically just
-	// whitespace, but preserve it for the collapse/trim step).
-	if cursor < len(normalized) {
-		b.WriteString(normalized[cursor:])
+	if !changed {
+		return d
 	}
-
-	result := b.String()
-	// Collapse runs of two or more newlines (including whitespace-only blank
-	// lines between them) down to a single blank line ("\n\n").
-	result = paragraphSplit.ReplaceAllString(result, "\n\n")
-	return strings.TrimSpace(result)
+	d = multiSpace.ReplaceAllString(d, " ")
+	return strings.TrimSpace(d)
 }
