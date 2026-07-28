@@ -178,21 +178,20 @@ func (p *processor) processRecord(ctx context.Context, rec *Record) (outcome, er
 	rec.VerifiedAt = strPtr(ts)
 	rec.VerifiedRunID = strPtr(p.runID)
 
-	// Step 7: emit a seed row. Industry is taken from the source sub-object
-	// verbatim when present — the spec marks industry normalization as out
-	// of scope; whatever the research list said is the best signal we have
-	// for the initial seed.
-	industry := ""
-	if rec.Source.Industry != nil {
-		industry = *rec.Source.Industry
-	}
+	// Step 7: emit a seed row. Industry is left empty (seed.go: an empty
+	// string emits SQL NULL) rather than copied from rec.Source.Industry.
+	// Each research source brings its own industry taxonomy (verbatim ATS
+	// "industry" strings, GeekWire sectors, etc.); letting those leak
+	// straight into the canonical column is how the seed file ended up
+	// with incompatible vocabularies mixed together. The canonical value
+	// is assigned deliberately later, not inherited from the source.
 	return outcome{
 		verified: true,
 		seedRow: &seedRow{
 			Name:       rec.Name,
 			ATS:        *rec.ATS,
 			BoardToken: *rec.BoardToken,
-			Industry:   industry,
+			Industry:   "",
 			Group:      p.seedGroup,
 		},
 	}, nil

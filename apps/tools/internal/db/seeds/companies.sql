@@ -6,175 +6,174 @@
 
 INSERT INTO companies (name, ats, board_token, industry) VALUES
     -- Greenhouse
-    ('Anthropic',  'greenhouse', 'anthropic',  'AI research'),
+    ('Anthropic',  'greenhouse', 'anthropic',  'AI research & models'),
     ('Stripe',     'greenhouse', 'stripe',      'fintech'),
-    ('Figma',      'greenhouse', 'figma',       'design tools'),
-    ('Scale AI',   'greenhouse', 'scaleai',     'AI data'),
-    ('Glean',      'greenhouse', 'gleanwork',   'enterprise search'),
+    ('Figma',      'greenhouse', 'figma',       'productivity & collaboration'),
+    ('Scale AI',   'greenhouse', 'scaleai',     'AI infrastructure'),
+    ('Glean',      'greenhouse', 'gleanwork',   'productivity & collaboration'),
 
     -- Ashby
-    ('Cognition',  'ashby', 'cognition',  'AI coding'),
-    ('Harvey',     'ashby', 'harvey',     'legal AI'),
-    ('ElevenLabs', 'ashby', 'elevenlabs', 'AI voice'),
+    ('Cognition',  'ashby', 'cognition',  'dev tooling'),
+    ('Harvey',     'ashby', 'harvey',     'legal tech'),
+    ('ElevenLabs', 'ashby', 'elevenlabs', 'AI research & models'),
     ('Linear',     'ashby', 'linear',     'dev tooling'),
 
     -- Lever
-    ('Mistral',    'lever', 'mistral',    'AI models'),
+    ('Mistral',    'lever', 'mistral',    'AI research & models'),
 
     -- Greenhouse (GeekWire batch, May 2026)
-    ('Temporal',   'greenhouse', 'temporaltechnologies', 'developer tooling'),
-    ('Gradial',    'greenhouse', 'gradial',               'AI marketing'),
+    ('Temporal',   'greenhouse', 'temporaltechnologies', 'dev tooling'),
+    ('Gradial',    'greenhouse', 'gradial',               'sales & marketing tech'),
 
     -- Ashby (GeekWire batch, May 2026)
-    ('Nooks',                  'ashby', 'nooks',      'AI sales'),
-    ('Oumi',                   'ashby', 'oumi',       'AI models'),
-    ('Ineffable Intelligence', 'ashby', 'ineffable',  'AI research'),
+    ('Nooks',                  'ashby', 'nooks',      'sales & marketing tech'),
+    ('Oumi',                   'ashby', 'oumi',       'AI research & models'),
+    ('Ineffable Intelligence', 'ashby', 'ineffable',  'AI research & models'),
 
     -- Greenhouse (Built In Seattle / AI filter, May 2026)
     ('Runpod',  'greenhouse', 'runpod',  'AI infrastructure'),
-    ('Phaidra', 'greenhouse', 'phaidra', 'industrial AI'),
-    ('Textio',  'greenhouse', 'textio',  'AI writing'),
+    ('Phaidra', 'greenhouse', 'phaidra', 'robotics & hardware'),
+    ('Textio',  'greenhouse', 'textio',  'HR & recruiting tech'),
 
     -- Ashby (Built In Seattle / AI filter, May 2026)
-    ('Statsig',    'ashby', 'statsig',    'developer tooling'),
-    ('Superhuman', 'ashby', 'superhuman', 'AI productivity'),
+    ('Statsig',    'ashby', 'statsig',    'dev tooling'),
+    ('Superhuman', 'ashby', 'superhuman', 'productivity & collaboration'),
 
     -- Greenhouse (Built In Seattle / full sweep, May 2026)
-    ('CommerceIQ', 'greenhouse', 'commerceiq', 'AI retail'),
-    ('super.AI',   'greenhouse', 'superai',    'AI data labeling'),
+    ('CommerceIQ', 'greenhouse', 'commerceiq', 'sales & marketing tech'),
+    ('super.AI',   'greenhouse', 'superai',    'AI infrastructure'),
 
     -- Lever (Built In Seattle / full sweep, May 2026)
-    ('Spice AI',    'lever', 'spiceai',    'developer tooling'),
-    ('Revefi',      'lever', 'revefi',     'AI data observability'),
-    ('Avante',      'lever', 'avante',     'AI HR'),
-    ('Conversica',  'lever', 'conversica', 'AI sales'),
+    ('Spice AI',    'lever', 'spiceai',    'AI infrastructure'),
+    ('Revefi',      'lever', 'revefi',     'data & analytics'),
+    ('Avante',      'lever', 'avante',     'HR & recruiting tech'),
+    ('Conversica',  'lever', 'conversica', 'sales & marketing tech'),
 
     -- Ashby (GeekWire funding tracker, May 2026)
-    ('Cascade',  'ashby', 'cascade', 'AI HR'),
-    ('Humanly',  'ashby', 'humanly', 'AI recruiting'),
-    ('Union.ai', 'ashby', 'union',   'AI workflows'),
-    ('Read AI',  'ashby', 'read-ai', 'AI productivity'),
-    ('QA Wolf',  'ashby', 'qawolf',  'developer tooling'),
-    ('Depot',    'ashby', 'depot',   'developer tooling'),
-    ('Casium',   'ashby', 'casium',  'AI legal'),
+    ('Cascade',  'ashby', 'cascade', 'HR & recruiting tech'),
+    ('Humanly',  'ashby', 'humanly', 'HR & recruiting tech'),
+    ('Union.ai', 'ashby', 'union',   'AI infrastructure'),
+    ('Read AI',  'ashby', 'read-ai', 'productivity & collaboration'),
+    ('QA Wolf',  'ashby', 'qawolf',  'dev tooling'),
+    ('Depot',    'ashby', 'depot',   'dev tooling'),
+    ('Casium',   'ashby', 'casium',  'legal tech'),
 
     -- Greenhouse (GeekWire funding tracker, May 2026)
-    ('Chainguard',  'greenhouse', 'chainguard',  'supply chain security'),
+    ('Chainguard',  'greenhouse', 'chainguard',  'security & identity'),
     ('Panthalassa', 'greenhouse', 'panthalassa', 'AI infrastructure'),
     ('Starcloud',   'greenhouse', 'starcloud',   'AI infrastructure'),
 
     -- Workable (GeekWire 200, May 2026)
-    ('Seeq', 'workable', 'seeq', 'industrial analytics')
+    ('Seeq', 'workable', 'seeq', 'data & analytics')
 
 ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Greenhouse (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
-    ('Airtable', 'greenhouse', 'airtable', 'collaboration software')
+    ('Airtable', 'greenhouse', 'airtable', 'productivity & collaboration')
 ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Greenhouse (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
-    ('Truveta', 'greenhouse', 'truveta', 'Hospitals and Health Care'),
-    ('Agility Robotics', 'greenhouse', 'agilityrobotics', 'Robotics Engineering'),
-    ('iSpot.tv', 'greenhouse', 'ispottv', 'Advertising Services'),
-    ('Stoke Space', 'greenhouse', 'stokespacetechnologies', 'Defense and Space Manufacturing'),
-    ('Carbon Robotics', 'greenhouse', 'carbonrobotics', 'Automation Machinery Manufacturing'),
-    ('Karat', 'greenhouse', 'karat', 'Software Development'),
-    ('Proprio', 'greenhouse', 'proprio', 'Medical Equipment Manufacturing'),
-    ('Customer.io', 'greenhouse', 'customerio', 'Software Development'),
-    ('Place Technology', 'greenhouse', 'place', 'Real Estate'),
-    ('Pulumi', 'greenhouse', 'pulumicorporation', 'Software Development'),
-    ('Yoodli', 'greenhouse', 'yoodliinc', 'Software Development'),
-    ('Stackline', 'greenhouse', 'stackline', 'Software Development'),
-    ('Group14', 'greenhouse', 'group14', 'Manufacturing'),
-    ('Snap! Raise', 'greenhouse', 'snapmobileinc', 'Software Development'),
-    ('Amperity', 'greenhouse', 'amperity', 'Software Development'),
-    ('Syndio', 'greenhouse', 'syndio', 'Software Development'),
-    ('Hyperproof', 'greenhouse', 'hyperproof', 'Software Development'),
-    ('Boulder Care', 'greenhouse', 'bouldercare', 'Hospitals and Health Care'),
-    ('Echodyne', 'greenhouse', 'echodynecorp', 'Appliances, Electrical, and Electronics Manufacturing'),
-    ('LevelTen Energy', 'greenhouse', 'leveltenenergy', 'Services for Renewable Energy'),
-    ('Carbon Direct', 'greenhouse', 'carbondirect', 'Climate Data and Analytics'),
-    ('Archera.ai', 'greenhouse', 'archera', 'Software Development'),
-    ('Flexe', 'greenhouse', 'flexe', 'Transportation, Logistics, Supply Chain and Storage'),
-    ('Levanta', 'greenhouse', 'levanta', 'Internet Marketplace Platforms'),
-    ('TerraClear', 'greenhouse', 'terraclear', 'Automation Machinery Manufacturing'),
-    ('Parse Biosciences', 'greenhouse', 'parsebiosciences', 'Biotechnology Research'),
-    ('Aspect Biosystems', 'greenhouse', 'aspectbiosystems', 'Biotechnology Research'),
-    ('Lumen Bioscience', 'greenhouse', 'lumenbioscience', 'Biotechnology Research'),
-    ('Digs', 'greenhouse', 'digs', 'Software Development'),
-    ('Upbound', 'greenhouse', 'upbound', 'Software Development'),
-    ('Recurrent', 'greenhouse', 'recurrent', 'Motor Vehicle Manufacturing'),
-    ('Tune Therapeutics', 'greenhouse', 'tunetherapeutics', 'Biotechnology'),
-    ('Corelight', 'greenhouse', 'corelight', 'Computer and Network Security'),
-    ('Attunely', 'greenhouse', 'attunely', 'Financial Services'),
-    ('Legion', 'greenhouse', 'legion', 'Software Development'),
-    ('MediaAlpha', 'greenhouse', 'mediaalpha', 'Marketing Services'),
-    ('Xealth', 'greenhouse', 'xealth', 'Hospitals and Health Care'),
-    ('Tenable', 'greenhouse', 'tenableinc', 'Computer and Network Security'),
-    ('OfferUp', 'greenhouse', 'offerup', 'Internet Marketplace Platforms')
+    ('Truveta', 'greenhouse', 'truveta', 'healthtech'),
+    ('Agility Robotics', 'greenhouse', 'agilityrobotics', 'robotics & hardware'),
+    ('iSpot.tv', 'greenhouse', 'ispottv', 'sales & marketing tech'),
+    ('Stoke Space', 'greenhouse', 'stokespacetechnologies', 'aerospace & defense'),
+    ('Carbon Robotics', 'greenhouse', 'carbonrobotics', 'robotics & hardware'),
+    ('Karat', 'greenhouse', 'karat', 'HR & recruiting tech'),
+    ('Proprio', 'greenhouse', 'proprio', 'healthtech'),
+    ('Customer.io', 'greenhouse', 'customerio', 'sales & marketing tech'),
+    ('Place Technology', 'greenhouse', 'place', 'proptech & construction'),
+    ('Pulumi', 'greenhouse', 'pulumicorporation', 'dev tooling'),
+    ('Yoodli', 'greenhouse', 'yoodliinc', 'productivity & collaboration'),
+    ('Stackline', 'greenhouse', 'stackline', 'commerce & marketplaces'),
+    ('Group14', 'greenhouse', 'group14', 'climate & energy'),
+    ('Snap! Raise', 'greenhouse', 'snapmobileinc', 'edtech'),
+    ('Amperity', 'greenhouse', 'amperity', 'data & analytics'),
+    ('Syndio', 'greenhouse', 'syndio', 'HR & recruiting tech'),
+    ('Hyperproof', 'greenhouse', 'hyperproof', 'security & identity'),
+    ('Boulder Care', 'greenhouse', 'bouldercare', 'healthtech'),
+    ('Echodyne', 'greenhouse', 'echodynecorp', 'robotics & hardware'),
+    ('LevelTen Energy', 'greenhouse', 'leveltenenergy', 'climate & energy'),
+    ('Carbon Direct', 'greenhouse', 'carbondirect', 'climate & energy'),
+    ('Archera.ai', 'greenhouse', 'archera', 'dev tooling'),
+    ('Flexe', 'greenhouse', 'flexe', 'logistics'),
+    ('Levanta', 'greenhouse', 'levanta', 'commerce & marketplaces'),
+    ('TerraClear', 'greenhouse', 'terraclear', 'robotics & hardware'),
+    ('Parse Biosciences', 'greenhouse', 'parsebiosciences', 'biotech'),
+    ('Aspect Biosystems', 'greenhouse', 'aspectbiosystems', 'biotech'),
+    ('Lumen Bioscience', 'greenhouse', 'lumenbioscience', 'biotech'),
+    ('Digs', 'greenhouse', 'digs', 'proptech & construction'),
+    ('Upbound', 'greenhouse', 'upbound', 'dev tooling'),
+    ('Recurrent', 'greenhouse', 'recurrent', 'climate & energy'),
+    ('Tune Therapeutics', 'greenhouse', 'tunetherapeutics', 'biotech'),
+    ('Corelight', 'greenhouse', 'corelight', 'security & identity'),
+    ('Attunely', 'greenhouse', 'attunely', 'fintech'),
+    ('Legion', 'greenhouse', 'legion', 'HR & recruiting tech'),
+    ('MediaAlpha', 'greenhouse', 'mediaalpha', 'sales & marketing tech'),
+    ('Xealth', 'greenhouse', 'xealth', 'healthtech'),
+    ('Tenable', 'greenhouse', 'tenableinc', 'security & identity'),
+    ('OfferUp', 'greenhouse', 'offerup', 'commerce & marketplaces')
 ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Ashby (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
-    ('Brinc', 'ashby', 'brinc', 'Aviation and Aerospace Component Manufacturing'),
-    ('MotherDuck', 'ashby', 'MotherDuck', 'Data Infrastructure and Analytics'),
-    ('Klue', 'ashby', 'klue', 'Software Development'),
-    ('Certn', 'ashby', 'certn', 'Software Development'),
-    ('Vibe', 'ashby', 'vibe', 'IT Services and IT Consulting'),
-    ('Eigen Labs', 'ashby', 'eigen-labs', 'Software Development'),
-    ('QA Wolf', 'ashby', 'QAWolf', 'Software Development'),
-    ('Common Room', 'ashby', 'commonroom', 'Software Development'),
-    ('Atlas Health', 'ashby', 'atlas', 'Hospitals and Health Care')
+    ('Brinc', 'ashby', 'brinc', 'aerospace & defense'),
+    ('MotherDuck', 'ashby', 'motherduck', 'data & analytics'),
+    ('Klue', 'ashby', 'klue', 'sales & marketing tech'),
+    ('Certn', 'ashby', 'certn', 'HR & recruiting tech'),
+    ('Vibe', 'ashby', 'vibe', 'sales & marketing tech'),
+    ('Eigen Labs', 'ashby', 'eigen-labs', 'crypto'),
+    ('Common Room', 'ashby', 'commonroom', 'sales & marketing tech'),
+    ('Atlas Health', 'ashby', 'atlas', 'healthtech')
 ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Lever (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
-    ('Outreach', 'lever', 'outreach', 'Software Development'),
-    ('Omnidian', 'lever', 'omnidian', 'Services for Renewable Energy'),
-    ('Outpace Bio', 'lever', 'outpacebio', 'Biotechnology Research'),
-    ('Viome', 'lever', 'viome', 'Wellness and Fitness Services'),
-    ('DexCare', 'lever', 'dexcarehealth', 'Software Development'),
-    ('Oleria', 'lever', 'oleria-security', 'Software Development'),
-    ('Mast Reforestation', 'lever', 'MastReforestation', 'Environmental Services'),
-    ('Educative', 'lever', 'educative', 'E-Learning Providers'),
-    ('Sanctuary AI', 'lever', 'sanctuary', 'Software Development'),
-    ('SkyPoint Cloud', 'lever', 'skypointcloud', 'Software Development'),
-    ('Aigen', 'lever', 'aigen', 'Renewable Energy Equipment Manufacturing'),
-    ('Lumotive', 'lever', 'lumotive', 'Semiconductor Manufacturing'),
-    ('Highspot', 'lever', 'highspot', 'Software Development')
+    ('Outreach', 'lever', 'outreach', 'sales & marketing tech'),
+    ('Omnidian', 'lever', 'omnidian', 'climate & energy'),
+    ('Outpace Bio', 'lever', 'outpacebio', 'biotech'),
+    ('Viome', 'lever', 'viome', 'healthtech'),
+    ('DexCare', 'lever', 'dexcarehealth', 'healthtech'),
+    ('Oleria', 'lever', 'oleria-security', 'security & identity'),
+    ('Mast Reforestation', 'lever', 'MastReforestation', 'climate & energy'),
+    ('Educative', 'lever', 'educative', 'edtech'),
+    ('Sanctuary AI', 'lever', 'sanctuary', 'robotics & hardware'),
+    ('SkyPoint Cloud', 'lever', 'skypointcloud', 'data & analytics'),
+    ('Aigen', 'lever', 'aigen', 'climate & energy'),
+    ('Lumotive', 'lever', 'lumotive', 'robotics & hardware'),
+    ('Highspot', 'lever', 'highspot', 'sales & marketing tech')
 ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Workable (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
-    ('Starfish Space', 'workable', 'starfish-space-1', 'Space Research and Technology'),
-    ('Vouched', 'workable', 'vouched', 'Technology, Information and Internet'),
-    ('Likewise', 'workable', 'likewise', 'Entertainment Providers'),
-    ('Discovery Health MD', 'workable', 'discovery-health-md', 'Maritime Transportation'),
-    ('Banzai', 'workable', 'banzai', 'Marketing Services')
+    ('Starfish Space', 'workable', 'starfish-space-1', 'aerospace & defense'),
+    ('Vouched', 'workable', 'vouched', 'security & identity'),
+    ('Likewise', 'workable', 'likewise', 'commerce & marketplaces'),
+    ('Discovery Health MD', 'workable', 'discovery-health-md', 'healthtech'),
+    ('Banzai', 'workable', 'banzai', 'sales & marketing tech')
 ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Workday (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
-    ('Remitly', 'workday', 'remitly.wd5.myworkdayjobs.com/Remitly_Careers', 'Financial Services')
+    ('Remitly', 'workday', 'remitly.wd5.myworkdayjobs.com/Remitly_Careers', 'fintech')
 ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Ashby (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
-    ('Helion',   'ashby', 'helion',   'Renewable Energy Power Generation'),
-    ('Hiya',     'ashby', 'hiya',     'Software Development'),
-    ('Qumulo',   'ashby', 'qumulo',   'Software Development'),
-    ('Polly',    'ashby', 'polly',    'Software Development'),
-    ('LiveKit',  'ashby', 'livekit',  'Developer Infrastructure')
+    ('Helion',   'ashby', 'helion',   'climate & energy'),
+    ('Hiya',     'ashby', 'hiya',     'security & identity'),
+    ('Qumulo',   'ashby', 'qumulo',   'dev tooling'),
+    ('Polly',    'ashby', 'polly',    'fintech'),
+    ('LiveKit',  'ashby', 'livekit',  'dev tooling')
 ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Workday (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
-    ('Tinuiti', 'workday', 'tinuiti.wd12.myworkdayjobs.com/Tinuiti', 'Marketing Services')
+    ('Tinuiti', 'workday', 'tinuiti.wd12.myworkdayjobs.com/Tinuiti', 'sales & marketing tech')
 ON CONFLICT (ats, board_token) DO NOTHING;
 
 -- Lever (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
-    ('Ridwell', 'lever', 'Ridwell', 'Consumer Services')
+    ('Ridwell', 'lever', 'Ridwell', 'climate & energy')
 ON CONFLICT (ats, board_token) DO NOTHING;

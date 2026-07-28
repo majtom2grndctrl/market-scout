@@ -115,6 +115,10 @@ func TestProcessRecord_VerifiedPath(t *testing.T) {
 		CareersURL: strPtr(careers.URL),
 		ATS:        strPtr("greenhouse"),
 		BoardToken: strPtr("acme"),
+		// Source.Industry set to prove it does NOT propagate into the seed
+		// row — source taxonomies vary per research source and must not
+		// leak into the canonical companies.industry column.
+		Source: Source{Industry: strPtr("AI")},
 	}
 	p := newTestProcessor(t, &fakeQuerier{err: sql.ErrNoRows})
 	res, err := p.processRecord(t.Context(), &rec)
@@ -141,6 +145,9 @@ func TestProcessRecord_VerifiedPath(t *testing.T) {
 	}
 	if res.seedRow.ATS != "greenhouse" || res.seedRow.BoardToken != "acme" {
 		t.Errorf("seedRow: got (%s,%s), want (greenhouse,acme)", res.seedRow.ATS, res.seedRow.BoardToken)
+	}
+	if res.seedRow.Industry != "" {
+		t.Errorf("seedRow.Industry: got %q, want empty — source industry must not propagate", res.seedRow.Industry)
 	}
 }
 
@@ -471,6 +478,8 @@ ON CONFLICT (ats, board_token) DO NOTHING;
 			Rank: 1, Name: "Verified Co",
 			URL: strPtr("https://verifiedco.example.com"), CareersURL: strPtr(careersOK.URL),
 			ATS: strPtr("greenhouse"), BoardToken: strPtr("verifiedco"),
+			// Source.Industry set to prove the emitted seed row does NOT
+			// inherit it — see assertion below on the appended row.
 			Source: Source{Industry: strPtr("AI")},
 		},
 		{
@@ -540,6 +549,12 @@ ON CONFLICT (ats, board_token) DO NOTHING;
 	}
 	if !strings.Contains(seedContents, "Test, May 2026") {
 		t.Errorf("seed file missing section comment for group")
+	}
+	// The record's Source.Industry ("AI") must not have leaked into the
+	// emitted row: onboard always emits an empty industry (NULL), assigned
+	// deliberately later rather than inherited from the source.
+	if !strings.Contains(seedContents, "'verifiedco', NULL)") {
+		t.Errorf("seed file: verifiedco row industry got non-NULL, want NULL:\n%s", seedContents)
 	}
 
 	// Summary on stdout must be valid JSON and reflect the counts.
