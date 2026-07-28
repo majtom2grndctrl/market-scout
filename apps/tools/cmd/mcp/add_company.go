@@ -234,7 +234,11 @@ func addCompanyHandlerWithDeps(exec addCompanyExecutor, makeProbe probeFactory) 
 func runAddCompany(ctx context.Context, req addCompanyRequest, exec addCompanyExecutor, makeProbe probeFactory) addCompanyEnvelope {
 	name := strings.TrimSpace(req.Name)
 	atsName := strings.TrimSpace(req.ATS)
-	boardToken := strings.TrimSpace(req.BoardToken)
+	// board_token can arrive directly here, bypassing detect_ats (which already
+	// normalizes), so normalize again at this write boundary. Keeps the
+	// single-source-of-truth rule enforced no matter how a caller reaches
+	// add_company. See atsdetect.NormalizeBoardToken for the per-ATS rule.
+	boardToken := atsdetect.NormalizeBoardToken(atsName, strings.TrimSpace(req.BoardToken))
 	industry := strings.TrimSpace(req.Industry)
 	careersURL := strings.TrimSpace(req.CareersPageURL)
 

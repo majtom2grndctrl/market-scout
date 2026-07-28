@@ -97,6 +97,20 @@ Map a careers-page URL to an `ats` value by matching the host and path against t
 
 A careers page that does not match any pattern is `unsupported-ats`. A careers page that matches a pattern but whose probe (per *Board token verification*) fails is `invalid-token` — the ATS is supported but the slug or tenant is wrong.
 
+### Board token normalization
+
+Captured tokens are canonicalized per ATS so the same board cannot enter the system twice under different casing. `atsdetect.NormalizeBoardToken` is the single source of truth; both `detect_ats` and `add_company` route through it.
+
+| ATS | Normalization |
+|---|---|
+| Greenhouse | Lowercase |
+| Ashby | Lowercase |
+| Workday | Lowercase the `{host}` segment only; `{site}` is untouched |
+| Workable | Lowercase |
+| Lever | **Unchanged** — case-sensitive |
+
+Lever is the exception. Live probes showed `api.lever.co/v0/postings/<token>` is case-sensitive: lowercased tokens for correctly-cased boards like `MastReforestation` and `Ridwell` return 404, while the original casing returns 200. Lowercasing a Lever token breaks a live board, so it passes through unchanged. The other four ATS platforms probed as case-insensitive at their API boundary, so collapsing casing variants there is safe and prevents duplicate companies (e.g. `QAWolf` and `qawolf` entering as two rows).
+
 ### Workday token discovery
 
 Workday site names are not derivable from the company name. Visit the company's careers page and locate the Workday URL. The URL contains a locale segment between host and site: `https://{host}/{locale}/{site}/jobs`. The locale matches `[a-z]{2}(-[A-Z]{2})?` (e.g. `en-US`, `de`, `fr-FR`). Extract `host` and `site`; strip the locale. The board token is `{host}/{site}` (e.g. `nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite`).

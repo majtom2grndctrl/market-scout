@@ -29,10 +29,28 @@ func TestDetectURL_SupportedPatterns(t *testing.T) {
 			wantPat: "greenhouse_job_boards",
 		},
 		{
+			// Regression: mixed-case greenhouse tokens must normalize to
+			// lowercase so "Stripe" and "stripe" resolve to the same company.
+			name:    "greenhouse boards lowercases mixed-case token",
+			rawURL:  "https://boards.greenhouse.io/Stripe",
+			wantATS: "greenhouse",
+			wantTok: "stripe",
+			wantPat: "greenhouse_boards",
+		},
+		{
 			name:    "lever",
 			rawURL:  "https://jobs.lever.co/acme",
 			wantATS: "lever",
 			wantTok: "acme",
+			wantPat: "lever",
+		},
+		{
+			// Lever's API is case-sensitive (see atsdetect.NormalizeBoardToken);
+			// detection must preserve the captured casing exactly.
+			name:    "lever preserves mixed-case token",
+			rawURL:  "https://jobs.lever.co/MastReforestation",
+			wantATS: "lever",
+			wantTok: "MastReforestation",
 			wantPat: "lever",
 		},
 		{
@@ -43,8 +61,26 @@ func TestDetectURL_SupportedPatterns(t *testing.T) {
 			wantPat: "ashby",
 		},
 		{
+			// Regression: mixed-case ashby tokens must normalize to lowercase
+			// so "QAWolf" and "qawolf" resolve to the same company.
+			name:    "ashby lowercases mixed-case token",
+			rawURL:  "https://jobs.ashbyhq.com/QAWolf",
+			wantATS: "ashby",
+			wantTok: "qawolf",
+			wantPat: "ashby",
+		},
+		{
 			name:    "workday strips locale",
 			rawURL:  "https://acme.wd5.myworkdayjobs.com/en-US/AcmeCareers/jobs",
+			wantATS: "workday",
+			wantTok: "acme.wd5.myworkdayjobs.com/AcmeCareers",
+			wantPat: "workday",
+		},
+		{
+			// Workday host is DNS (case-insensitive) and lowercases; site is an
+			// opaque tenant path segment and is preserved as captured.
+			name:    "workday lowercases host but preserves site casing",
+			rawURL:  "https://Acme.WD5.MyWorkdayJobs.com/en-US/AcmeCareers/jobs",
 			wantATS: "workday",
 			wantTok: "acme.wd5.myworkdayjobs.com/AcmeCareers",
 			wantPat: "workday",
@@ -118,6 +154,28 @@ func TestDetectEvidence_SelectedDedupesMatches(t *testing.T) {
 	}
 	if len(got.Matches) != 1 {
 		t.Fatalf("len(Matches) = %d, want 1", len(got.Matches))
+	}
+}
+
+func TestDetectEvidence_DedupesCasingVariantsOfSameToken(t *testing.T) {
+	// Regression for the gap that let "QAWolf" and "qawolf" enter as distinct
+	// companies: the ashby rule returned the raw captured token with no
+	// normalization, so casing variants of the same board dedupe-keyed
+	// differently. Normalization now collapses them to one match.
+	got, err := DetectEvidence("https://jobs.ashbyhq.com/QAWolf", []string{
+		"https://jobs.ashbyhq.com/qawolf",
+	})
+	if err != nil {
+		t.Fatalf("DetectEvidence error: %v", err)
+	}
+	if got.Status != StatusDetected {
+		t.Fatalf("Status = %q, want %q", got.Status, StatusDetected)
+	}
+	if len(got.Matches) != 1 {
+		t.Fatalf("len(Matches) = %d, want 1 (casing variants should dedupe): %+v", len(got.Matches), got.Matches)
+	}
+	if got.Selected == nil || got.Selected.BoardToken != "qawolf" {
+		t.Fatalf("Selected = %+v, want ashby/qawolf", got.Selected)
 	}
 }
 

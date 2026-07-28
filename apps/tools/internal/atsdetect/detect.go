@@ -193,45 +193,48 @@ type detectionRule struct {
 	extract func(m []string) string
 }
 
-// detectionRules is ordered; the first matching pattern wins.
+// detectionRules is ordered; the first matching pattern wins. Every extract
+// func routes its captured token through NormalizeBoardToken so the
+// per-ATS casing rule lives in exactly one place (see normalize.go) instead
+// of being reimplemented per rule.
 var detectionRules = []detectionRule{
 	{
 		ats:     "greenhouse",
 		pattern: "greenhouse_boards",
 		regex:   regexp.MustCompile(`(?i)^https?://boards\.greenhouse\.io/([^/?#]+)`),
-		extract: func(m []string) string { return m[1] },
+		extract: func(m []string) string { return NormalizeBoardToken("greenhouse", m[1]) },
 	},
 	{
 		ats:     "greenhouse",
 		pattern: "greenhouse_job_boards",
 		regex:   regexp.MustCompile(`(?i)^https?://job-boards\.greenhouse\.io/([^/?#]+)`),
-		extract: func(m []string) string { return m[1] },
+		extract: func(m []string) string { return NormalizeBoardToken("greenhouse", m[1]) },
 	},
 	{
 		ats:     "lever",
 		pattern: "lever",
 		regex:   regexp.MustCompile(`(?i)^https?://jobs\.lever\.co/([^/?#]+)`),
-		extract: func(m []string) string { return m[1] },
+		extract: func(m []string) string { return NormalizeBoardToken("lever", m[1]) },
 	},
 	{
 		ats:     "ashby",
 		pattern: "ashby",
 		regex:   regexp.MustCompile(`(?i)^https?://jobs\.ashbyhq\.com/([^/?#]+)`),
-		extract: func(m []string) string { return m[1] },
+		extract: func(m []string) string { return NormalizeBoardToken("ashby", m[1]) },
 	},
 	{
 		ats:     "workday",
 		pattern: "workday",
 		regex:   regexp.MustCompile(`(?i)^https?://([a-z0-9.-]+\.myworkdayjobs\.com)(?:/[a-z]{2}(?:-[A-Z]{2})?)?/([^/?#]+)`),
 		extract: func(m []string) string {
-			return strings.ToLower(m[1]) + "/" + m[2]
+			return NormalizeBoardToken("workday", m[1]+"/"+m[2])
 		},
 	},
 	{
 		ats:     "workable",
 		pattern: "workable",
 		regex:   regexp.MustCompile(`(?i)^https?://apply\.workable\.com/([^/?#]+)`),
-		extract: func(m []string) string { return strings.ToLower(m[1]) },
+		extract: func(m []string) string { return NormalizeBoardToken("workable", m[1]) },
 	},
 }
 

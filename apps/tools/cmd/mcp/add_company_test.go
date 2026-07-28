@@ -429,6 +429,42 @@ func TestRunAddCompany_OmittedOptionalsPassSQLNull(t *testing.T) {
 	}
 }
 
+// TestRunAddCompany_NormalizesBoardTokenBeforeInsert verifies the write
+// boundary applies atsdetect.NormalizeBoardToken to a caller-supplied
+// board_token before it reaches the probe and the insert, since add_company
+// accepts ats/board_token directly and callers can bypass detect_ats (which
+// already normalizes) entirely.
+func TestRunAddCompany_NormalizesBoardTokenBeforeInsert(t *testing.T) {
+	tests := []struct {
+		name       string
+		ats        string
+		boardToken string
+		want       string
+	}{
+		{name: "greenhouse lowercases", ats: "greenhouse", boardToken: "Stripe", want: "stripe"},
+		{name: "ashby lowercases", ats: "ashby", boardToken: "QAWolf", want: "qawolf"},
+		{
+			name:       "lever preserves case (case-sensitive API)",
+			ats:        "lever",
+			boardToken: "MastReforestation",
+			want:       "MastReforestation",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			capture := &paramCapture{row: sampleRow(true)}
+			req := addCompanyRequest{Name: "Acme", ATS: tc.ats, BoardToken: tc.boardToken, Probe: boolPtr(false)}
+
+			runAddCompany(t.Context(), req, capture, neverProbe(t))
+
+			if capture.params.BoardToken != tc.want {
+				t.Fatalf("board_token param = %q, want %q", capture.params.BoardToken, tc.want)
+			}
+		})
+	}
+}
+
 // paramCapture records the params passed to addCompany so tests can assert the
 // NULL binding contract.
 type paramCapture struct {
