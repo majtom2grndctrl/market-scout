@@ -93,7 +93,10 @@
       "mcp__market-scout-postgres__record_unsupported_company",
       "mcp__market-scout-postgres__enrichment_preview",
       "mcp__market-scout-postgres__query",
-      "mcp__market-scout-postgres__save_enrichment"
+      "mcp__market-scout-postgres__save_enrichment",
+      "Bash(go list *)",
+      "Bash(go env *)",
+      "Bash(pnpm licenses *)"
     ]
   },
   "enabledMcpjsonServers": [
