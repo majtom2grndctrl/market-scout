@@ -36,27 +36,32 @@ This is the foundation the seven views in `research/ui-view-catalog.md` get buil
 - [ ] Changing a token's value in the TypeScript source and rerunning codegen changes the emitted CSS custom property and every utility derived from it, with no hand edit to any `.css` file.
 - [ ] Adding a step to the spacing or type scale in TypeScript makes that step available as a prop value, with editor autocomplete, without editing any component file.
 - [ ] A scale step not present in the token source is a TypeScript error at the prop call site, rather than compiling to a Tailwind multiplier value.
+- [ ] Passing a per-breakpoint object to a base-tier prop such as `weight` is a TypeScript error.
 - [ ] Numeric Tailwind utilities (`p-4`, `p-2.5`, `h-8`, `size-6`) still compile after the token layer lands, and `components/ui/button.tsx` renders identically to its pre-change appearance.
-- [ ] No token name shadows a Tailwind built-in except where `prop-values.md` records the override as deliberate.
+- [ ] No token name shadows a Tailwind built-in except where the Scale collisions table records the override as deliberate.
 - [ ] Passing `className` or `style` to any of the five primitives is a TypeScript error.
+- [ ] Passing `id`, `role`, and `onClick` to any primitive forwards them to the rendered element.
 - [ ] `Box` renders the HTML element named by its `as` prop and defaults to `div`.
 - [ ] `Box` applies background, radius, border, shadow, and overflow from its props, and those surfaces track the active light or dark theme without a per-theme prop.
 - [ ] `Text` renders the element named by `as` and applies that element's default size and weight from the ramp in `prop-values.md`.
 - [ ] Setting `size` on a `Text` overrides the element default without changing the element — `<Text as="h2" size={900}>` renders an `h2` at the largest step.
 - [ ] A `Text` carrying both `size` and `color` renders with both classes present; neither is dropped.
 - [ ] `Text` colors resolve from shadcn's semantic foreground variables, so the same `color` value stays legible in both themes.
-- [ ] Every responsive prop accepts either a bare token or a per-breakpoint object, and the object form emits the base class plus one breakpoint-prefixed class for each breakpoint key present in the object, emitting nothing for absent keys.
+- [ ] Every responsive prop accepts either a bare token or a per-breakpoint object. The object form emits a base class only when a `base` key is present, plus one breakpoint-prefixed class for each other key present, and nothing for absent keys.
 - [ ] `Stack` changes flex direction at breakpoints when given the object form of `direction`, and positions children along both axes via `align` and `justify`.
 - [ ] `Grid` sets column count responsively, and `GridItem` spans columns responsively.
+- [ ] `GridItem` spans rows responsively as well as columns.
 - [ ] `Grid` with `columns="auto"` and a `minItemWidth` token applies the generated auto-fit utility, and its items wrap intrinsically at that width.
-- [ ] `Container` constrains width to the named `maxWidth` token, centers itself horizontally, and applies its responsive gutter as inline padding.
+- [ ] `Container` constrains width to the named `maxWidth` token, centers itself horizontally, and takes page margins through the shared responsive `px` prop.
 - [ ] `Box` and `Stack` express full-viewport height through `minHeight`, with no Tailwind class in the consuming file.
-- [ ] `app/page.tsx` contains no Tailwind class string and renders the same visual result as before the change.
+- [ ] `app/page.tsx` contains no Tailwind class string and renders the same layout, type hierarchy, and spacing as before; the heading's line height moves from Tailwind's 1.333 to the scale's 1.4, which is expected.
 - [ ] Storybook builds, and every primitive has at least one story.
+- [ ] Storybook stories render in the Geist sans family, not the browser default serif.
 - [ ] Each primitive story shows no violations when reviewed by hand in Storybook's a11y panel.
 - [ ] `pnpm build` and `tsc --noEmit` both pass.
 - [ ] The generated class-map module is at most 12 KB gzipped.
 - [ ] `apps/web/package.json` exposes `tokens` and `typecheck` scripts, and its `build` script runs the drift check before `next build`.
+- [ ] Task 7 leaves a `## Prop-set gaps` section in `index.md`, empty or populated.
 
 ## Token naming inventory
 
@@ -89,7 +94,7 @@ A token name that matches a Tailwind built-in either shadows it or is silently i
 | Namespace | Behavior | Consequence |
 |---|---|---|
 | `--spacing-*` | Named token wins over the numeric multiplier | `p-100` means the token, not 25rem. Intended. |
-| `--container-*` | Loses to Tailwind's deprecated `--max-width-*` | `--container-prose` is ignored; `prose` is unusable as a container name. |
+| `--container-*` | Loses to Tailwind's deprecated `--max-width-*` | `prose` is the single reserved name. Tailwind's deprecated block defines only `--max-width-prose: 65ch`, which wins over `--container-prose`. No other container name is shadowed. |
 
 Verified against Tailwind 4.3.3 in both directions. Task 1 must compile a probe stylesheet and confirm each emitted token name resolves to its own value before the scale is considered settled.
 
@@ -131,7 +136,13 @@ Build the token source and the generator every other task consumes.
 - Emit base-tier-only props as a flat value-to-class map, and type them as the bare token rather than `Responsive<T>`, so passing the object form to them fails at the call site.
 - Emit prop union types derived from the same token keys.
 - Emit a class map for every prop in `prop-values.md`. Phase 2 runs concurrently only if Task 1's output surface is closed.
+- Emit the element-defaults map from `prop-values.md` as generated output. A ramp hand-copied into `text.tsx` would drift from the token module, which is the split this plan exists to prevent.
+- Treat the padding and margin props in `prop-values.md` as the shared spacing props every primitive receives. The gap props are not shared — only `Stack` and `Grid` take them.
+- Key the generated maps for the colliding prop names distinctly — `stackAlign`, `textAlign`, `stackWrap`, `textWrap`. Two props share each name across components, and a single map key would silently serve the wrong value set.
+- Emit the generated-by header as the first line of every artifact. §5.8 recognizes a generated file by that header alone.
+- Spread every prop that is not a style prop onto the rendered element, so `id`, `role`, `aria-*`, and event handlers reach the DOM.
 - Compile a probe stylesheet during the run and fail if any emitted token name resolves to a Tailwind built-in instead of its own value. Both known collision modes are silent, and the container case was found only by compiling.
+- Assert in the same probe that `p-4`, `p-2.5`, `h-8`, and `size-6` still compute against `--spacing`. Shadowing runs both ways.
 - Write the shared `Responsive<T>` type and a `resolveResponsive` helper by hand in `components/primitives/shared.ts`. Primitives call it rather than reimplementing breakpoint walking five times.
 - Write the shared DOM-passthrough base prop type here too, not inside `Box`. All five primitives depend on it, and owning it in Task 1 is what keeps Phase 2 concurrent.
 - Type the shared base as `React.HTMLAttributes<HTMLElement>` plus `ref`.
@@ -141,42 +152,44 @@ Build the token source and the generator every other task consumes.
 - Run the generator with plain `node` — Node v26 strips TypeScript types natively, so no new dependency is needed.
 - Set `allowImportingTsExtensions: true` in `apps/web/tsconfig.json`. Node's strip-only mode requires the `.ts` extension on relative imports, and without this flag `tsc --noEmit` fails those same imports with TS5097.
 - Write relative imports in the generator and token modules with an explicit `.ts` extension, because Node's strip-only resolver does not infer it.
-- Keep token modules and the generator inside Node's strip-only subset — no `enum`, no `namespace`, no parameter properties. Type-only imports need the inline `type` modifier or they fail at runtime.
+- Keep token modules and the generator inside Node's strip-only subset.
+- Mark type-only imports with the inline `type` modifier, or they fail at runtime.
 - Support a `--check` mode that regenerates into memory and exits non-zero on any difference. This is what makes the drift check enforceable in `pnpm build`.
 - Commit generated files. Builds must not require the generator to have been run first.
 - Add the `@import` for the generated theme to `app/globals.css` immediately after its existing `@import` lines. CSS requires every import to precede other rules, and that file already has three.
-- Add a `tokens` script to `apps/web/package.json` running the generator, and a `typecheck` script running `tsc --noEmit`. Both ACs name commands that do not exist yet.
+- Add a `tokens` script to `apps/web/package.json` running the generator. The AC names a command that does not exist yet.
+- Add a `typecheck` script running `tsc --noEmit`. The AC names a command that does not exist yet.
 - Change the `build` script to run `pnpm tokens --check` before `next build`, so a stale generated file fails the build rather than shipping.
-- Print the gzipped size of the generated class-map module at the end of every run. Silent growth past the 12 KB budget is what the tier table exists to prevent.
+- Print the gzipped size of the class-map module and exit non-zero above 12 KB. A printed number that fails nothing is not a budget.
 - Derive each numeric prop's TypeScript union from the token keys. Only defined steps are safe: an undefined three-digit spacing value silently falls back to Tailwind's multiplier, so `p-450` would compile to 112.5rem rather than failing. The union is what makes that unreachable from prop call sites.
 - Generate responsive tiers only for the props in the table below. Full responsive coverage on every prop would add roughly 900 redundant entries against a 12 KB budget.
 
 | Responsive | Base tier only |
 |---|---|
 | `p`, `px`, `py`, `m`, `mx`, `my` | `pt`, `pr`, `pb`, `pl`, `mt`, `mr`, `mb`, `ml` |
-| `gap`, `gapX`, `gapY`, `direction`, `align`, `justify` | `wrap`, `bg`, `radius`, `border`, `shadow`, `overflow` |
-| `columns`, `colSpan`, `rowSpan`, `gutter` | `weight`, `leading`, `tracking`, `color`, `family`, `transform`, `truncate`, `lineClamp` |
-| `size`, `maxWidth`, `width`, `height`, `minHeight` | `minItemWidth`, `align` (text) |
+| `gap`, `gapX`, `gapY`, `direction`, `align` (stack), `justify` (stack) | `wrap` (stack), `bg`, `radius`, `border`, `shadow`, `overflow` |
+| `columns`, `colSpan`, `rowSpan` | `weight`, `leading`, `tracking`, `color`, `family`, `transform`, `truncate`, `lineClamp` |
+| `size`, `maxWidth`, `width`, `height`, `minHeight` | `minItemWidth`, `wrap` (text), `align` (text) |
 
 Do not:
 - Emit `--spacing` itself, or a `--spacing-0`, or any `--color-*` or `--radius-*` token.
 - Use `--*: initial` to reset Tailwind's default theme.
 - Hand-write any file the generator owns.
 - Hand-edit `app/globals.css`'s existing `@theme inline` block.
+- Use `enum`, `namespace`, or parameter properties anywhere the generator loads.
 
-All five primitives accept the shared spacing props from Task 1 unless their task says otherwise. Every prop's allowed values and emitted classes are in `prop-values.md`.
+Tasks 2 through 6 each build one component. Every prop's allowed values, emitted classes, and responsive tier are in `prop-values.md`; that file is the complete prop surface, and no task invents a value.
 
 ### Task 2: Box
 
 The spacing and surface primitive. Renders one element, no layout opinion of its own.
 
-- Constrain `as` to a union of literal tag names — `div`, `section`, `article`, `header`, `footer`, `main`, `aside`, `nav`, `figure`, `ul`, `li`. A fixed union avoids generic polymorphic-component typing, which is where this kind of component usually stalls.
-- Default `as` to `div`.
+- Constrain `as` to the element union in `prop-values.md`, defaulting to `div`. A fixed union avoids generic polymorphic-component typing, which is where this kind of component usually stalls.
 - Build on the shared base prop type from Task 1.
 - Draw `bg` and `radius` from shadcn's `--color-*` and `--radius-*` properties, so surfaces track the active theme.
 - Draw `border`, `shadow`, and `overflow` from Tailwind's built-in scales. shadcn defines no `--shadow-*` property.
 - Carry `width`, `height`, and `minHeight` over the enumerated sets in `prop-values.md`. Page shells need viewport height, and it is the one thing the current `app/page.tsx` cannot otherwise express.
-- Join classes with `clsx`, not `cn`.
+- Join classes with `clsx`.
 
 Do not:
 - Declare a second base prop type. The `className` ban lives in Task 1's shared type.
@@ -190,7 +203,10 @@ Typography as orthogonal props. `as` names the element; `size` and `weight` name
 - Apply the element's default size and weight from the ramp when neither prop is given, so `<Text as="h2">` is correct without further configuration.
 - Let `size`, `weight`, `leading`, and `tracking` override those defaults independently. Decoupling visual level from document structure is the accessibility case for this component.
 - Take `color` from shadcn's semantic foreground vars.
-- Join classes with `clsx`, not `cn`.
+- Accept `family`, `align`, `transform`, `truncate`, `lineClamp`, and `wrap` over the value sets in `prop-values.md`. All six are base tier.
+- Accept `htmlFor`, `dateTime`, and `cite` as optional props. The shared base type carries no element-specific attributes, so `label`, `time`, and `blockquote` are unusable without them.
+- Read element defaults from the generated map, not from a table inside the component.
+- Join classes with `clsx`.
 
 Do not:
 - Add a `variant` prop or any named type bundle. Recurring combinations become composed components.
@@ -202,36 +218,52 @@ Do not:
 One-dimensional flex layout. Supersedes the `HStack`/`VStack` pair.
 
 - Make `direction` responsive, so one component covers what Chakra splits into two.
-- Accept the shared spacing props alongside `gap`, `align`, `justify`, and `wrap`.
-- Give `Stack` the same `as` tag union as `Box`, defaulting to `div`. Page shells are flex containers that need to render as `main` or `section`.
-- Carry the same `width`, `height`, and `minHeight` props as `Box`, since the page shell is usually a `Stack`.
-- Join classes with `clsx`, not `cn`.
+- Accept the shared spacing props alongside `align`, `justify`, and `wrap`.
+- Accept `gap`, `gapX`, and `gapY` over the spacing scale. The shared spacing props cover outer spacing only.
+- Constrain `as` to the element union in `prop-values.md`, defaulting to `div`. Page shells are flex containers that need to render as `main` or `section`.
+- Carry `width`, `height`, and `minHeight` over the value sets in `prop-values.md`, since the page shell is usually a `Stack`.
+- Join classes with `clsx`.
+
+Do not:
+- Import `cn` from `@/lib/utils`. See the note under Sequencing.
 
 ### Task 5: Grid and GridItem
 
 Two-dimensional layout for scorecards and dashboards.
 
-- Make `columns` and `GridItem`'s `colSpan` responsive; a fixed column count is unusable on the composite views.
+- Make `columns`, `GridItem`'s `colSpan`, and `GridItem`'s `rowSpan` responsive; a fixed column count is unusable on the composite views.
 - Support `columns="auto"` paired with a `minItemWidth` token, applying the `@utility` class Task 1 generates. Card grids need intrinsic wrapping, and it cannot be expressed as a column count.
-- Join classes with `clsx`, not `cn`.
+- Exclude `auto` from the responsive object form of `columns`; it is valid only as a bare value. `minItemWidth` is base tier, so a per-breakpoint auto-fit would need a utility per breakpoint per width.
+- Accept `gap`, `gapX`, and `gapY` over the spacing scale. A grid without gap control cannot lay out the scorecard views.
+- Export `Grid` and `GridItem` from the same `grid.tsx` file; they are one layout contract.
+- Join classes with `clsx`.
+
+Do not:
+- Import `cn` from `@/lib/utils`. See the note under Sequencing.
 
 ### Task 6: Container
 
 Page-width shell.
 
 - Center horizontally by default and constrain to a named `maxWidth` token.
-- Make `gutter` responsive, since page margins are the most breakpoint-sensitive value in any layout.
-- Join classes with `clsx`, not `cn`.
+- Constrain `as` to the element union in `prop-values.md`, defaulting to `div`.
+- Join classes with `clsx`.
+
+Do not:
+- Import `cn` from `@/lib/utils`. See the note under Sequencing.
 
 ### Task 7: Stories and first consumer
 
 - Add a story per primitive, plus one token-reference story rendering the spacing scale, the type scale, and every element default.
 - Put every story under `components/primitives/`, including the token-reference story. The Storybook glob in `.storybook/main.ts` only scans `../components/**`, so a story placed beside its tokens would silently not load.
+- Supply a real `--font-sans` value in `.storybook/preview.ts`. `globals.css` defines `--font-sans: var(--font-sans)` self-referentially, and only `app/layout.tsx`'s Geist variable breaks that cycle — Storybook has no such wrapper, so every story otherwise renders in the browser default serif.
+- Open each story's a11y panel and resolve every violation before calling the task done.
 - Rewrite `app/page.tsx` so all layout and typography come from primitives. `Button` stays as it is — shadcn components get composed into primitive layout, not replaced.
-- To extend a prop set, add the value to the token module, rerun `pnpm tokens`, then widen the prop in the component. Never hand-edit a generated map.
+- Append a `## Prop-set gaps` section to `index.md` listing everything `app/page.tsx` could not express.
 
 Do not:
 - Add `className` to a primitive to unblock the rewrite.
+- Hand-edit a generated map to unblock the rewrite. Add the value to the token module and rerun `pnpm tokens`.
 
 ## Sequencing
 
@@ -243,9 +275,9 @@ Primitives must not compose each other. `Stack` rendering a `Box` internally wou
 
 Each primitive is a named export from its own file, imported as `@/components/primitives/box`. No barrel file — five concurrent agents would collide on it.
 
-Primitives join classes with `clsx` and never with `cn`. `cn` runs `tailwind-merge`, which does not know the custom scales and silently discards classes: verified against the installed tailwind-merge 3.6.0, `twMerge("text-400 text-muted-foreground")` returns `"text-muted-foreground"`, dropping the size. It reads any `text-*` class it cannot place in a known font-size scale as a color, and a size and a color cannot coexist in its model. `font-600 text-400` and `leading-snug text-400` survive, so the failure is specific to the `text-*` prefix carrying two meanings.
+Primitives join classes with `clsx` and never with `cn`. `cn` runs `tailwind-merge`, which does not know the custom scales and silently discards classes: verified against the installed tailwind-merge 3.6.0, `twMerge("text-400 text-muted-foreground")` returns `"text-muted-foreground"`, dropping the size. It reads any `text-*` class it cannot place in a known font-size scale as a color, and a size and a color cannot coexist in its model. `font-*` fails the same way: `twMerge("font-600 font-sans")` returns `"font-sans"`, dropping the weight. Both of `Text`'s `text-*` props and both of its `font-*` props are at risk, so the problem is any prefix carrying two meanings, not one prefix.
 
-Merging buys nothing here anyway: the prop set is closed and no two props emit the same CSS property. `components/ui/` keeps using `cn`; this rule is scoped to `components/primitives/`.
+Overlapping props like `p` and `px` resolve by Tailwind's own stylesheet order, exactly as the equivalent raw utilities would. That is the precedence a Tailwind user already expects, so merging adds nothing. `components/ui/` keeps using `cn`; this rule is scoped to `components/primitives/`.
 
 ## Rough sketch
 
@@ -258,7 +290,7 @@ apps/web/
     breakpoints.ts        # canonical — names only; values stay Tailwind defaults
     generated/
       theme.css           # @theme + @utility blocks, imported by app/globals.css
-      class-maps.ts       # static Tailwind class strings
+      class-maps.ts       # static Tailwind class strings + element defaults
       types.ts            # Space, TextSize, Weight, Breakpoint unions
   components/primitives/
     shared.ts             # Responsive<T>, resolveResponsive(), base prop type — hand-written
@@ -293,7 +325,7 @@ An escape hatch would convert both signals into silence. That is the reason ther
 
 This is also why `Text` has no `variant` prop. A named bundle like `eyebrow` is a component wearing a prop's clothing: it hides that a recurring pattern exists, and it grows one entry at a time until the variant list is the design system. Spelling the combination out at the call site makes the repetition visible, and the second time it appears it becomes a component with a name.
 
-Practical consequence for Task 7: append a `## Prop-set gaps` section to this plan file listing what `app/page.tsx` could not express, rather than routing around it. The list is the first real measurement of whether the scale is right.
+Task 7 records what `app/page.tsx` could not express. That list is the first real measurement of whether the scale is right.
 
 ## Open questions
 
