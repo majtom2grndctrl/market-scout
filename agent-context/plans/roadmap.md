@@ -45,6 +45,13 @@ Goal: Agent can discover companies from web sources, investigate them in a brows
 - [ ] `discovery-source-recipes`
   Add browser recipes for common sourcing modes. Cover one page that mentions many companies, and recent articles from a tech-news source. Recipes should feed the discovery run workflow rather than define a separate pipeline.
 
+## Epic: Web UI Foundation
+
+Goal: `apps/web` gains a token-driven component layer before product screens are built on it.
+
+- [ ] `design-tokens-and-primitives`
+  TypeScript design tokens generating the Tailwind `@theme` block, plus `Box`, `Text`, `Stack`, `Grid`, and `Container` with closed prop sets. Keeps Tailwind class strings inside component files. Foundation for the views in `research/ui-view-catalog.md`.
+
 ## Epic: Job Classification
 
 - [x] `codex-batch-enrich-runner`
