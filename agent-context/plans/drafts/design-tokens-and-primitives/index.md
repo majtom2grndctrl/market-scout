@@ -33,7 +33,8 @@ This is the foundation the seven views in `research/ui-view-catalog.md` get buil
 - [ ] Every generated file carries a `DO NOT EDIT` header naming `pnpm tokens` as its regenerator, matching the convention in `agent-context/lib/developer-guide.md` §5.8.
 - [ ] Changing a spacing token's value in the TypeScript source and rerunning codegen changes the emitted CSS custom property and every utility derived from it, with no hand edit to any `.css` file.
 - [ ] Adding a step to the spacing scale in TypeScript makes that step available as a value on every spacing prop, with editor autocomplete, without editing any component file.
-- [ ] Numeric Tailwind utilities (`p-4`, `gap-6`) still compile after the token layer lands, and `components/ui/button.tsx` renders identically to its pre-change appearance.
+- [ ] A spacing step not present in the token source is a TypeScript error at the prop call site, rather than compiling to a Tailwind multiplier value.
+- [ ] Numeric Tailwind utilities (`p-4`, `p-2.5`, `h-8`, `size-6`) still compile after the token layer lands, and `components/ui/button.tsx` renders identically to its pre-change appearance.
 - [ ] Passing `className` or `style` to any of the five primitives is a TypeScript error.
 - [ ] `Box` renders the HTML element named by its `as` prop and defaults to `div`.
 - [ ] `Box` applies background, radius, border, shadow, and overflow from its props, and those surfaces track the active light or dark theme without a per-theme prop.
@@ -54,16 +55,41 @@ One name crosses three representations. Pin the transform once; every generated 
 
 | Concept | TS token key | CSS custom property | Tailwind utility | Prop value |
 |---|---|---|---|---|
-| Spacing step | `spacing.md` | `--spacing-md` | `p-md`, `gap-md`, `mx-md` | `p="md"` |
-| Spacing step (multi-word) | `spacing['2xl']` | `--spacing-2xl` | `p-2xl` | `p="2xl"` |
+| Spacing step | `spacing[400]` | `--spacing-400` | `p-400`, `gap-400`, `mx-400` | `p={400}` |
+| Spacing zero | *(none — Tailwind built-in)* | *(none)* | `p-0` | `p={0}` |
 | Type variant | `text.eyebrow` | `--text-eyebrow` (+ `--text-eyebrow--line-height`, `--letter-spacing`, `--font-weight`) | `text-eyebrow` | `variant="eyebrow"` |
 | Type variant (multi-word) | `text['body-sm']` | `--text-body-sm` | `text-body-sm` | `variant="body-sm"` |
 | Container width | `container.prose` | `--container-prose` | `max-w-prose` | `maxWidth="prose"` |
 | Breakpoint | `breakpoints.md` | *(TW default, not re-emitted)* | `md:` prefix | `{ md: ... }` key |
 
-Rule: token keys are already kebab-case strings, so the CSS property is `--<namespace>-<key>` verbatim. No camelCase-to-kebab conversion anywhere — that conversion is the drift risk this table exists to remove.
+Rule: token keys are already in their final form, so the CSS property is `--<namespace>-<key>` verbatim. No camelCase-to-kebab conversion anywhere — that conversion is the drift risk this table exists to remove.
 
-Verified against Tailwind 4.3.3: named `--spacing-*` tokens generate `p-md`-style utilities and their responsive variants, coexisting with the numeric `--spacing` multiplier. A `--text-<name>` token with `--line-height`, `--letter-spacing`, and `--font-weight` sub-properties compiles to a single composite class setting all four properties.
+Spacing props take numbers, not strings. Type variants and container widths stay named, because those values are semantic rather than positions on a scale.
+
+Verified against Tailwind 4.3.3: named `--spacing-*` tokens generate `p-<name>`-style utilities and their responsive variants, coexisting with the numeric `--spacing` multiplier. A `--text-<name>` token with `--line-height`, `--letter-spacing`, and `--font-weight` sub-properties compiles to a single composite class setting all four properties.
+
+## Spacing scale
+
+Steps run 100–900, mirroring `font-weight`. Both scales put their neutral value at 400: `font-weight: 400` is normal text, `--spacing-400` is the 1rem base.
+
+| Step | Value | px |
+|---|---|---|
+| 0 | `0` | 0 |
+| 100 | `0.25rem` | 4 |
+| 200 | `0.5rem` | 8 |
+| 300 | `0.75rem` | 12 |
+| 400 | `1rem` | 16 |
+| 500 | `1.5rem` | 24 |
+| 600 | `2rem` | 32 |
+| 700 | `3rem` | 48 |
+| 800 | `4rem` | 64 |
+| 900 | `6rem` | 96 |
+
+The gaps are the point. A step between 400 and 500 lands at 450, a finer one at 425 or 475, and a sub-minimal step at 50 — all without renumbering anything downstream. A t-shirt scale forces a rename cascade or a `2xs`/`3xs` prefix pile-up at exactly that moment.
+
+`0` is not a token. Tailwind ships `p-0` natively, so the class map points step `0` at the built-in utility and no `--spacing-0` property is emitted.
+
+Verified against Tailwind 4.3.3: a defined `--spacing-100` shadows Tailwind's dynamic numeric utility, so `p-100` compiles to `var(--spacing-100)` (4px) rather than `calc(var(--spacing) * 100)` (25rem). Small numeric utilities (`p-4`, `p-2.5`, `h-8`, `size-6`) are unaffected, and neither shadcn's bundled CSS nor `apps/web` source uses any three-digit spacing utility, so nothing existing is shadowed.
 
 ## Tasks
 
@@ -91,8 +117,10 @@ Generate responsive tiers only for props that need them. Full responsive coverag
 | `gap`, `gapX`, `gapY`, `direction`, `align`, `justify` | `wrap` |
 | `columns`, `colSpan`, `gutter` | — |
 
+- Derive the spacing prop's TypeScript union from the token keys plus a literal `0`. Only defined steps are safe: an undefined three-digit value silently falls back to Tailwind's multiplier, so `p-450` would compile to 112.5rem rather than failing. The union is what makes that unreachable from prop call sites.
+
 Do not:
-- Emit `--spacing` itself, or any `--color-*` or `--radius-*` token.
+- Emit `--spacing` itself, or a `--spacing-0`, or any `--color-*` or `--radius-*` token.
 - Use `--*: initial` to reset Tailwind's default theme.
 - Hand-write any file the generator owns.
 
@@ -171,7 +199,7 @@ apps/web/
 // Proposed design
 type Responsive<T> = T | { base?: T; sm?: T; md?: T; lg?: T; xl?: T; '2xl'?: T }
 
-<Stack direction={{ base: 'col', md: 'row' }} gap="lg" align="center">
+<Stack direction={{ base: 'col', md: 'row' }} gap={500} align="center">
   <Text variant="eyebrow" color="muted">Demand trend</Text>
   <Text variant="h1" as="h2">Stripe</Text>
 </Stack>
@@ -179,9 +207,18 @@ type Responsive<T> = T | { base?: T; sm?: T; md?: T; lg?: T; xl?: T; '2xl'?: T }
 
 `resolveResponsive` walks the breakpoint keys in order and indexes the generated map per tier, so `direction={{ base: 'col', md: 'row' }}` yields `flex-col md:flex-row`. Primitives keep using `cn` internally for conflict resolution even though no external `className` can arrive.
 
+## Design principle: friction is the feedback
+
+The closed prop set is not a constraint to work around. These primitives are atomic, so their props should cover ordinary layout completely. A page that cannot express itself in them signals one of two things, and both are worth hearing:
+
+- **A one-off need** — build a real component for it. That is the intended outcome, and it keeps the exception named and reviewable instead of scattered as inline classes.
+- **A recurring need** — the system is wrong. Repeated reaching for the same missing value means the spacing scale has a gap, the color tokens are too rigid, or a prop is missing. Fix the system, not the call site.
+
+An escape hatch would convert both signals into silence. That is the reason there isn't one.
+
+Practical consequence for Task 7: log what `app/page.tsx` cannot express rather than routing around it. The list is the first real measurement of whether the scale is right.
+
 ## Open questions
 
-- **Test runner.** The primitives are pure value-to-class functions — ideal unit-test targets, and `resolveResponsive` is the one piece with real branching. Vitest is the obvious fit but is a new dependency and a new convention for a repo whose `testing-guide.md` is Go-only. Deferred here; worth deciding before the primitive set grows.
-- **Closed prop set friction.** No `className` means every unmet need is a code change to a primitive. Task 7 is sized to surface most gaps, but the first real product screen will surface more. The escape valve is extending the prop set, and that needs to stay faster than working around it.
-- **Spacing scale shape.** The draft assumes t-shirt names (`xs`…`4xl`) over numeric steps, matching Chakra and reading better at call sites. Numeric steps would align with Tailwind's own scale and make the two systems interchangeable. Decide before Task 1 — it is the hardest thing to change later.
-- **`agent-context/lib/` capture at promotion.** Two durable facts belong in the library, not in this plan: the token pipeline's direction (TypeScript source, CSS generated, never the reverse) in `project.md`, and the generated-file rows for `pnpm tokens` in `developer-guide.md` §5.8.
+- **Test runner.** Planned as the immediate follow-up, not a someday item. The primitives are pure value-to-class functions and `resolveResponsive` is the one piece with real branching, so the highest-value tests are cheap. Vitest is the likely fit, but it is a new dependency and the first JavaScript testing convention in a repo whose `testing-guide.md` is Go-only — which is why it is its own decision rather than a bullet inside this plan.
+- **`agent-context/lib/` capture at promotion.** Three durable facts belong in the library, not in this plan: the token pipeline's direction (TypeScript source, CSS generated, never the reverse) and the closed-prop-set principle above, both in `project.md`; and the generated-file rows for `pnpm tokens` in `developer-guide.md` §5.8.
