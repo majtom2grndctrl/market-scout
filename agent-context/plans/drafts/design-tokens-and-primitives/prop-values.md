@@ -10,6 +10,19 @@
 
 Values for every prop below: `0`, `100`, `200`, `300`, `400`, `500`, `600`, `700`, `800`, `900`.
 
+| Step | Value | px |
+|---|---|---|
+| 0 | `0` | 0 |
+| 100 | `0.25rem` | 4 |
+| 200 | `0.5rem` | 8 |
+| 300 | `0.75rem` | 12 |
+| 400 | `1rem` | 16 |
+| 500 | `1.5rem` | 24 |
+| 600 | `2rem` | 32 |
+| 700 | `3rem` | 48 |
+| 800 | `4rem` | 64 |
+| 900 | `6rem` | 96 |
+
 | Prop | Emitted class | Tier |
 |---|---|---|
 | `p` | `p-<step>` | responsive |
@@ -17,12 +30,14 @@ Values for every prop below: `0`, `100`, `200`, `300`, `400`, `500`, `600`, `700
 | `py` | `py-<step>` | responsive |
 | `pt`, `pr`, `pb`, `pl` | `pt-<step>` etc | base |
 | `m` | `m-<step>` | responsive |
-| `mx` | `mx-<step>` | responsive |
+| `mx` | `mx-<step>`, plus `mx-auto` for `auto` | responsive |
 | `my` | `my-<step>` | responsive |
 | `mt`, `mr`, `mb`, `ml` | `mt-<step>` etc | base |
 | `gap` | `gap-<step>` | responsive |
 | `gapX` | `gap-x-<step>` | responsive |
 | `gapY` | `gap-y-<step>` | responsive |
+
+`auto` is valid only on `mx`, and only `Container` uses it — it is how Container centers.
 
 Step `0` maps to Tailwind's built-in `p-0`, `gap-0`, and so on; no `--spacing-0` property is emitted.
 
@@ -76,7 +91,7 @@ Defaults are the ramp; overriding `size` on a heading is how visual level decoup
 
 ## Element unions
 
-- `Box`, `Stack`, `Grid`, `Container`: `div`, `section`, `article`, `header`, `footer`, `main`, `aside`, `nav`, `figure`, `ul`, `li`. Default `div`.
+- `Box`, `Stack`, `Grid`, `GridItem`, `Container`: `div`, `section`, `article`, `header`, `footer`, `main`, `aside`, `nav`, `figure`, `ul`, `li`. Default `div`.
 - `Text`: `p`, `span`, `div`, `h1`, `h2`, `h3`, `h4`, `h5`, `h6`, `label`, `code`, `kbd`, `samp`, `strong`, `em`, `blockquote`, `small`, `figcaption`, `caption`, `li`, `dt`, `dd`, `cite`, `abbr`, `time`. Default `p`.
 
 `Text` additionally accepts `htmlFor`, `dateTime`, and `cite` as optional props, because `React.HTMLAttributes<HTMLElement>` carries no element-specific attributes and `label`, `time`, and `blockquote` are unusable without them.
@@ -214,6 +229,16 @@ Viewport sizing is why `app/page.tsx` could not be expressed without these.
 
 `svh` and `dvh` are Tailwind built-ins. `min-h-none` emits no class.
 
+## Display classes
+
+Two primitives emit an unconditional base class. Without it the other layout props do nothing — `flex-col` sets flex-direction on a block element and silently no-ops.
+
+| Component | Always emits |
+|---|---|
+| `Stack` | `flex` |
+| `Grid` | `grid` |
+| `Container` | `mx-auto` |
+
 ## Stack — direction, align, justify, wrap
 
 | Prop | Values | Emitted class | Tier |
@@ -223,12 +248,14 @@ Viewport sizing is why `app/page.tsx` could not be expressed without these.
 | `justify` | `start`, `center`, `end`, `between`, `around`, `evenly` | `justify-<value>` | responsive |
 | `wrap` | `nowrap`, `wrap`, `wrap-reverse` | `flex-<value>` | base |
 
+`direction` defaults to `col` when unset. A Stack with no direction is a vertical stack.
+
 ## Grid — columns and spans
 
 | Prop | Values | Emitted class | Tier |
 |---|---|---|---|
 | `columns` | `1`–`12` | `grid-cols-<n>` | responsive |
-| `columns` | `auto` | the auto-fit utility for the given `minItemWidth` | responsive |
+| `columns` | `auto` | the auto-fit utility for the given `minItemWidth` | base (bare value only) |
 | `colSpan` | `1`–`12`, `full` | `col-span-<n>`, `col-span-full` | responsive |
 | `rowSpan` | `1`–`6`, `full` | `row-span-<n>`, `row-span-full` | responsive |
 
