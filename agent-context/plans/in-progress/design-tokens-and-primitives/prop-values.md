@@ -225,9 +225,9 @@ Viewport sizing is why `app/page.tsx` could not be expressed without these.
 |---|---|---|---|
 | `width` | `auto`, `full`, `fit`, `min`, `max` | `w-<value>` | responsive |
 | `height` | `auto`, `full`, `screen`, `svh`, `dvh` | `h-<value>` | responsive |
-| `minHeight` | `none`, `full`, `screen`, `svh`, `dvh` | `min-h-<value>` | responsive |
+| `minHeight` | `none`, `full`, `screen`, `svh`, `dvh` | `min-h-<value>`, except `none` → `min-h-auto` | responsive |
 
-`svh` and `dvh` are Tailwind built-ins. `min-h-none` emits no class.
+`svh` and `dvh` are Tailwind built-ins. `none` emits `min-h-auto` rather than no class. `auto` is CSS's initial value, so the base tier behaves as an absent prop does — but an empty class cannot reset a min-height inherited from a lower breakpoint, which is what `none` now makes expressible.
 
 ## Display classes
 
@@ -237,7 +237,8 @@ Two primitives emit an unconditional base class. Without it the other layout pro
 |---|---|
 | `Stack` | `flex` |
 | `Grid` | `grid` |
-| `Container` | `mx-auto` |
+
+`Container` centers by defaulting `mx` to `auto`, not by emitting a literal class. A literal sits last in the stylesheet and outranks every base-tier `mx` a caller passes.
 
 ## Stack — direction, align, justify, wrap
 

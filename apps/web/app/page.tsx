@@ -1,10 +1,21 @@
-import { Button } from "@/components/ui/button"
+import { Stack } from "@/components/primitives/stack";
+import { Text } from "@/components/primitives/text";
+import { Button } from "@/components/ui/button";
 
 export default function Home() {
   return (
-    <main className="flex min-h-svh flex-col items-center justify-center gap-4">
-      <h1 className="text-2xl font-semibold">Welcome to Next.js</h1>
+    <Stack
+      as="main"
+      minHeight="svh"
+      direction="col"
+      align="center"
+      justify="center"
+      gap={400}
+    >
+      <Text as="h1" size={600} weight={600}>
+        Welcome to Next.js
+      </Text>
       <Button>Get started</Button>
-    </main>
-  )
+    </Stack>
+  );
 }

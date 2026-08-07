@@ -306,7 +306,8 @@ Page-width shell.
 - Spread the DOM passthrough from `splitStyleProps` onto the rendered element, so `id`, `role`, `aria-*`, and handlers reach it.
 - Render exactly one element.
 - Add a `container.type-test.tsx` beside the component with a `// @ts-expect-error` above one invalid call per closed prop. An unused `@ts-expect-error` is itself a type error, so this is what proves the prop set is closed.
-- Always emit `mx-auto`. That is the centering, and it is the one literal class a primitive emits outside the generated maps.
+- Default `mx` to `auto`. That is the centering, and it comes from the generated map like every other class.
+- Never emit `mx-auto` as a literal. A literal sits last in the stylesheet and outranks every base-tier `mx` a caller passes, which makes the prop unreachable.
 - Center horizontally by default and constrain to a named `maxWidth` token.
 - Accept the shared padding and margin props; `px` is the responsive page margin.
 - Constrain `maxWidth` to the values in `prop-values.md`; it is a responsive prop.
@@ -335,6 +336,10 @@ Do not:
 - Add `className` to a primitive to unblock the rewrite.
 - Hand-edit a generated map to unblock the rewrite. Add the value to the token module and rerun `pnpm tokens`.
 
+## Prop-set gaps
+
+None. `Stack` and `Text` express the existing page layout without escape values.
+
 ## Sequencing
 
 **Phase 1 (sequential):** Task 1 — every other task imports its generated maps and types.
@@ -357,7 +362,6 @@ apps/web/
     spacing.ts            # canonical
     typography.ts         # canonical — size, weight, leading, tracking, element defaults
     layout.ts             # canonical — containers, grid track minimums, sizing
-    breakpoints.ts        # canonical — names only; values stay Tailwind defaults
     generated/
       theme.css           # @theme + @utility blocks, imported by app/globals.css
       class-maps.ts       # static Tailwind class strings + element defaults
@@ -365,20 +369,11 @@ apps/web/
   components/primitives/
     shared.ts             # Responsive<T>, resolveResponsive(), base prop type — hand-written
     box.tsx  text.tsx  stack.tsx  grid.tsx  container.tsx
-  scripts/build-tokens.ts
+  scripts/build-tokens.ts  # also owns the breakpoint name list — generator config, emits no CSS
 ```
 
-```tsx
-// Proposed design
-type Responsive<T> = T | ({ base?: T } & Partial<Record<Breakpoint, T>>)
-
-<Stack as="main" minHeight="svh" direction={{ base: 'col', md: 'row' }} gap={500} align="center">
-  <Text as="p" size={100} weight={600} tracking="wider" transform="uppercase" color="muted">
-    Demand trend
-  </Text>
-  <Text as="h2" size={900}>Stripe</Text>
-</Stack>
-```
+Implemented primitives: `apps/web/components/primitives/`. Generated token
+classes and types: `apps/web/tokens/generated/`.
 
 `resolveResponsive` walks the breakpoint keys in order and indexes the generated map per tier, so `direction={{ base: 'col', md: 'row' }}` yields `flex-col md:flex-row`. `shared.ts` imports `Breakpoint` from the generated types rather than restating the list, so the breakpoint set has one definition.
 

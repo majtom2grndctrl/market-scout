@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "description": "Fancy Next.js app",
   "scripts": {
-    "dev": "next",
-    "build": "next build",
+    "dev": "pnpm tokens && next",
+    "build": "pnpm tokens --check && next build",
+    "tokens": "node scripts/build-tokens.ts",
+    "typecheck": "tsc --noEmit",
     "start": "next start",
-    "build:static": "next build && next out"
+    "build:static": "pnpm tokens --check && next build && next out",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "pnpm tokens --check && storybook build"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -20,12 +24,17 @@
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
+    "@storybook/addon-a11y": "^10.5.5",
+    "@storybook/addon-themes": "^10.5.5",
+    "@storybook/nextjs": "^10.5.5",
+    "@storybook/react": "^10.5.5",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "postcss": "^8.5.22",
     "shadcn": "^4.14.0",
+    "storybook": "^10.5.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3"
   }
