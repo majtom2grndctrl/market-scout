@@ -15,6 +15,7 @@ Give `apps/web` a Postgres access layer, and give the whole system one shared de
 - Typed read queries under `apps/web/lib/db/`, and Server Actions for saved-search writes.
 - One unstyled proof page listing open postings, plus saved-search create/list/delete.
 - Integration coverage asserting the app role cannot write market-intel tables.
+- Vitest as the first JavaScript test runner in `apps/web`, covering criteria validation and the query functions.
 
 ### Out of scope
 
@@ -25,6 +26,8 @@ Give `apps/web` a Postgres access layer, and give the whole system one shared de
 - Pagination beyond a `LIMIT`. 4,466 open postings render acceptably in one query.
 - Auth and multi-user support. One instance per fork; no `user_id` anywhere.
 - HTTP route handlers. Server Components and Server Actions cover both directions.
+- Storybook-integrated testing. `@storybook/addon-vitest` needs a Vite-based framework, so it would mean migrating `.storybook/main.ts` from `@storybook/nextjs` to `@storybook/nextjs-vite` plus a Playwright install. Choosing Vitest now keeps that additive; it is not this plan's work.
+- Component-level tests of the proof page. It is an `async` Server Component, which no unit runner renders — Next's guidance is E2E, and there is no E2E harness here.
 
 ## Acceptance criteria
 
@@ -45,7 +48,9 @@ Give `apps/web` a Postgres access layer, and give the whole system one shared de
 - [ ] The proof page lists open postings with company name, title, location, seniority, and the timestamp of the run that confirmed each one, and unclassified postings appear with their classification fields empty.
 - [ ] Submitting saved-search criteria containing an unrecognized key is rejected, and the rejection renders on screen rather than surfacing as an unhandled error.
 - [ ] Creating a saved search through the UI, reloading the page, and deleting it all reflect immediately without a manual refresh.
-- [ ] `pnpm typecheck` and `pnpm build` pass in `apps/web`; `go test ./...` passes from `apps/tools`.
+- [ ] An automated test asserts that a posting whose company's most recent fetch run failed still reads as open, sourced from the prior successful run.
+- [ ] `pnpm test` in `apps/web` passes both with the database running and with it stopped.
+- [ ] `pnpm typecheck`, `pnpm build`, and `pnpm test` pass in `apps/web`; `go test ./...` passes from `apps/tools`.
 
 ## Tasks
 
@@ -56,6 +61,7 @@ Add migration `000016_read_model_views`. Three derived relations: the latest suc
 - Filter fetch runs to `status = 'success'` before taking the latest per company. `ListLatestFetchRunsByCompany` in `queries/fetch_runs.sql` takes the latest run of *any* status — mirror its `DISTINCT ON` shape, not its filter.
 - Derive openness from a posting having a snapshot whose `fetch_run_id` matches that latest successful run. Absence from a *failed* run means nothing; conflating the two makes a network blip look like a wave of closed roles.
 - Carry the successful run's `started_at` through to the display view. The oldest latest-success in the current data is 52.9 days old, so "open" alone would overstate freshness.
+- Expose the raw timestamp only — no `is_stale` flag or bucketed freshness column. The threshold is a product decision that will change; a column encoding it forces a migration each time it does.
 - Resolve current snapshot and current classification with one lateral per posting, ordered descending and limited to one. Both are already index-served: `idx_posting_snapshots_posting_fetched` and `idx_classifications_posting_classified`.
 - Join classification with an outer join. Only 2,862 of 7,906 postings are classified, and the open subset skews further unclassified — an inner join would hide most of the data.
 - Expose current taxonomy (roles, specializations, skills) keyed by posting in long form, one row per posting per term. Saved-search filters and future facet counts both read it; an aggregated array column serves display but not counting.
@@ -142,13 +148,33 @@ Extend the integration tests in `apps/tools/cmd/mcp/` — or a sibling package i
 - Skip when `DATABASE_URL_APP` is unset, matching the repo's skip-on-unset convention.
 - Keep the `//go:build integration` tag so the default `go test ./...` stays DB-free.
 
+### Task 8: Vitest setup and coverage
+
+Add Vitest to `apps/web` with a `test` script, and cover the two testable surfaces from Tasks 5 and 6.
+
+- Configure the `node` environment and no JSDOM. Nothing under test renders; adding a DOM environment invites component tests that cannot work here.
+- Give Vitest its own `vitest.config.ts` rather than extending a Vite config. Next does not build with Vite, so there is no config to extend.
+- Cover criteria validation as pure unit tests, including the unknown-key rejection the AC names.
+- Cover the query functions against a live database, asserting the openness rule directly: a posting whose company's latest run failed still reads as open from the prior successful run.
+- Skip DB-touching tests when `DATABASE_URL_APP` is unset, and keep them in a separate Vitest project or file-name convention so `pnpm test` passes with Docker stopped. This mirrors the Go side's skip-on-unset convention; a suite that fails without Docker gets ignored instead of fixed.
+- Leave `pnpm typecheck` as the type gate. Vitest transpiles without typechecking, so it proves nothing about types.
+
+| Mirror | Don't mirror |
+|---|---|
+| `apps/tools/cmd/mcp/main_integration_test.go` — skip-on-unset, real DB | The Go `//go:build integration` tag; Vitest has no build tags |
+
+Do not:
+- Add `@storybook/addon-vitest`, Playwright, or JSDOM.
+- Change the Storybook framework.
+- Write tests that render the proof page.
+
 ## Sequencing
 
 **Phase 1 (concurrent):** Task 1, Task 2 — independent migrations; numbers pre-assigned above so they cannot collide.
 **Phase 2 (sequential):** Task 3 — grants name Task 2's tables.
 **Phase 3 (sequential):** Task 4 — needs `DATABASE_URL_APP` from Task 3.
 **Phase 4 (concurrent):** Task 5, Task 6 — both consume Task 4's client; separate files.
-**Phase 5 (sequential):** Task 7 — asserts the boundary Tasks 2 and 3 establish.
+**Phase 5 (concurrent):** Task 7, Task 8 — verification against what earlier phases built; Task 7 is Go, Task 8 is TypeScript.
 
 ## Boundary inventory
 
@@ -175,5 +201,4 @@ Filter composition in `postgres.js` reduces an array of fragments: `conditions.r
 
 ## Open questions
 
-- Should the display view carry a coarse `is_stale` flag, or leave freshness judgment to the caller given the run timestamp is exposed? Leaning caller — the threshold is a product decision and 4 of 119 companies currently exceed 7 days.
-- `apps/web` has no JS test runner (`web-guide.md`), so Tasks 5 and 6 verify by typecheck, build, and inspection. Worth adding one now, or does the Go integration test in Task 7 cover the part that matters?
+None outstanding. Staleness is caller-side (see Task 1) and Vitest is the runner (see Task 8).
