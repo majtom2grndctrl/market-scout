@@ -96,7 +96,9 @@
       "mcp__market-scout-postgres__save_enrichment",
       "Bash(go list *)",
       "Bash(go env *)",
-      "Bash(pnpm licenses *)"
+      "Bash(pnpm licenses *)",
+      "Skill(batch-enrich)",
+      "Skill(data-audit)"
     ]
   },
   "enabledMcpjsonServers": [
