@@ -98,7 +98,11 @@
       "Bash(go env *)",
       "Bash(pnpm licenses *)",
       "Skill(batch-enrich)",
-      "Skill(data-audit)"
+      "Skill(data-audit)",
+      "Skill(one-pager)",
+      "Bash(xargs -I{} sh -c 'echo {}')",
+      "Bash(xargs -I{} echo {})",
+      "Bash(sort -k2)"
     ]
   },
   "enabledMcpjsonServers": [
