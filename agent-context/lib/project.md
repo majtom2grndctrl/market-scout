@@ -41,16 +41,14 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 | Storage model | Append-only snapshots | Every fetch writes timestamped rows. Never upsert. Load-bearing for trend analysis. |
 | App layer | Next.js (Server Actions / API routes → Postgres direct) | No separate Go API server. `pg` or `postgres.js`. |
 | UI stack | App Router, TypeScript, Tailwind v4, shadcn/ui on Base UI | Components are copied into the repo, not imported. `shadcn add` serves the Base UI variant, not Radix — set in `components.json` (`style: base-nova`, `tsx: true`). Geist font, Lucide icons, neutral base color. |
-| Layout and type | Token-driven primitive components | Page code composes primitives with typed props. Tailwind classes stay inside component files. shadcn owns color and radius; the token layer owns spacing and typography. |
+| Layout and type | Tailwind's own scales | Type and spacing are Tailwind's defaults; shadcn owns color and radius. The one `@theme` block we own adds container widths. See [`web-guide.md`](./web-guide.md). |
 | Future | `init` CLI | Scaffolds new users' setups. Not in scope yet. |
 
 Our own first-observed timestamp on a job-posting record is the load-bearing repost-detection signal. ATS-reported "first published" and "created at" timestamps refresh on repost on at least some boards, so they cannot be trusted as the primary signal. The append-only snapshot model combined with an immutable first-observed timestamp — set once on initial upsert, never overwritten — is what makes repost detection durable. Source-reported timestamps are captured on every snapshot as a secondary change-detection signal, not as the repost anchor.
 
 Every fetch is recorded as a fetch-run row, one per company per invocation, capturing the outcome and timing of that attempt. New snapshots link back to the run that produced them; snapshots written before the fetch-run migration carry a NULL run reference. This separation is load-bearing for trend queries: a posting's absence from a fetch only counts as "removed" when the run for that company succeeded. A failed run, or a company we didn't fetch in a given window, is distinguishable from a posting that genuinely disappeared from the board. Without the run record, a network blip looks identical to a wave of closed roles.
 
-Design tokens generate downward and never upward. TypeScript token modules are the source of truth; the Tailwind theme block, the utility class maps, and the prop types are all emitted from them. Editing the generated CSS by hand is what puts the scale and the prop types out of sync, which is the whole failure the direction exists to prevent. Tailwind cannot resolve a class name built at runtime, so the emitted maps hold complete literal class strings rather than fragments assembled in a component.
-
-Layout primitives carry no `className` or `style` escape hatch. A layout the props cannot express is a signal — either the scale has a gap or a component is missing — and an escape hatch converts that signal into silence. The response is to extend the token module or build a named component, never to reach around the prop set.
+Design tokens are hand-written CSS in a Tailwind `@theme` block, not a generated artifact. Tailwind already delivers tokens into utility classes, so a TypeScript-source-plus-codegen pipeline would only exist to keep prop types in sync with CSS — a problem the app does not have. Styling runs in two layers. Tailwind's scales are primitive tokens naming a size; custom utilities in `globals.css` are semantic tokens naming a purpose, composed from those primitives. A semantic name earns its place even when it duplicates a primitive's value, because intent survives a value change and a size name does not. Naming is constrained, though: shadcn's `cn()` runs tailwind-merge at every call site, and tailwind-merge drops a name it misreads. See [`web-guide.md`](./web-guide.md).
 
 Classification runs on its own cadence. The classifier selects unclassified postings, strips per-company boilerplate from each description, and dispatches model CLI subprocesses in parallel waves. Each subprocess returns a structured candidate; Go validates and retries failures. Codex runs in an isolated read-only working directory with structured output. Dispatch is parallel; writeback is serial — one transaction at a time through the sqlc query layer. Serial writeback is load-bearing: parallel writers would collide on newly-introduced taxonomy rows mid-wave and produce duplicates. Between waves, the classifier reloads the taxonomy from the DB so roles introduced by earlier waves are visible to later ones. An append-only `failures.jsonl` log is the cron observability surface; without it, failure history vanishes between runs.
 
@@ -91,7 +89,7 @@ Records that mix tiers keep them distinguishable — never collapse a probe resu
 ## Non-goals (current scope)
 
 - Scheduler (deferred)
-- Next.js product screens (deferred — `apps/web` scaffold and shadcn/ui design system are in place; no product UI built yet)
+- Next.js product screens (deferred — the scaffold, shadcn/ui, and Storybook are in place; no product UI built yet. Conventions: [`web-guide.md`](./web-guide.md))
 - Embedding storage for classification summaries (deferred — pgvector columns not yet added; summary is report-only today; classification provenance schema is live in migration 000001)
 - `skills[].requirement` persistence (deferred — writeback ignores the field today)
 - Agent UI (deferred)

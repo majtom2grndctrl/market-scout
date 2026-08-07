@@ -1,0 +1,5 @@
+@theme {
+  --container-narrow: 32rem;
+  --container-content: 45rem;
+  --container-wide: 72rem;
+}
