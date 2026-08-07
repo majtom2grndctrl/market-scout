@@ -7,13 +7,17 @@ description: >
   and verifies by looking at the result. Not for work dispatched to parallel
   agents — use /draft-plan for that.
 disable-model-invocation: false
-allowed-tools: Read, Glob, Grep, Bash, Write, Edit
+allowed-tools: Read, Glob, Grep, Bash, Write, Edit, mcp__plugin_context7_context7__resolve-library-id, mcp__plugin_context7_context7__query-docs
 argument-hint: "[feature description]"
 ---
 
 # One Pager
 
 Write a build brief for frontend work. Output: `agent-context/plans/in-progress/<feature-name>/index.md`.
+
+## Current plans
+
+!`ls agent-context/plans/in-progress/ agent-context/plans/ready/ 2>/dev/null`
 
 ## When this instead of /draft-plan
 
@@ -25,9 +29,11 @@ Say which one this is if the request is ambiguous. Don't guess silently.
 
 ## What earns a place
 
-Filter by **expensive to reverse and invisible on screen**. Directory layout, generated-vs-handwritten boundaries, API shape, dependency choices, and the reason a tempting approach is wrong — none of those show up in a browser, and all cost real work to undo.
+Filter by **expensive to reverse, or quiet to fail**. Generated-vs-handwritten boundaries, API shape, and dependency choices cost real work to undo. Traps cost more: a rule whose violation compiles clean and renders fine surfaces nowhere, so the screen can't catch it and the next person re-derives it. A tempting approach that fails silently earns a Decision line even when reversing it is cheap.
 
 Anything the user verifies by looking does not go in the brief. It goes on the screen.
+
+Path layout is durable context, not brief content — `agent-context/lib/` owns it. Name only the delta: a directory this feature introduces, or a boundary it moves. The durable version lands in the library at step 5.
 
 ## Process
 
@@ -49,6 +55,8 @@ Follow `agent-context/lib/style-guide.md` — **Direct and brief**, **Seamless**
 
 ```markdown
 # <Feature Name>
+
+> Brief — decisions and non-goals. No task breakdown, no acceptance criteria.
 
 ## Goal
 What this achieves and why it matters now.
@@ -73,6 +81,10 @@ Code sketch. What call-sites look like when this is done.
 (Omit when empty.)
 ```
 
+Keep the marker line. `agent-context/plans/in-progress/` is enumerated by other skills, and a brief found there looks like a spec until something says otherwise.
+
+**Target usage carries the format.** Each call-site demonstrates one property of the API and names it in a comment — the orthogonal axis, the responsive form, the case a prop exists to handle. Sites differing only in values collapse into one; four snippets of the same happy path teach nothing that the prop table wouldn't. Write the comment first and the snippet under it, so each one has a claim to make.
+
 ### 4. Confirm
 
 Show the brief and take corrections before moving on. The user reads faster than they write — this is the cheapest review in the workflow, and it replaces the three reviewer passes `/draft-plan` needs.
@@ -88,13 +100,15 @@ Length is governed per section, not per document. A brief that runs long because
 | Section | Budget | Overflow means |
 |---|---|---|
 | Goal | 2–3 sentences | Scope covers more than one feature. Split it. |
-| Target usage | 2–4 call-sites | Showing the API's surface, not its variations. Cut to the shapes that differ. |
+| Target usage | 2–4 call-sites | Two sites make the same claim. Collapse them. |
 | Decisions | One line each, reason attached | A decision needing a paragraph is a research finding. Move it to `research.md` and link. |
-| Not doing | One line each | Fine to run long. This section is the highest value per line — it's the knowledge an agent gets wrong by default. |
+| Not doing | One line each; no cap on count | A line is arguing with itself. State the decision and the trap it avoids, drop the rest. |
 | Build order | One line per step | More than ~8 steps means this wants `/draft-plan` and real sequencing. |
 | Done when | Commands, plus one visual check | Enumerating what the user would see anyway. Cut to what a command proves. |
 
 Rationale fuses to its constraint. A separate rationale paragraph is the part that gets skipped — then the constraint it protected gets simplified away (style-guide §Task Instructions).
+
+Not doing is the highest value per line in the brief, which is why it alone has no count limit: it carries the knowledge an implementer gets wrong by default, and every line deleted from it is a wrong turn someone takes later.
 
 ## What does not go in
 
