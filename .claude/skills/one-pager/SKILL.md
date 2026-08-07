@@ -21,11 +21,13 @@ Write a build brief for frontend work. Output: `agent-context/plans/in-progress/
 
 ## When this instead of /draft-plan
 
-The heavy pipeline exists because backend verification is expensive — DB state, cron, live ATS APIs. Reading a spec catches mistakes more cheaply than running the thing. Frontend inverts that: the running thing is the verification artifact, and the user is the domain expert reading it.
+`developer-guide.md` §1.5 sets the test: the plan pipeline is institutional memory for stateless agents, not quality control, and work touching no schema, no agent-facing contract, and no data write path takes the light lane. Most `apps/web/` work qualifies — a brief is that lane's written form, for when a change still carries decisions worth recording.
 
-Use `/one-pager` when the user is in the loop and steering. Use `/draft-plan` when work will be fanned out to parallel agents through `/orchestrate` — a brief underspecifies for agents nobody is watching, and they diverge on exactly the details it omits.
+Frontend earns it twice over. Backend verification is expensive, so reading a spec catches mistakes more cheaply than running the thing; here the running thing is the verification artifact and the user is the expert reading it.
 
-Say which one this is if the request is ambiguous. Don't guess silently.
+Use `/draft-plan` instead when work fans out to parallel agents through `/orchestrate`. A brief underspecifies for agents nobody is watching, and they diverge on exactly what it omits.
+
+Say which lane this is if the request is ambiguous. Don't guess silently.
 
 ## What earns a place
 
@@ -118,7 +120,7 @@ Do not include:
 - Acceptance criteria that a glance at the screen verifies. That's what the screen is for.
 - A review-gates section. If it reads "a human checks this in Storybook," delete it — the human is checking it in Storybook.
 - Sequencing phases with concurrency annotations. Build order is a list for a person.
-- Exhaustive prop, token, or class enumerations. Those are codegen output or the type definition. Name where they live.
+- Exhaustive prop, token, or class enumerations. Those live in the type definition or the stylesheet. Name where, don't reproduce.
 - A Task → AC cross-check. There are no tasks and little AC.
 - A boundary inventory. Go ↔ JSON ↔ SQL casing is a backend concern.
 
