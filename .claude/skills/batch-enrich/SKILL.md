@@ -248,6 +248,10 @@ Call with:
 
   A framework is a skill, never a specialization — `spring-boot` is backend-only and not a stand-in for `full-stack-engineering`, which describes working across both layers, not any one framework.
 
+**Grounding discipline (skills and specializations):**
+- Tag only what the description names or clearly implies — not what the role typically needs. Before adding an item, find the phrase that supports it. No phrase, no tag.
+- An empty or short list is a correct result, not a failure. A posting that says "designing and implementing a robust, scalable data platform" with no tools named gets no tool skills — not `aws, azure, gcp, snowflake, databricks, bigquery, kafka, spark, airflow, dbt, java, scala, python` inferred from what data-platform roles typically use.
+
 **Summary contract:**
 - 100–200 tokens.
 - Covers: role, seniority, required skills, preferred skills, domain, role type (IC vs lead, full-time vs contract).
