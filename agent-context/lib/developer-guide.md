@@ -14,7 +14,7 @@
 - Define **Go interfaces at package boundaries** (`apps/tools/internal/ats/` exposes the ATS adapter interface; each ATS is a separate file).
 - Validate ATS API responses at the adapter boundary; return typed errors. No `panic` in library code.
 - Database access goes through `sqlc`-generated functions; no ad-hoc SQL strings in business logic. Raw SQL lives in `apps/tools/internal/db/queries/`.
-- Next.js app layer is **deferred**. See [`project.md` §Non-goals](./project.md).
+- This guide is **Go-first**. For `apps/web/`, read [`web-guide.md`](./web-guide.md) — it names which sections here still apply.
 - **Deliver the impact defined in docs and tickets.** Specs define what and why; use judgment on how. When the plan doesn't survive contact with the code, adapt — but surface deviations and update the docs. See §1.
 
 ---

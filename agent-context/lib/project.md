@@ -91,7 +91,7 @@ Records that mix tiers keep them distinguishable — never collapse a probe resu
 ## Non-goals (current scope)
 
 - Scheduler (deferred)
-- Next.js product screens (deferred — `apps/web` scaffold and shadcn/ui design system are in place; no product UI built yet)
+- Next.js product screens (deferred — scaffold, shadcn/ui, and the token-driven primitive layer are in place; no product UI built yet. See [`web-guide.md`](./web-guide.md))
 - Embedding storage for classification summaries (deferred — pgvector columns not yet added; summary is report-only today; classification provenance schema is live in migration 000001)
 - `skills[].requirement` persistence (deferred — writeback ignores the field today)
 - Agent UI (deferred)
