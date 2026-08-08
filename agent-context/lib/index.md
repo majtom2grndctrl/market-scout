@@ -16,6 +16,7 @@ Take your side, plus **Either side**. Skip the other.
 - **Tailwind classes, custom utilities, design tokens, `cn()` silently dropping a class** → `agent-context/lib/web-guide.md` §Styling
 - **Storybook stories — where they live, why the font decorator exists** → `agent-context/lib/web-guide.md` §Storybook
 - **Build, typecheck, and dev commands** → `agent-context/lib/web-guide.md` §Commands
+- **Querying Postgres from the web app; what "currently open posting" means** → `agent-context/lib/project.md` §Settled architecture *(derived in SQL views, not per consumer)*
 
 **Backend (`apps/tools/`)**
 
@@ -52,5 +53,6 @@ Take your side, plus **Either side**. Skip the other.
 | DB client | `sqlc` + `database/sql` + `pgx/v5/stdlib` | Write SQL, get generated type-safe Go. No ORM. pgx is the registered `database/sql` driver. |
 | Vector search | pgvector extension | Enabled from day one. Similarity queries in raw SQL. |
 | Storage model | Append-only snapshots | Every fetch writes timestamped rows. Never upsert. Load-bearing for trend analysis. |
-| App layer | Next.js → Postgres direct | No separate Go API server. `pg` or `postgres.js`. |
+| App layer | Next.js Server Components → Postgres direct | No separate Go API server, no route handlers. `postgres` on the read-only DSN. |
+| Read model | SQL views in numbered migrations | "Open posting" and other derived state defined once in SQL, read by both the web app and the agent. |
 | ATS adapters | Interface in `apps/tools/cmd/fetcher`; implementations in `apps/tools/internal/ats/` | All adapters implement the same `FetchPostings` contract. |
