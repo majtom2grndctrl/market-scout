@@ -18,7 +18,7 @@ Give `apps/web` a Postgres access layer, and give the whole system one shared de
 - Preferences and saved searches. The filter vocabulary is unknowable until a screen names what it filters on, and product UI is still deferred. Deferring keeps this plan read-only end to end.
 - A `market_scout_app` role. Without a write path its grants are identical to `market_scout_readonly`; a second role with the same privileges is ceremony. The app role earns its existence alongside the first write.
 - Designed product screens. This plan proves the data layer; UI work follows in its own brief.
-- Materialized views. 94.9ms on the live dataset does not justify a refresh story.
+- Materialized views. A 73–115ms live query does not justify a refresh story.
 - Facet counts and trend aggregates. The taxonomy view makes them possible; no screen needs them yet.
 - pgvector semantic search from the web app. Embedding storage is still deferred per `project.md`.
 - Storybook-integrated testing. `@storybook/addon-vitest` needs a Vite-based framework, so it would mean migrating `.storybook/main.ts` from `@storybook/nextjs` to `@storybook/nextjs-vite` plus a Playwright install. Choosing Vitest keeps that additive.
@@ -35,7 +35,7 @@ Give `apps/web` a Postgres access layer, and give the whole system one shared de
 - [ ] Querying `open_postings_display` for all open postings completes in under 250ms against the current dataset.
 - [ ] The agent's MCP `query` tool can select from all four views.
 - [ ] `sqlc generate` runs clean, and every column of `open_postings_display` reachable through an outer join is typed as a `sql.Null*` variant.
-- [ ] `migrate down` one step removes all four views and leaves the preceding schema intact.
+- [ ] Applying `000017`'s down migration removes all four views and leaves the preceding schema intact. `cmd/migrate`'s `down` verb is a full teardown, so verify with the down file directly.
 - [ ] The first request to a DB-reading route with `DATABASE_URL_RO` unset fails with an error naming that variable, and no fallback DSN is attempted.
 - [ ] `pnpm build` in `apps/web` completes with the database stopped.
 - [ ] Editing a file during `pnpm dev` never takes the web app above 5 Postgres connections.
@@ -55,10 +55,12 @@ Add migration `000017_read_model_views`, creating four views in dependency order
 - Carry the run's `started_at` into `open_postings_display` as `run_started_at`. The oldest latest-success on live data is 52.9 days old, so "open" alone overstates freshness.
 - Expose the raw timestamp only. A staleness threshold is a product decision that will change, and a column encoding it forces a migration each time it does.
 - Resolve current snapshot and current classification with one `LEFT JOIN LATERAL` each, ordered descending, limited to one. Both are index-served by `idx_posting_snapshots_posting_fetched` and `idx_classifications_posting_classified`.
-- Keep the laterals. The `LEFT JOIN (DISTINCT ON …)` alternative measures slower (98.3ms vs 94.9ms) and spills a 5160kB external merge sort to disk, where the laterals stay on index scans.
+- Keep the laterals. The `LEFT JOIN (DISTINCT ON …)` alternative sorts and materializes all 61,642 snapshot rows, spilling a 5160kB external merge to disk, where the laterals stay on index scans. Timing does not separate the two shapes — the plan does.
 - Give `open_posting_taxonomy` a `term_kind` column over `UNION ALL` branches, values `role`, `specialization`, `skill`, and `dimension`.
+- Carry both `slug` and `name` on every branch. The agent reads this view over MCP to answer questions in prose, and slug-only would make it re-join four taxonomy tables to render one term.
 - Route the taxonomy view through the current classification. `job_posting_roles`, `job_posting_specializations`, and `job_posting_skills` key off `classification_id`, not `job_posting_id` — their names mislead, and joining them directly leaks superseded classifications.
-- Reach dimensions through `canonical_role_dimensions` off the role, one hop further than the other three terms, and `DISTINCT` that branch since two roles can share a dimension.
+- Reach dimensions through `canonical_role_dimensions` off the role — one hop further than the other three terms — taking the slug from `role_dimensions`.
+- `DISTINCT` the dimension branch; two roles can share a dimension.
 - Grant `SELECT` on each view to `market_scout_readonly` in the migration. Default privileges already cover it (`pg_default_acl` objtype `r` includes views), so this is for legibility — a reader of the migration sees who can read the view.
 - Ship a `.down.sql` dropping all four views in reverse dependency order. Every existing migration ships one, and `migrate down` is documented recovery.
 - Record the measured baseline in a comment in the migration, not in the commit message. The comment is inspectable later; a task agent does not own the commit.
@@ -71,9 +73,11 @@ Then regenerate sqlc and pin the types it gets wrong.
 
 Then evaluate the index, as exploration rather than a gate.
 
-- Baseline is 94.9ms with a sequential scan over all 61,642 rows of `posting_snapshots`, because the openness `EXISTS` flattens into a hash aggregate. `idx_posting_snapshots_fetch_run_id` covers `fetch_run_id` alone and cannot serve it.
+- Baseline is 73–115ms across runs on a warm cache, via `EXPLAIN (ANALYZE, TIMING OFF)`. Record the range, not a single number — the spread is wide enough to swallow any small gain.
+- The plan sequentially scans all 61,642 rows of `posting_snapshots`, because the openness `EXISTS` flattens into a hash aggregate. `idx_posting_snapshots_fetch_run_id` covers `fetch_run_id` alone and cannot serve it.
 - Try an index on `posting_snapshots (fetch_run_id, job_posting_id)`, matching the existing partial predicate `WHERE fetch_run_id IS NOT NULL`.
-- Keep it only if `EXPLAIN (ANALYZE, BUFFERS)` shows a measurable win, and say in the migration comment what happened either way. 94.9ms already clears the 250ms budget, so the index is upside, not a requirement.
+- Judge it on plan shape — whether the sequential scan is gone — not on milliseconds. Record the outcome either way in the migration comment.
+- The index is upside, not a requirement. The unindexed range already clears the 250ms budget.
 
 Do not:
 - Add materialized views or a refresh mechanism.
@@ -91,7 +95,8 @@ Add the `postgres` package and a client module under `apps/web/lib/db/`.
 - Cache the client on `globalThis`. Next dev re-evaluates modules on edit, so a bare module-scope client leaks a pool per reload until Postgres refuses connections.
 - Set `max: 5`. A pinned ceiling makes the leak above observable instead of gradual.
 - Call `connection()` from `next/server` before the first query in every module that queries. Without it `next build` prerenders DB-reading pages and runs their queries at build time, which fails whenever the database is down.
-- Symlink the env file: `ln -s ../../.env.local apps/web/.env.local`. Next loads `.env.local` from its own directory, and `apps/tools/.env.local` is already the same symlink. Add the step to `developer-guide.md` §2 beside the existing `ln -s`; it is local setup, not checked in.
+- Symlink the env file: `ln -s ../../.env.local apps/web/.env.local`. Next loads `.env.local` from its own directory, and `apps/tools/.env.local` is already the same symlink. It is local setup, not checked in.
+- Document the symlink in `developer-guide.md` §2 beside the existing `ln -s`, and note it in `web-guide.md`'s What-applies table — that table tells web readers to skip §2 today.
 - Update the App layer row in `project.md` and the matching row in `index.md`: `postgres`, and Server Components plus Server Actions rather than API routes.
 
 Do not:
@@ -146,7 +151,7 @@ Do not:
 
 **Phase 1 (sequential):** Task 1 — every later task reads its views.
 **Phase 2 (sequential):** Task 2 — Tasks 3 and 4 both import its client.
-**Phase 3 (concurrent):** Task 3, Task 4 — separate files; Task 4 tests the views directly, not Task 3's page.
+**Phase 3 (concurrent):** Task 3, Task 4 — separate code files, disjoint sections of `web-guide.md`; Task 4 tests the views directly, not Task 3's page.
 
 ## Boundary inventory
 
@@ -163,9 +168,8 @@ SQL is the source of truth. TypeScript row interfaces mirror the view columns ve
 | Classification id | `classifications.id` | `classification_id` | `classification_id` |
 | Seniority | `classifications.seniority` | `seniority` | `seniority` |
 | Term kind | — (literal) | `term_kind` | `term_kind` |
-| Term slug | `canonical_roles.slug` and the three sibling taxonomy tables | `slug` | `slug` |
-
-`jsonb` arrives already parsed — `postgres.js` registers `JSON.parse` for OIDs 114 and 3802.
+| Term slug | `canonical_roles.slug`, `specializations.slug`, `skills.slug`, `role_dimensions.slug` | `slug` | `slug` |
+| Term name | the same four tables' `name` | `name` | `name` |
 
 ## Rough sketch
 
