@@ -119,7 +119,7 @@ ON CONFLICT (ats, board_token) DO NOTHING;
 -- Ashby (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
     ('Brinc', 'ashby', 'brinc', 'aerospace & defense'),
-    ('MotherDuck', 'ashby', 'motherduck', 'data & analytics'),
+    ('MotherDuck', 'ashby', 'MotherDuck', 'data & analytics'),
     ('Klue', 'ashby', 'klue', 'sales & marketing tech'),
     ('Certn', 'ashby', 'certn', 'HR & recruiting tech'),
     ('Vibe', 'ashby', 'vibe', 'sales & marketing tech'),
@@ -176,4 +176,28 @@ ON CONFLICT (ats, board_token) DO NOTHING;
 -- Lever (May 2026)
 INSERT INTO companies (name, ats, board_token, industry) VALUES
     ('Ridwell', 'lever', 'Ridwell', 'climate & energy')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (fetch list sync, July 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('XBOW', 'ashby', 'xbowcareers', 'Autonomous cybersecurity / AI pentesting'),
+    ('OpenAI', 'ashby', 'openai', 'AI research'),
+    ('Tin Can', 'ashby', 'tin-can', 'Consumer Electronics'),
+    ('KamiwazaAI', 'ashby', 'kamiwaza', 'AI')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (fetch list sync, July 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Dropzone AI', 'greenhouse', 'dropzoneai', 'Computer & Network Security'),
+    ('Contentstack', 'greenhouse', 'contentstack', NULL)
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Workday (fetch list sync, July 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Sprinklr', 'workday', 'sprinklr.wd1.myworkdayjobs.com/careers', NULL)
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Gem (August 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Supio', 'gem', 'supio', 'legal tech')
 ON CONFLICT (ats, board_token) DO NOTHING;

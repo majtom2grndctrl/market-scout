@@ -33,7 +33,7 @@ Confirm the Market Scout MCP server is connected. Required tools:
 
 If those are unavailable, stop and tell the user the MCP server must be configured
 for this client before the skill can write to the fetch list. Do not invent DB
-writes or edit seed files as a substitute.
+writes, or edit the seed file, as a substitute for a real `add_company` call.
 
 Confirm a browser MCP is connected for step 6. Prefer **claude-in-chrome**
 (`mcp__claude-in-chrome__*`); the **chrome-devtools** plugin also works. If neither
@@ -76,6 +76,14 @@ names alone.
     (true).
 13. Treat `add_company` probe success as the write gate. A failed probe inserts
    nothing — report it as unresolved.
+14. After a successful `add_company`, append a matching seed entry to
+    `apps/tools/internal/db/seeds/companies.sql` so a fresh database can
+    reproduce the current fetch list. Mirror the inserted row exactly — `name`,
+    `ats`, `board_token`, `industry` (use the SQL literal `NULL`, unquoted, when
+    the DB row's industry is null; never invent one). Append a new
+    `INSERT ... ON CONFLICT (ats, board_token) DO NOTHING;` block under a dated
+    comment (`-- <Ats> (<context>, <Month Year>)`), following the file's existing
+    per-batch grouping — don't rewrite or reformat unrelated existing entries.
 
 ## Safety rules
 
@@ -90,6 +98,11 @@ names alone.
 - Do not parallelize browser investigation across subagents — one browser, one
   candidate at a time.
 - Do not silently ignore ambiguous cases. Report them.
+- Do not add a seed-file entry for a company `add_company` did not successfully
+  insert. The seed file mirrors the DB; it never leads it.
+- If an unrelated seed/DB mismatch surfaces while editing (a miscased token, a
+  stale duplicate), report it — do not silently "fix" or delete rows outside the
+  current candidate's scope.
 
 ## Candidate handling
 
@@ -115,7 +128,7 @@ End with a concise table:
 
 Then list:
 
-- Companies added
+- Companies added, and whether the seed file was updated for each
 - Review items
 - Any MCP or browser tooling failures
 
