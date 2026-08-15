@@ -49,7 +49,7 @@ type ActionError struct {
 
 // SupportedATS returns the supported ATS keys in stable order.
 func SupportedATS() []string {
-	return []string{"greenhouse", "lever", "ashby", "workday", "workable"}
+	return []string{"greenhouse", "lever", "ashby", "workday", "workable", "gem"}
 }
 
 // ValidateATS rejects ATS keys outside the closed supported set.
@@ -61,8 +61,8 @@ func ValidateATS(ats string) error {
 }
 
 // ValidateBoardToken applies ATS-specific board-token syntax rules. Greenhouse,
-// Lever, and Ashby accept any non-empty token; Workday and Workable are stricter
-// at the action boundary.
+// Lever, Ashby, and Gem accept any non-empty token; Workday and Workable are
+// stricter at the action boundary.
 func ValidateBoardToken(ats, boardToken string) error {
 	if boardToken == "" {
 		return fmt.Errorf("board_token is required")
@@ -236,6 +236,12 @@ var detectionRules = []detectionRule{
 		regex:   regexp.MustCompile(`(?i)^https?://apply\.workable\.com/([^/?#]+)`),
 		extract: func(m []string) string { return NormalizeBoardToken("workable", m[1]) },
 	},
+	{
+		ats:     "gem",
+		pattern: "gem",
+		regex:   regexp.MustCompile(`(?i)^https?://jobs\.gem\.com/([^/?#]+)`),
+		extract: func(m []string) string { return NormalizeBoardToken("gem", m[1]) },
+	},
 }
 
 var (
@@ -245,7 +251,7 @@ var (
 
 func isSupportedATS(ats string) bool {
 	switch ats {
-	case "greenhouse", "lever", "ashby", "workday", "workable":
+	case "greenhouse", "lever", "ashby", "workday", "workable", "gem":
 		return true
 	default:
 		return false

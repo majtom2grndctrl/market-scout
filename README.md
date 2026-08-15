@@ -29,10 +29,10 @@ own company list.
 
 Working today:
 
-- **Fetcher** — pulls postings from five ATS platforms, concurrent, cron-friendly
+- **Fetcher** — pulls postings from six ATS platforms, concurrent, cron-friendly
 - **Classifier** — enriches postings into canonical roles, specializations, and skills
 - **MCP server** — read-only database access for AI agents, plus onboarding tools
-- **111 seeded companies** across the five supported platforms
+- **112 seeded companies** across the six supported platforms
 
 Not built yet:
 
@@ -78,6 +78,7 @@ Go from it. Vector search runs as raw SQL against pgvector.
 | Ashby | `<slug>` | |
 | Workday | `{host}/{site}` | Listing fields only; public boards only |
 | Workable | `<slug>` | Listing fields only; descriptions not yet fetched |
+| Gem | `<slug>` | Full descriptions in list response. **Tokens are case-sensitive** |
 
 Workday and Workable adapters return listing-level fields in v1. Workable postings
 carry no description text, so they don't classify yet.

@@ -39,6 +39,7 @@ func TestNormalizeBoardToken(t *testing.T) {
 			want:  "MastReforestation",
 		},
 		{name: "lever already-lowercase token also unchanged", ats: "lever", token: "ridwell", want: "ridwell"},
+		{name: "gem passes through unchanged despite mixed case", ats: "gem", token: "Supio", want: "Supio"},
 		{name: "unknown ats returns token unchanged", ats: "rippling", token: "AcmeCo", want: "AcmeCo"},
 		{name: "empty ats returns token unchanged", ats: "", token: "AcmeCo", want: "AcmeCo"},
 	}

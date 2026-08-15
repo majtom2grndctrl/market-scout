@@ -51,9 +51,8 @@ func probeCareersURL(ctx context.Context, client *http.Client, rawURL string) er
 }
 
 // adapterFor returns the live ATS adapter for the given ats string, or
-// (nil, false) if the value is not recognized as a supported ATS. Supported
-// values: greenhouse, lever, ashby, workday, workable — the same supported
-// set as apps/tools/cmd/fetcher.
+// (nil, false) if the value is not recognized by the fetcher's registered
+// adapter set.
 func adapterFor(ats string, client *http.Client) (adapterProbe, bool) {
 	switch ats {
 	case "greenhouse":
@@ -66,6 +65,8 @@ func adapterFor(ats string, client *http.Client) (adapterProbe, bool) {
 		return atsNewWorkday(client), true
 	case "workable":
 		return atsNewWorkable(client), true
+	case "gem":
+		return atsNewGem(client), true
 	default:
 		return nil, false
 	}
@@ -80,4 +81,5 @@ var (
 	atsNewAshby      = func(c *http.Client) adapterProbe { return ats.NewAshby(c) }
 	atsNewWorkday    = func(c *http.Client) adapterProbe { return ats.NewWorkday(c) }
 	atsNewWorkable   = func(c *http.Client) adapterProbe { return ats.NewWorkable(c) }
+	atsNewGem        = func(c *http.Client) adapterProbe { return ats.NewGem(c) }
 )

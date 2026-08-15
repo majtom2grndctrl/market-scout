@@ -196,6 +196,8 @@ func defaultProbeFactory(atsName string) (atsProbe, error) {
 		return ats.NewWorkday(client), nil
 	case "workable":
 		return ats.NewWorkable(client), nil
+	case "gem":
+		return ats.NewGem(client), nil
 	default:
 		return nil, fmt.Errorf("no adapter for ats %q", atsName)
 	}

@@ -242,6 +242,6 @@ reliably, by `location_type` → `workplace_type`, and its place half ("Seattle"
 would have to be recovered by parsing customer-authored free text. `raw_data` is
 `jsonb`, so the full `offices` array is preserved and re-parseable if that ever
 becomes worthwhile. Place extraction is a read-model concern, not an adapter
-concern — see `agent-context/plans/drafts/workplace-type-derivation/`, which
+concern — see `agent-context/plans/in-progress/workplace-type-derivation/`, which
 covers modality across all sources and scopes place extraction out with
 evidence.

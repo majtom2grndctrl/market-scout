@@ -17,8 +17,8 @@ Required fields:
 | Field | Description |
 |---|---|
 | `name` | Display name |
-| `ats` | One of: `greenhouse`, `lever`, `ashby`, `workday`, `workable` |
-| `board_token` | Company's slug on that ATS (Workday uses `{host}/{site}`, e.g. `nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite`; see *Workday token discovery* below. Workable uses the lowercase slug from `apply.workable.com/<slug>`) |
+| `ats` | One of: `greenhouse`, `lever`, `ashby`, `workday`, `workable`, `gem` |
+| `board_token` | Company's slug on that ATS (Workday uses `{host}/{site}`, e.g. `nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite`; see *Workday token discovery* below. Workable uses the lowercase slug from `apply.workable.com/<slug>`. Gem uses the case-sensitive slug from `jobs.gem.com/<slug>`.) |
 
 `careers_page_url` is optional. Capture it when visible — it strengthens dedup.
 
@@ -71,6 +71,7 @@ Probe the ATS endpoint directly:
 | Lever | `https://api.lever.co/v0/postings/<token>?mode=json` |
 | Workday | `https://{host}/wday/cxs/{tenant}/{site}/jobs` (POST, no auth for public boards; `{tenant}` is the first DNS label of `{host}`) |
 | Workable | `https://apply.workable.com/api/v1/widget/accounts/<token>` (GET, no auth) |
+| Gem | `https://api.gem.com/job_board/v0/<token>/job_posts/` (GET, no auth) |
 
 Success signals:
 
@@ -81,6 +82,7 @@ Success signals:
 | Lever | HTTP 200; JSON array returned (empty array = valid board, no openings — flag, don't discard) |
 | Workday | HTTP 200; `jobPostings` array present (empty array = valid board, no openings — flag, don't discard). Tenants gated behind a `wday_vps_cookie` session cookie return an error and are unsupported in v1. |
 | Workable | HTTP 200; `jobs` array present (empty array = valid board, no openings — flag, don't discard). Workable v1 omits descriptions, so postings won't classify until the per-posting description fetch ships. |
+| Gem | HTTP 200; bare JSON array returned (empty array = valid board, no openings — flag, don't discard). Unknown or wrong-cased slugs return 404. Gem list records include full descriptions. |
 
 ### ATS detection
 
@@ -94,6 +96,7 @@ Map a careers-page URL to an `ats` value by matching the host and path against t
 | `jobs.ashbyhq.com/<token>` | `ashby` | `<token>` |
 | `<host>.myworkdayjobs.com/<locale>/<site>` | `workday` | `<host>.myworkdayjobs.com/<site>` (see *Workday token discovery*) |
 | `apply.workable.com/<token>` | `workable` | `<token>` (lowercase) |
+| `jobs.gem.com/<token>` | `gem` | `<token>` (case-sensitive) |
 
 A careers page that does not match any pattern is `unsupported-ats`. A careers page that matches a pattern but whose probe (per *Board token verification*) fails is `invalid-token` — the ATS is supported but the slug or tenant is wrong.
 
@@ -108,8 +111,9 @@ Captured tokens are canonicalized per ATS so the same board cannot enter the sys
 | Workday | Lowercase the `{host}` segment only; `{site}` is untouched |
 | Workable | Lowercase |
 | Lever | **Unchanged** — case-sensitive |
+| Gem | **Unchanged** — case-sensitive |
 
-Lever is the exception. Live probes showed `api.lever.co/v0/postings/<token>` is case-sensitive: lowercased tokens for correctly-cased boards like `MastReforestation` and `Ridwell` return 404, while the original casing returns 200. Lowercasing a Lever token breaks a live board, so it passes through unchanged. The other four ATS platforms probed as case-insensitive at their API boundary, so collapsing casing variants there is safe and prevents duplicate companies (e.g. `QAWolf` and `qawolf` entering as two rows).
+Lever and Gem are the exceptions. Live probes showed `api.lever.co/v0/postings/<token>` is case-sensitive: lowercased tokens for correctly-cased boards like `MastReforestation` and `Ridwell` return 404, while the original casing returns 200. Gem's `supio` board returns 200, while `Supio` and `SUPIO` return 404. Lowercasing either token breaks a live board, so both pass through unchanged. Greenhouse, Ashby, and Workable probed as case-insensitive at their API boundary, so collapsing their casing variants is safe and prevents duplicate companies (e.g. `QAWolf` and `qawolf` entering as two rows). Workday lowercases only its DNS host; its opaque site segment remains unchanged because it has not been probed as case-insensitive.
 
 ### Workday token discovery
 
@@ -195,7 +199,7 @@ Statuses are terminal. A record is in progress iff it has neither a `status` nor
 | `source` | object | source | no | Immutable sub-object: `industry` (string\|null), `location` (string\|null), `year_founded` (int\|null), `employees` (int\|null), `employee_change_pct` (int\|null). Verbatim from the source row. |
 | `url` | string | annotation | yes | Company homepage URL. |
 | `careers_url` | string | annotation | yes | Direct URL to careers page. Required when not `no-careers`. |
-| `ats` | enum string | annotation | yes | One of `greenhouse`, `lever`, `ashby`, `workday`, `workable`. |
+| `ats` | enum string | annotation | yes | One of `greenhouse`, `lever`, `ashby`, `workday`, `workable`, `gem`. |
 | `board_token` | string | annotation | yes | Format per *Board token verification* above. |
 | `notes` | string | annotation | yes | Free text. Human disambiguation, observations. |
 | `status` | enum string | annotation or tool | yes | See status taxonomy above. Mutually exclusive with `verified_at`. |

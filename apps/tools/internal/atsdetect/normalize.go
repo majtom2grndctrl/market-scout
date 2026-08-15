@@ -23,13 +23,16 @@ import "strings"
 //   - workable: lowercase. The slug is already documented and enforced as
 //     lowercase elsewhere (see ValidateBoardToken); this makes the rule
 //     consistent with that at the normalization boundary too.
-//   - lever: returned UNCHANGED. This is the opposite of the other four and
-//     is deliberate: `api.lever.co/v0/postings/Mistral` -> 404,
+//   - lever and gem: returned UNCHANGED. Greenhouse, Ashby, and Workable
+//     lowercase their full tokens; Workday lowercases only its DNS host. This
+//     distinction is deliberate: `api.lever.co/v0/postings/Mistral` -> 404,
 //     `api.lever.co/v0/postings/mastreforestation` -> 404, and
 //     `api.lever.co/v0/postings/ridwell` -> 404, but the correctly-cased
 //     `MastReforestation` -> 200 and `Ridwell` -> 200. Lever's API is
 //     case-sensitive. Lowercasing a Lever token breaks a live board. Do not
-//     "fix" this to match the other ATS platforms.
+//     "fix" this to match the other ATS platforms. Gem is also case-sensitive:
+//     `supio` returned 200 while `Supio` and `SUPIO` returned 404 from
+//     `api.gem.com/job_board/v0/{token}/job_posts/`.
 //
 // Unknown ats values return token unchanged — normalization is opt-in per
 // known ATS, not a blanket transform.
@@ -43,7 +46,7 @@ func NormalizeBoardToken(ats, token string) string {
 			return strings.ToLower(host)
 		}
 		return strings.ToLower(host) + "/" + rest
-	case "lever":
+	case "lever", "gem":
 		return token
 	default:
 		return token

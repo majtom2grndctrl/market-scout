@@ -223,6 +223,8 @@ func titleCaseATS(ats string) string {
 		return "Workday"
 	case "workable":
 		return "Workable"
+	case "gem":
+		return "Gem"
 	default:
 		// Defensive: caller has already filtered to supported ATS values.
 		// Capitalize defensively rather than panicking.

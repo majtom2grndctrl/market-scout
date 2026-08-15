@@ -99,6 +99,13 @@ func TestDetectURL_SupportedPatterns(t *testing.T) {
 			wantTok: "acmerobotics",
 			wantPat: "workable",
 		},
+		{
+			name:    "gem preserves mixed-case token",
+			rawURL:  "https://jobs.gem.com/Supio",
+			wantATS: "gem",
+			wantTok: "Supio",
+			wantPat: "gem",
+		},
 	}
 
 	for _, tc := range tests {
@@ -255,7 +262,7 @@ func TestDetectEvidence_DoesNotValidateCapturedBoardToken(t *testing.T) {
 }
 
 func TestSupportedATS_StableOrder(t *testing.T) {
-	want := []string{"greenhouse", "lever", "ashby", "workday", "workable"}
+	want := []string{"greenhouse", "lever", "ashby", "workday", "workable", "gem"}
 	if got := SupportedATS(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("SupportedATS() = %v, want %v", got, want)
 	}
