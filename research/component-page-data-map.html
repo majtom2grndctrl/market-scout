@@ -1,0 +1,513 @@
+<title>The View Contract</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    color-scheme: light;
+    --bg:        #f6f7f9;
+    --surface:   #ffffff;
+    --surface-2: #eef1f4;
+    --ink:       #161a20;
+    --muted:     #5c6673;
+    --faint:     #8b95a3;
+    --border:    #e2e6ec;
+    --border-2:  #d3d9e1;
+    --accent:    #0d7d82;   /* instrument teal — the one bold hue */
+    --accent-ink:#0a5d61;
+    --go:        #1b7f4b;   /* full corpus            */
+    --go-bg:     #e5f3ea;
+    --part:      #a9640c;   /* classified / partial   */
+    --part-bg:   #fbeed9;
+    --gap:       #b3261e;   /* absence / out of scope */
+    --gap-bg:    #f7e3e1;
+    --shadow:    0 1px 2px rgba(20,26,36,.04), 0 8px 24px -16px rgba(20,26,36,.22);
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      color-scheme: dark;
+      --bg:        #0e1116;
+      --surface:   #161a21;
+      --surface-2: #1c222b;
+      --ink:       #e7eaef;
+      --muted:     #9aa4b2;
+      --faint:     #6b7686;
+      --border:    #262d38;
+      --border-2:  #333c49;
+      --accent:    #38b6bb;
+      --accent-ink:#7ad4d8;
+      --go:        #4bc98a;
+      --go-bg:     #14311f;
+      --part:      #e0a755;
+      --part-bg:   #33260f;
+      --gap:       #f2807a;
+      --gap-bg:    #34191a;
+      --shadow:    0 1px 2px rgba(0,0,0,.3), 0 10px 30px -18px rgba(0,0,0,.7);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:        #0e1116;
+    --surface:   #161a21;
+    --surface-2: #1c222b;
+    --ink:       #e7eaef;
+    --muted:     #9aa4b2;
+    --faint:     #6b7686;
+    --border:    #262d38;
+    --border-2:  #333c49;
+    --accent:    #38b6bb;
+    --accent-ink:#7ad4d8;
+    --go:        #4bc98a;
+    --go-bg:     #14311f;
+    --part:      #e0a755;
+    --part-bg:   #33260f;
+    --gap:       #f2807a;
+    --gap-bg:    #34191a;
+    --shadow:    0 1px 2px rgba(0,0,0,.3), 0 10px 30px -18px rgba(0,0,0,.7);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Schibsted Grotesk Variable", "Schibsted Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: clamp(1.5rem, 4vw, 4rem) clamp(1.1rem, 4vw, 2.5rem) 5rem; }
+
+  h1, h2, h3 {
+    font-family: "Funnel Display Variable", "Funnel Display", ui-sans-serif, system-ui, sans-serif;
+    text-wrap: balance;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .mono, code, .route, .tool { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ---- Masthead ---- */
+  .eyebrow {
+    font-size: .74rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent-ink); margin: 0 0 .9rem;
+  }
+  .masthead h1 { font-size: clamp(2.1rem, 5.4vw, 3.5rem); line-height: 1.03; font-weight: 640; }
+  .masthead .lede {
+    margin: 1.1rem 0 0; max-width: 63ch; font-size: 1.08rem; color: var(--muted);
+  }
+  .asof {
+    display: inline-flex; align-items: center; gap: .5rem; margin-top: 1.5rem;
+    font-size: .8rem; color: var(--muted); border: 1px solid var(--border);
+    background: var(--surface); border-radius: 999px; padding: .32rem .8rem .32rem .62rem;
+  }
+  .asof .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--go); box-shadow: 0 0 0 3px var(--go-bg); }
+
+  /* ---- Section scaffolding ---- */
+  section { margin-top: clamp(2.6rem, 6vw, 4rem); }
+  .sec-head { display: flex; align-items: baseline; gap: .8rem; flex-wrap: wrap; margin-bottom: 1.2rem;
+    border-top: 1px solid var(--border); padding-top: 1.4rem; }
+  .sec-head .idx { font-size: .8rem; font-weight: 600; color: var(--faint); letter-spacing: .08em; font-variant-numeric: tabular-nums; }
+  .sec-head h2 { font-size: clamp(1.35rem, 3vw, 1.75rem); font-weight: 600; }
+  .sec-head p { margin: 0; flex-basis: 100%; color: var(--muted); max-width: 70ch; font-size: .98rem; }
+
+  /* ---- Snapshot tiles ---- */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: .8rem; }
+  .tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.05rem; box-shadow: var(--shadow); }
+  .tile .v { font-family: "Funnel Display Variable", "Funnel Display", ui-sans-serif, system-ui, sans-serif; font-size: 1.85rem; font-weight: 620; line-height: 1; font-variant-numeric: tabular-nums; }
+  .tile .k { margin-top: .5rem; font-size: .82rem; color: var(--muted); }
+  .tile .sub { font-size: .74rem; color: var(--faint); margin-top: .15rem; }
+
+  /* ---- Contract terms ---- */
+  .terms { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .7rem; margin-bottom: 1.2rem; }
+  .term { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; padding: .85rem .95rem; }
+  .term .t { font-weight: 620; font-size: .95rem; }
+  .term .d { font-size: .84rem; color: var(--muted); margin-top: .2rem; }
+  .notes { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
+  @media (max-width: 680px) { .notes { grid-template-columns: 1fr; } }
+  .note { background: var(--surface-2); border-radius: 10px; padding: .95rem 1.05rem; font-size: .9rem; }
+  .note b { color: var(--ink); }
+  .note { color: var(--muted); }
+
+  /* ---- Catalog tables ---- */
+  .group-label { display: flex; align-items: center; gap: .6rem; margin: 1.7rem 0 .7rem; font-size: .82rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .group-label .line { flex: 1; height: 1px; background: var(--border); }
+  .tbl-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); }
+  table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: .88rem; }
+  thead th { text-align: left; font-weight: 600; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--faint);
+    padding: .7rem .85rem; border-bottom: 1px solid var(--border-2); white-space: nowrap; background: var(--surface); position: sticky; top: 0; }
+  tbody td { padding: .8rem .85rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface-2); }
+  .cmp { font-weight: 620; font-size: .95rem; white-space: nowrap; }
+  .ans { color: var(--muted); max-width: 26ch; }
+  .route { color: var(--accent-ink); white-space: nowrap; font-size: .82rem; }
+  .tool { color: var(--ink); white-space: nowrap; font-size: .82rem; }
+  .back { color: var(--muted); font-size: .84rem; max-width: 22ch; }
+
+  /* ---- Pills ---- */
+  .pill { display: inline-flex; align-items: center; gap: .35rem; font-size: .74rem; font-weight: 600; padding: .2rem .55rem; border-radius: 999px; white-space: nowrap; line-height: 1.3; }
+  .pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .9; }
+  .p-full   { color: var(--go);   background: var(--go-bg); }
+  .p-part   { color: var(--part); background: var(--part-bg); }
+  .p-anchor { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .p-gap    { color: var(--gap);  background: var(--gap-bg); }
+
+  /* ---- Pages index ---- */
+  .pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(268px, 1fr)); gap: .85rem; }
+  .page-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.1rem; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: .5rem; }
+  .page-card .top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .page-card .route { font-size: .92rem; font-weight: 600; }
+  .page-card .purpose { font-size: .88rem; color: var(--muted); }
+  .page-card .serves { font-size: .78rem; color: var(--faint); margin-top: auto; padding-top: .3rem; border-top: 1px dashed var(--border); }
+  .st { font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: .18rem .5rem; border-radius: 6px; white-space: nowrap; }
+  .st-built   { color: var(--go);   background: var(--go-bg); }
+  .st-scaffold{ color: var(--part); background: var(--part-bg); }
+  .st-planned { color: var(--faint); background: var(--surface-2); }
+
+  /* ---- Out of scope ---- */
+  .oos { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: .8rem; }
+  .oos-card { border: 1px solid var(--border); border-left: 3px solid var(--gap); border-radius: 10px; background: var(--surface); padding: .9rem 1rem; }
+  .oos-card .h { font-weight: 620; font-size: .95rem; display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .oos-card .h .n { font-size: .78rem; color: var(--gap); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .oos-card .why { font-size: .84rem; color: var(--muted); margin-top: .3rem; }
+
+  /* ---- Decisions ---- */
+  .decisions { display: flex; flex-direction: column; gap: .7rem; counter-reset: d; }
+  .dec { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.15rem; box-shadow: var(--shadow); display: grid; grid-template-columns: auto 1fr auto; gap: .3rem 1rem; align-items: start; }
+  .dec .n { counter-increment: d; }
+  .dec .n::before { content: counter(d); font-family: "Funnel Display Variable", ui-sans-serif, system-ui, sans-serif; font-weight: 640; font-size: 1.1rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .dec .body h3 { font-size: 1rem; font-weight: 620; }
+  .dec .body p { margin: .3rem 0 0; font-size: .9rem; color: var(--muted); max-width: 74ch; }
+  .dec .body .rec { color: var(--ink); }
+  .dtag { font-size: .68rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: .2rem .55rem; border-radius: 6px; white-space: nowrap; }
+  .d-decided { color: var(--go);   background: var(--go-bg); }
+  .d-open    { color: var(--part); background: var(--part-bg); }
+  .d-fix     { color: var(--accent-ink); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  @media (max-width: 560px) { .dec { grid-template-columns: auto 1fr; } .dec .dtag { grid-column: 2; justify-self: start; } }
+
+  footer { margin-top: 3.5rem; padding-top: 1.4rem; border-top: 1px solid var(--border); font-size: .82rem; color: var(--faint); }
+  footer a { color: var(--accent-ink); }
+  .legend { display: flex; flex-wrap: wrap; gap: .5rem 1.1rem; margin-top: .3rem; font-size: .8rem; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: .4rem; }
+  a { color: inherit; }
+
+  .superseded {
+    display: flex; gap: .8rem; align-items: flex-start;
+    background: var(--gap-bg); border: 1px solid var(--gap);
+    border-radius: 12px; padding: 1rem 1.15rem; margin-bottom: 2rem;
+  }
+  .superseded .mark { font-weight: 700; color: var(--gap); font-size: .74rem; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; padding-top: .12rem; }
+  .superseded .txt { font-size: .92rem; color: var(--ink); }
+  .superseded .txt b { color: var(--gap); }
+  .superseded code { font-size: .86em; background: color-mix(in srgb, var(--gap) 12%, transparent); padding: .05rem .3rem; border-radius: 4px; }
+</style>
+
+<div class="wrap">
+
+  <div class="superseded">
+    <span class="mark">⚠ Superseded</span>
+    <span class="txt"><b>Read <code>composition-grammar.md</code> first.</b> This map is built on the fixed component→page catalog the project has since pivoted away from. Components are now compositions the agent assembles from primitives; pages are one composition renderer, not seven hand-built routes. What still holds: the corpus snapshot, the out-of-scope list, the trust-anchor Explorer, and "deep link = serialized call" — now generalized to any composition. The seven views survive only as seed compositions.</span>
+  </div>
+
+  <header class="masthead">
+    <p class="eyebrow">Market Scout · Conversational Analysis Surface</p>
+    <h1>The View Contract</h1>
+    <p class="lede">Every answer the chat can give is one tool, one chart, one page route, over the same query. This maps each component we intend to support to the page that holds its authoritative records and the data that actually backs it — so a claim in chat and the records behind it can never disagree.</p>
+    <span class="asof"><span class="dot"></span> Corpus measured live · 2026-08-15</span>
+  </header>
+
+  <!-- SNAPSHOT -->
+  <section>
+    <div class="sec-head">
+      <span class="idx">01</span>
+      <h2>The corpus this is designed against</h2>
+      <p>The map is only as honest as the data underneath it. These are today's figures, not the July snapshot the research docs carry — re-measured before drawing the coverage lines below.</p>
+    </div>
+    <div class="tiles">
+      <div class="tile"><div class="v num">119</div><div class="k">Companies</div><div class="sub">hand-picked, AI-heavy</div></div>
+      <div class="tile"><div class="v num">8,107</div><div class="k">Job postings</div><div class="sub">94% carry a description</div></div>
+      <div class="tile"><div class="v num">4,455</div><div class="k">Open right now</div><div class="sub">fetch-run-aware, not scraped</div></div>
+      <div class="tile"><div class="v num">35%</div><div class="k">Classified</div><div class="sub">2,862 of 8,107 postings</div></div>
+      <div class="tile"><div class="v num">15</div><div class="k">Fetch days</div><div class="sub">weekly buckets read honestly</div></div>
+      <div class="tile"><div class="v num">21</div><div class="k">Failed runs</div><div class="sub">of 1,615 — absence is knowable</div></div>
+    </div>
+  </section>
+
+  <!-- CONTRACT -->
+  <section>
+    <div class="sec-head">
+      <span class="idx">02</span>
+      <h2>The contract, in four terms</h2>
+      <p>Each view is the same query at two altitudes. The interactive surface adds a fourth term — state — so the agent can read back what the user is looking at.</p>
+    </div>
+    <div class="terms">
+      <div class="term"><div class="t">Tool</div><div class="d">What the model may call. Typed params, no free-text SQL.</div></div>
+      <div class="term"><div class="t">Chart</div><div class="d">A deterministic render of the returned rows. App-owned marks.</div></div>
+      <div class="term"><div class="t">Page route</div><div class="d">The same query, full and paginated — the authoritative records.</div></div>
+      <div class="term"><div class="t">State</div><div class="d">Interactive only. Selection = deep-link params, stated once.</div></div>
+    </div>
+    <div class="notes">
+      <div class="note"><b>The deep link is the tool call serialized.</b> Page and chat answer cannot disagree, because the link is derived from the call, never hand-authored.</div>
+      <div class="note"><b>The model never emits a number.</b> It narrates figures the tool returned and the chart drew. Fabricated numbers become structurally impossible, not prompt-discouraged.</div>
+    </div>
+  </section>
+
+  <!-- CATALOG -->
+  <section>
+    <div class="sec-head">
+      <span class="idx">03</span>
+      <h2>Component catalog</h2>
+      <p>Grouped by what the data can support. The launch set depends on no enrichment; classified views ship behind a coverage denominator the tool returns and the chat narrates aloud.</p>
+    </div>
+
+    <div class="group-label"><span class="p-full pill">Launch set</span> Full corpus — no enrichment required <span class="line"></span></div>
+    <div class="tbl-scroll">
+      <table>
+        <thead><tr><th>Component</th><th>Answers</th><th>Chart form</th><th>Tool</th><th>Page route</th><th>Backing</th><th>Coverage</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cmp">Demand Trend</td>
+            <td class="ans">Who is ramping? One company vs. another over time.</td>
+            <td>Line / area, weekly points</td>
+            <td class="tool">demand_trend</td>
+            <td class="route">/trends</td>
+            <td class="back">Snapshots + fetch runs</td>
+            <td><span class="pill p-full">Full corpus</span></td>
+          </tr>
+          <tr>
+            <td class="cmp">Movers</td>
+            <td class="ans">Who moved up or down this window?</td>
+            <td>Diverging ranked bars</td>
+            <td class="tool">movers</td>
+            <td class="route">/movers</td>
+            <td class="back">Snapshot deltas</td>
+            <td><span class="pill p-full">Full corpus</span></td>
+          </tr>
+          <tr>
+            <td class="cmp">Role Lifecycle</td>
+            <td class="ans">How fast do roles fill? Evergreen vs. scramble hires?</td>
+            <td>Histogram + open/closed split</td>
+            <td class="tool">role_lifecycle</td>
+            <td class="route">/roles</td>
+            <td class="back">First-seen + fetch-run-aware absence</td>
+            <td><span class="pill p-full">Full corpus</span></td>
+          </tr>
+          <tr>
+            <td class="cmp">Company Profile</td>
+            <td class="ans">What is this company staffing right now?</td>
+            <td>Composite scorecard</td>
+            <td class="tool">company_profile</td>
+            <td class="route">/companies/[slug]</td>
+            <td class="back">Snapshots + department (92%)</td>
+            <td><span class="pill p-full">Full corpus</span></td>
+          </tr>
+          <tr>
+            <td class="cmp">Posting Explorer</td>
+            <td class="ans">The records behind every claim. Drill-down destination.</td>
+            <td>Faceted table</td>
+            <td class="tool">posting_explorer</td>
+            <td class="route">/postings</td>
+            <td class="back">open_postings_display view</td>
+            <td><span class="pill p-anchor">Trust anchor</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="group-label"><span class="p-part pill">Behind coverage</span> Classified subset — 35% of postings, denominator shown inline <span class="line"></span></div>
+    <div class="tbl-scroll">
+      <table>
+        <thead><tr><th>Component</th><th>Answers</th><th>Chart form</th><th>Tool</th><th>Page route</th><th>Backing</th><th>Coverage</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cmp">Demand by Function</td>
+            <td class="ans">Engineering vs. Sales vs. Design demand. What skills are asked for?</td>
+            <td>Ranked bars with denominator</td>
+            <td class="tool">demand_by_function</td>
+            <td class="route">/functions</td>
+            <td class="back">Role dimensions + skills</td>
+            <td><span class="pill p-part">Classified · 35%</span></td>
+          </tr>
+          <tr>
+            <td class="cmp">Seniority Mix</td>
+            <td class="ans">Who hires junior people? (Scarcity is the finding.)</td>
+            <td>Stacked composition bar</td>
+            <td class="tool">seniority_mix</td>
+            <td class="route">/functions?facet=seniority</td>
+            <td class="back">Classification seniority</td>
+            <td><span class="pill p-part">Classified · 35%</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="group-label"><span class="p-anchor pill">Interactive</span> Conversational Analysis Surface — reads its own state back to the agent <span class="line"></span></div>
+    <div class="tbl-scroll">
+      <table>
+        <thead><tr><th>Component</th><th>Answers</th><th>Chart form</th><th>Tool</th><th>Page route</th><th>Backing</th><th>Coverage</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="cmp">Skill Overlap Explorer</td>
+            <td class="ans">Pick two or more skills — which titles carry each, and where do they overlap?</td>
+            <td>Set-intersection (not Venn)</td>
+            <td class="tool">skill_overlap</td>
+            <td class="route">/skills</td>
+            <td class="back">open_posting_taxonomy (skills)</td>
+            <td><span class="pill p-part">Classified · 35%</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:.85rem;color:var(--muted);margin:.9rem 0 0;max-width:74ch">The roadmap proposes Skill Overlap as the <em>first</em> interactive component. It sits on the thinnest-coverage dimension and its set-intersection form exercises the chart primitives least — see decision 2 below.</p>
+  </section>
+
+  <!-- PAGES -->
+  <section>
+    <div class="sec-head">
+      <span class="idx">04</span>
+      <h2>Pages — where the data lives</h2>
+      <p>Every chat answer terminates in a page. Two exist today; the rest are the deep-link destinations the components above serialize into.</p>
+    </div>
+    <div class="pages">
+      <div class="page-card">
+        <div class="top"><span class="route">/</span><span class="st st-planned">Placeholder</span></div>
+        <div class="purpose">Chat front door. Cold visitors land on live Movers chips — each a pre-baked tool call — so an empty box isn't the only thing on screen.</div>
+        <div class="serves">Seeds: Movers</div>
+      </div>
+      <div class="page-card">
+        <div class="top"><span class="route">/postings</span><span class="st st-built">Built</span></div>
+        <div class="purpose">The Posting Explorer. One filterable table over all postings — the auditable terminus every claim links into. Currently a plain list; needs faceting.</div>
+        <div class="serves">Terminus for: all views</div>
+      </div>
+      <div class="page-card">
+        <div class="top"><span class="route">/status</span><span class="st st-built">Built</span></div>
+        <div class="purpose">Fetch health and coverage disclosure. Where the corpus tells the truth about its own gaps — failed runs, classification cadence.</div>
+        <div class="serves">Backs: the coverage denominator</div>
+      </div>
+      <div class="page-card">
+        <div class="top"><span class="route">/movers</span><span class="st st-planned">Planned</span></div>
+        <div class="purpose">Who moved this window, full and ranked. Drill from a chip or a chat answer into the diverging bars at page scale.</div>
+        <div class="serves">Serves: Movers</div>
+      </div>
+      <div class="page-card">
+        <div class="top"><span class="route">/trends</span><span class="st st-planned">Planned</span></div>
+        <div class="purpose">Company demand over the weekly buckets, one or two companies compared. Absence renders as a gap, never an interpolated line.</div>
+        <div class="serves">Serves: Demand Trend</div>
+      </div>
+      <div class="page-card">
+        <div class="top"><span class="route">/roles</span><span class="st st-planned">Planned</span></div>
+        <div class="purpose">Role longevity — the bimodal split a scraped board can't build. Open vs. closed, grouped by company and role.</div>
+        <div class="serves">Serves: Role Lifecycle</div>
+      </div>
+      <div class="page-card">
+        <div class="top"><span class="route">/companies/[slug]</span><span class="st st-planned">Planned</span></div>
+        <div class="purpose">Company Profile. The natural landing when chat names a company, and the drill-through from Movers.</div>
+        <div class="serves">Serves: Company Profile</div>
+      </div>
+      <div class="page-card">
+        <div class="top"><span class="route">/functions</span><span class="st st-planned">Planned</span></div>
+        <div class="purpose">Demand by function and seniority mix, both gated behind the coverage denominator shown inline.</div>
+        <div class="serves">Serves: Demand by Function, Seniority Mix</div>
+      </div>
+      <div class="page-card">
+        <div class="top"><span class="route">/skills</span><span class="st st-planned">Planned</span></div>
+        <div class="purpose">Skill Overlap Explorer at page scale — the full intersection table behind the interactive component.</div>
+        <div class="serves">Serves: Skill Overlap</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- OUT OF SCOPE -->
+  <section>
+    <div class="sec-head">
+      <span class="idx">05</span>
+      <h2>Deliberately unsupported</h2>
+      <p>Each is a data gap, not a backlog item. Bounded tools refuse these for free — which is the correct answer, not a limitation to design around.</p>
+    </div>
+    <div class="oos">
+      <div class="oos-card">
+        <div class="h">Compensation <span class="n">1.7%</span></div>
+        <div class="why">Structured pay on 134 of 8,107 postings, effectively Lever boards only. Any comp chart renders noise.</div>
+      </div>
+      <div class="oos-card">
+        <div class="h">Geography <span class="n">~0%</span></div>
+        <div class="why">City arrays effectively empty; only free-text location strings exist. Location answers would be parsed on the fly and wrong.</div>
+      </div>
+      <div class="oos-card">
+        <div class="h">Remote vs. onsite <span class="n">33%</span></div>
+        <div class="why">Workplace type present on a third of postings, and which platforms report it is non-random. Describes ATS habits, not the market.</div>
+      </div>
+      <div class="oos-card">
+        <div class="h">Whole-market claims <span class="n">119 co.</span></div>
+        <div class="why">A hand-picked, AI-heavy set. Sound for "this niche," misleading as "tech hiring."</div>
+      </div>
+      <div class="oos-card">
+        <div class="h">Causality &amp; advice <span class="n">n/a</span></div>
+        <div class="why">Why a company hires, and whether a user is qualified, are both outside what postings support.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DECISIONS -->
+  <section>
+    <div class="sec-head">
+      <span class="idx">06</span>
+      <h2>Decisions to log</h2>
+      <p>Open threads this map surfaces. Numbered because they need resolving in order — the first two gate what gets drafted next.</p>
+    </div>
+    <div class="decisions">
+      <div class="dec">
+        <div class="n"></div>
+        <div class="body">
+          <h3>Model-API dependency is accepted</h3>
+          <p>The chat surface is the project's first runtime model-API call, via OpenRouter. Backend data-building stays on the subscription-authenticated CLI path (batch-enrich), so the API cost is bounded to per-question analysis, not bulk enrichment. This reverses the implicit "no runtime API" posture and should be written down as a decision, not left as an implication.</p>
+        </div>
+        <div class="dtag d-decided">Decided</div>
+      </div>
+      <div class="dec">
+        <div class="n"></div>
+        <div class="body">
+          <h3>First interactive component</h3>
+          <p class="rec">Recommend leading with <b>Movers</b> or <b>Demand Trend</b> rather than Skill Overlap. Both are full-corpus, both exercise the chart primitives against real scale/path geometry, and Movers is already the intended cold-start seed. Skill Overlap sits on the 35% classified dimension and its set-intersection form is the weakest exerciser of the chart layer.</p>
+        </div>
+        <div class="dtag d-open">Open</div>
+      </div>
+      <div class="dec">
+        <div class="n"></div>
+        <div class="body">
+          <h3>Give the epic its page-route leg</h3>
+          <p>The Conversational Analysis Surface epic covers transport, registry, state, and the chat frame, but no page-route item — the third term of the contract. This map is that leg; fold a page item per component into the roadmap, with <span class="route">/postings</span> as the shared terminus.</p>
+        </div>
+        <div class="dtag d-fix">Roadmap</div>
+      </div>
+      <div class="dec">
+        <div class="n"></div>
+        <div class="body">
+          <h3>Un-defer two non-goals</h3>
+          <p>Committing to an AI-first UI un-defers Next.js product screens and the agent UI, both currently listed as non-goals. Update <code>project.md</code> when the epic is committed so the docs don't contradict the plan.</p>
+        </div>
+        <div class="dtag d-fix">Docs</div>
+      </div>
+      <div class="dec">
+        <div class="n"></div>
+        <div class="body">
+          <h3>Fix the research-doc references</h3>
+          <p>The roadmap cites <code>research/…</code> as a bare path; from <code>agent-context/plans/</code> that resolves to a directory that doesn't exist. The files live at repo root — use <code>../../research/…</code> as <code>project.md</code> already does.</p>
+        </div>
+        <div class="dtag d-fix">Docs</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="legend">
+      <span><span class="pill p-full">Full corpus</span> ships at launch</span>
+      <span><span class="pill p-part">Classified</span> behind a denominator</span>
+      <span><span class="pill p-anchor">Trust anchor</span> the auditable terminus</span>
+      <span><span class="pill p-gap">Gap</span> deliberately unsupported</span>
+    </div>
+    <p style="margin-top:1rem">Synthesizes <code>research/ui-view-catalog.md</code> and <code>research/agent-ui-landscape.md</code>. Corpus figures queried live against local Postgres on 2026-08-15 — re-measure before committing a plan.</p>
+  </footer>
+
+</div>

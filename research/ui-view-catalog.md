@@ -1,8 +1,10 @@
 # UI View Catalog
 
+> **⚠️ Superseded — read `composition-grammar.md` first.** The product model here — seven fixed views as the deliverable — is replaced by the composition grammar. What stays valid: the corpus figures, coverage split, shared params, and out-of-scope list below. The seven views survive only as seed compositions.
+>
 > **Purpose:** Candidate view set for an AI-first Market Scout UI, scored against what the data can actually support.
 > **Sources:** Live queries against the local Postgres instance, July 2026. Data range 2026-05-15 → 2026-07-20.
-> **Status:** Exploration, not a spec. No plan drafted. Numbers are a snapshot — re-measure before committing.
+> **Status:** Superseded in framing by `composition-grammar.md`; data constraints still current. Numbers are a July snapshot — re-measure before committing.
 
 ---
 
