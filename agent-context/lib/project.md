@@ -16,10 +16,14 @@ Initially the author. Open-source so other AI-product builders (designers, PMs, 
 
 ## Why it exists
 
-Two goals that should shape every suggestion:
+The point is AI-native interaction design. The web surface hands an agent a small vocabulary of analytical primitives — measure, grouping, filter, encoding — and lets it compose answers a person reads, questions, and steers. The designed artifact is that vocabulary and how prompting nudges the agent toward combinations that are novel, sound, and honest about coverage. Not the transport under it, and not a fixed catalog of screens. See [`research/composition-grammar.md`](../../research/composition-grammar.md).
 
-1. Developing credible backend skills as a generalist.
-2. Actionable market intel from day one, compounding into trend analysis over weeks and months.
+Two goals stand under it and keep it honest:
+
+1. Credible backend skills as a generalist. The backend is built to be learned from.
+2. Real market intel from day one, compounding into trend analysis over weeks and months. The data has to be true for the interaction to mean anything — an agent composing over noise is a toy.
+
+Build-versus-buy splits here. Backend layers are built. Frontend transport is bought, so attention stays on the interaction. The interaction vocabulary itself is built, never bought — it is the artifact.
 
 Not a product to sell. A personal tool that doubles as a portfolio piece and learning vehicle.
 
@@ -39,10 +43,13 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 | DB client | `sqlc` + `database/sql` + `pgx/v5/stdlib` | Write SQL, get generated type-safe Go. No ORM. Standard `database/sql` target (no `sql_package` override); generated models use `sql.NullString`/`sql.NullTime`, translated to `*string`/`*time.Time` at the DB boundary. |
 | Vector search | pgvector extension | Enabled from day one. Similarity queries in raw SQL. |
 | Storage model | Append-only snapshots | Every fetch writes timestamped rows. Never upsert. Load-bearing for trend analysis. |
-| App layer | Next.js Server Components → Postgres direct | No separate Go API server and no route handlers. The `postgres` npm package on the read-only DSN. Server Actions arrive with the first write path. |
+| App layer | Next.js Server Components → Postgres direct | No separate Go API server. Reads run in Server Components on the `postgres` npm package over the read-only DSN. Server Actions arrive with the first write path. Route handlers are reserved for streaming — see below. |
 | Read model | SQL views in numbered migrations | Derived "current" state — open postings, latest snapshot, latest classification — defined once in SQL rather than per consumer. |
-| UI stack | App Router, TypeScript, Tailwind v4, shadcn/ui on Base UI | Components are copied into the repo, not imported. `shadcn add` serves the Base UI variant, not Radix — set in `components.json` (`style: base-nova`, `tsx: true`). Geist font, Lucide icons, neutral base color. |
-| Layout and type | Tailwind's own scales | Type and spacing are Tailwind's defaults; shadcn owns color and radius. The one `@theme` block we own adds container widths. See [`web-guide.md`](./web-guide.md). |
+| Analysis surface | Composition grammar over primitives | Agent composes one measure × grouping × filter, with cohort/sort/limit modifiers, rendered by an encoding; the backend computes every aggregate, the model never emits a number. Deep link is the serialized composition. See [`research/composition-grammar.md`](../../research/composition-grammar.md). |
+| Model access | OpenRouter, runtime — chat surface only | First runtime model-API dependency. Scoped deliberately: bulk classification stays on the subscription CLI. One key across model families makes composition quality measurable per model. |
+| Charts | Hand-rendered SVG; `d3-scale`, `d3-shape`, `d3-array` | No chart component library. d3 supplies scales and path geometry; every mark is app-owned, so charts inherit design tokens instead of carrying a second theme. Render target is any shape the grammar produces, not a fixed set of forms. Survey: [`research/agent-ui-landscape.md`](../../research/agent-ui-landscape.md) §Charts. |
+| UI stack | App Router, TypeScript, Tailwind v4, shadcn/ui on Base UI | Components are copied into the repo, not imported. `shadcn add` serves the Base UI variant, not Radix — set in `components.json` (`style: base-nova`, `tsx: true`). Schibsted Grotesk for body, Funnel Display for headings, Lucide icons, neutral base color. |
+| Layout and type | Tailwind's own scales | Type and spacing scales are Tailwind's defaults; shadcn owns color and radius. Two additions are ours: font-family tokens in `globals.css`, container widths in `tokens.css`. See [`web-guide.md`](./web-guide.md). |
 | Future | `init` CLI | Scaffolds new users' setups. Not in scope yet. |
 
 Our own first-observed timestamp on a job-posting record is the load-bearing repost-detection signal. ATS-reported "first published" and "created at" timestamps refresh on repost on at least some boards, so they cannot be trusted as the primary signal. The append-only snapshot model combined with an immutable first-observed timestamp — set once on initial upsert, never overwritten — is what makes repost detection durable. Source-reported timestamps are captured on every snapshot as a secondary change-detection signal, not as the repost anchor.
@@ -52,6 +59,10 @@ Every fetch is recorded as a fetch-run row, one per company per invocation, capt
 Nothing in the schema records whether a posting is currently open. It is derived: a posting is open when it appeared in the most recent **successful** fetch run for its company. Absence from a failed or in-progress run means nothing, which is what makes the fetch-run record above load-bearing rather than incidental. That derivation lives in SQL views, not in each consumer, because both the Next.js app and the agent's MCP `query` tool ask the same question and a second copy would drift. Latest snapshot and latest classification are derived the same way, per posting, from append-only history.
 
 The web app reads Postgres directly from Server Components. Next.js's server layer is the boundary; a route handler would add a second serialization hop inside the same process with no consumer on the other side. The agent does not read through the web app — it has the MCP server, whose read-only and action roles enforce a tighter privilege boundary than an HTTP API could.
+
+One exception, stated as a test rather than a carve-out. A route handler earns its place when the client consumes the response incrementally over the life of one request — the chat surface, where tokens and tool results arrive across seconds. A Server Component resolves once and renders; it cannot hold a connection open. Request-response data fetching stays in Server Components no matter how convenient a route handler looks.
+
+The chat surface is the project's first runtime model-API dependency, reached through OpenRouter. A deliberate split, not a drift. Bulk classification is high-volume and cost-sensitive, so it stays on the subscription-authenticated CLI with no SDK or REST path. Interactive analysis is low-volume, per-question, and is the research subject itself — so it earns a runtime API, and one key across model families is what makes composition quality measurable per model. Across both, the model selects and combines primitives; it never computes an aggregate or emits a number. The backend computes; the model narrates.
 
 When the first web-app write lands (user preferences, saved searches), it goes through Server Actions and plain table grants on a dedicated role. Not `SECURITY DEFINER` functions — the `mcp` schema uses those because the agent writes to core tables and the write *shape* needed constraining, whereas app-owned tables have one writer and no provenance requirement. Persisted query criteria are structured filter terms, never SQL text: stored SQL is an arbitrary-execution path and it rots silently when the views beneath it change.
 
@@ -99,7 +110,9 @@ Records that mix tiers keep them distinguishable — never collapse a probe resu
 ## Non-goals (current scope)
 
 - Scheduler (deferred)
-- Next.js product screens (deferred — the scaffold, shadcn/ui, and Storybook are in place; no product UI built yet. Conventions: [`web-guide.md`](./web-guide.md))
 - Embedding storage for classification summaries (deferred — pgvector columns not yet added; summary is report-only today; classification provenance schema is live in migration 000001)
 - `skills[].requirement` persistence (deferred — writeback ignores the field today)
-- Agent UI (deferred)
+- Deployment, auth, and multi-tenancy (out of scope — local-first, single operator)
+- Text-to-SQL over the schema (rejected — unverifiable numbers, no derivable deep link. The composition grammar is the sanctioned alternative: the model picks typed primitives, the backend computes the aggregate, the model narrates. Handing the model SQL erases the line the whole surface depends on. See [`research/composition-grammar.md`](../../research/composition-grammar.md))
+- Fixed view catalog as the deliverable (reframed — the seven scored views survive only as seed compositions over the grammar, not as hand-built screens)
+- Compensation and geography as answerable dimensions (structurally absent from the grammar vocabulary, not refused per question — the data cannot support them)
