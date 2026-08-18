@@ -52,7 +52,7 @@ Goal: Web agent composes analyses from a small vocabulary — measure × groupin
 ### Milestone: Grammar
 
 - [ ] `composition-grammar`
-  Define the vocabulary and its invariant. Four slots — measure (open count, delta, age, lifespan, rate, share), grouping (company, role, specialization, skill, seniority, function, weekly bucket), filter, encoding — plus fetch-run-aware absence as a modifier on every count and time measure. Backend computes every primitive; the model selects and combines, never calculates. Unreliable data types are absent from the vocabulary, not refused per question — no compensation measure, no geography grouping — so out-of-scope is structural. A composition serializes to the deep link and back. Versioned as a public contract.
+  Define the vocabulary and its invariant. One measure — count, delta, age, lifespan, rate, share — over a grouping (company, role, specialization, skill, seniority, function, weekly bucket) and filter, rendered by an encoding, with cohort, sort, and limit modifiers. Cohort carries the fetch-run-aware open/closed/all split. Backend computes every primitive; the model selects and combines, never calculates. Unreliable data types are absent from the vocabulary, not refused per question — no compensation measure, no geography grouping — so out-of-scope is structural. A composition serializes to the deep link and back. Versioned as a public contract.
 
 - [ ] `measure-engine`
   Compute a serialized composition into typed rows plus a coverage denominator. Lives in `apps/web/lib/db`, over the read-model views. Owns delta, lifespan, rate, and share on top of the open/closed definition the read model already fixes. Classified groupings return their denominator inline, so a chart over the 35% classified slice cannot imply full coverage. Never hands raw SQL to the model.
@@ -74,7 +74,7 @@ Goal: Web agent composes analyses from a small vocabulary — measure × groupin
   Define the chrome every composed analysis sits in. Cover what the user is shown about agent-visible state, recovery when the model composes something wrong or meaningless — recovery is recomposition — whether a composition in an old turn stays live or freezes, and streaming, empty, and degenerate results as designed states. The unhappy path is the product surface: the corpus guarantees sparse companies, failed runs, thin classified slices.
 
 - [ ] `seed-compositions`
-  The seven catalog views as saved compositions. Each seeds a cold-start chip — a live-data answer the user did not type — and proves the grammar spans it. Movers, Demand Trend, Role Lifecycle, Company Profile at full corpus; Demand by Function, Seniority Mix, Skill Overlap behind the denominator.
+  The five single-measure catalog views as saved compositions. Each seeds a cold-start chip — a live-data answer the user did not type — and proves the grammar spans it. Movers, Demand Trend, Role Lifecycle at full corpus; Demand by Function, Seniority Mix behind the denominator. Company Profile (composite) and Skill Overlap (co-occurrence) wait on their primitives.
 
 ### Milestone: Rigor
 

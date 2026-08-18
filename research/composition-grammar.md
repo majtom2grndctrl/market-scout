@@ -16,16 +16,17 @@ The project exists to demo designing for AI interaction, not to ship a market-in
 
 ## The Grammar
 
-An analysis is one point in a small space. Four slots:
+An analysis is one point in a small space. One measure, resolved over a grouping and filter, rendered by an encoding — plus modifiers:
 
-- **Measure** — open count, delta, age, lifespan, rate, share. Backend-computed.
+- **Measure** (one per composition) — count, delta, age, lifespan, rate, share. Backend-computed.
 - **Grouping** — company, role, specialization, skill, seniority, function, weekly bucket.
-- **Filter** — scope to a company, role, skill, seniority, window, or cohort.
-- **Encoding** — line, diverging bars, ranked bars, histogram, stacked bar, set-intersection, table, scorecard. Picked by result shape.
+- **Filter** — scope to a company, role, skill, seniority, or window.
+- **Encoding** — line, area, diverging bars, ranked bars, histogram, stacked bar, table. Picked by result shape.
+- **Modifiers** — cohort (open/closed/all), sort, limit. Ordering is part of the question, so it serializes into the link.
 
-Movers is `measure:delta × group:company × sort:desc × encode:diverging`. Role Lifecycle is `measure:lifespan × group:role × encode:histogram`. The catalog views are points; the space holds combinations no one catalogued — lifespan by skill for senior roles only.
+Movers is `measure:delta × group:company × sort:desc × limit:20 × encode:diverging_bars`. Role Lifecycle is `measure:lifespan × cohort:closed × encode:histogram`. The catalog views are points; the space holds combinations no one catalogued — lifespan by skill for senior roles only.
 
-**Absence is the crown jewel.** Fetch-run-aware open/closed is the one data type no scraped board has. Not one view — a modifier on every count and time measure: currently-open only, include the closed cohort, render a failed-run window as a gap. Center the experiment here.
+**Absence is the crown jewel.** Fetch-run-aware open/closed is the one data type no scraped board has. Not one view — a cohort choice on the count measures (currently-open, closed, or all), and the very definition of the time measures (`age` is open, `lifespan` is closed). Center the experiment here.
 
 ## Two Invariants
 
@@ -55,7 +56,7 @@ Prompting is the knob. `composition-quality-evals` scores prompt variants agains
 
 ## Seed Compositions
 
-The seven catalog views survive as saved compositions. Each seeds a cold-start chip — a live-data answer the user did not type — and proves the grammar spans it. Full corpus: Movers, Demand Trend, Role Lifecycle, Company Profile. Behind the denominator: Demand by Function, Seniority Mix, Skill Overlap. Open composition on top; known-good bookmarks underneath.
+Five catalog views reduce to a single-measure composition and survive as saved compositions: Movers, Demand Trend, Role Lifecycle (full corpus), Demand by Function and Seniority Mix (behind the denominator). Each seeds a cold-start chip — a live-data answer the user did not type — and proves the grammar spans it. Company Profile is a *composite* — several compositions in one layout, a later frame concern — and Skill Overlap needs a co-occurrence primitive the vocabulary doesn't yet have; both wait. Open composition on top; known-good bookmarks underneath.
 
 ## What Still Holds
 
