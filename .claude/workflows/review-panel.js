@@ -272,7 +272,36 @@ function buildLenses(t) {
     lenses.push({ kind: 'dataIntegrity', brief: 'the migrations and row-writing code paths in this slice' })
   }
   if (forcedReviewers) {
-    while (lenses.length > forcedReviewers) lenses.pop()
+    // Thin round-robin across kinds rather than popping the tail. Lenses are
+    // pushed in a fixed order — tracers, verifiers, adversarial, data-integrity
+    // — so popping dropped whole kinds whenever the earlier ones filled the
+    // quota: three flows meant reviewers:3 ran three tracers and no verifier,
+    // adversarial, or data-integrity pass at all. A lens panel running one lens
+    // is not a smaller panel, it is a different and much weaker review.
+    if (lenses.length > forcedReviewers) {
+      const byKind = []
+      for (const l of lenses) {
+        let bucket = byKind.find((b) => b.kind === l.kind)
+        if (!bucket) byKind.push((bucket = { kind: l.kind, items: [] }))
+        bucket.items.push(l)
+      }
+      const kept = []
+      while (kept.length < forcedReviewers) {
+        const before = kept.length
+        for (const b of byKind) {
+          if (!b.items.length) continue
+          kept.push(b.items.shift())
+          if (kept.length === forcedReviewers) break
+        }
+        if (kept.length === before) break // every bucket drained; nothing left to take
+      }
+      // Never silently. A cap that eliminates a kind changes what the review
+      // can find, and the report otherwise lists only the lenses that ran.
+      const dropped = byKind.filter((b) => b.items.length).map((b) => `${b.kind}×${b.items.length}`)
+      if (dropped.length) log(`reviewers:${forcedReviewers} dropped ${dropped.join(', ')}`)
+      lenses.length = 0
+      lenses.push(...kept)
+    }
     if (!lenses.length) lenses.push({ kind: 'tracer', brief: 'the main code path through this slice' })
     const base = lenses.slice()
     let i = 0
@@ -360,12 +389,14 @@ findings = findings.map((f, i) => ({ ...f, id: i }))
 const hot = findings.filter((f) => f.severity !== 'green')
 const refuted = []
 if (hot.length) {
-  let batches = hot.map((f) => [f])
-  if (hot.length > 8) {
-    const byFile = {}
-    for (const f of hot) (byFile[f.file] = byFile[f.file] || []).push(f)
-    batches = Object.values(byFile)
-  }
+  // One refuter per file, always. A refuter adjudicating several findings in a
+  // file reads that file once instead of once per finding, and REFUTE_SCHEMA
+  // already returns a verdict per finding id. Batching only above a threshold
+  // made the agent count non-monotonic in findings — eight findings across two
+  // files spawned eight agents, while ten across seven spawned seven.
+  const byFile = {}
+  for (const f of hot) (byFile[f.file] = byFile[f.file] || []).push(f)
+  const batches = Object.values(byFile)
   const verdictSets = (await parallel(batches.map((b) => () =>
     agent(refutePrompt(b), { label: `refute:${b[0].file}`, phase: 'Refute', model: depthModel, schema: REFUTE_SCHEMA })
   ))).filter(Boolean)
