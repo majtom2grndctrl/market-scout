@@ -7,3 +7,20 @@ sql:
       go:
         package: "db"
         out: "internal/db"
+        overrides:
+          - column: "open_postings_display.classification_id"
+            go_type:
+              import: "database/sql"
+              type: "NullInt64"
+          - column: "open_postings_display.seniority"
+            go_type:
+              import: "database/sql"
+              type: "NullString"
+          - column: "open_postings_display.workplace_type_resolved"
+            go_type:
+              import: "database/sql"
+              type: "NullString"
+          - column: "open_postings_display.workplace_type_source"
+            go_type:
+              import: "database/sql"
+              type: "NullString"

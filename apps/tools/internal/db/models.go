@@ -83,6 +83,41 @@ type JobPostingSpecialization struct {
 	SpecializationID int64
 }
 
+type LatestSuccessfulFetchRun struct {
+	FetchRunID int64
+	CompanyID  int64
+	StartedAt  time.Time
+}
+
+type OpenPosting struct {
+	JobPostingID int64
+	FetchRunID   int64
+}
+
+type OpenPostingTaxonomy struct {
+	JobPostingID int64
+	TermKind     string
+	Slug         string
+	Name         string
+}
+
+type OpenPostingsDisplay struct {
+	JobPostingID          int64
+	CompanyID             int64
+	CompanyName           string
+	RunStartedAt          time.Time
+	Title                 sql.NullString
+	LocationText          sql.NullString
+	WorkplaceType         sql.NullString
+	CompensationMin       sql.NullInt64
+	CompensationMax       sql.NullInt64
+	CompensationCurrency  sql.NullString
+	ClassificationID      sql.NullInt64
+	Seniority             sql.NullString
+	WorkplaceTypeResolved sql.NullString
+	WorkplaceTypeSource   sql.NullString
+}
+
 type PostingSnapshot struct {
 	ID                     int64
 	JobPostingID           int64

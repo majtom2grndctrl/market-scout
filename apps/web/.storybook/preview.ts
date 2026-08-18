@@ -1,10 +1,7 @@
 import type { Preview } from "@storybook/react";
 import { withThemeByClassName } from "@storybook/addon-themes";
-import { Geist } from "next/font/google";
 import { createElement } from "react";
 import "../app/globals.css";
-
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 const preview: Preview = {
   parameters: {
@@ -27,7 +24,7 @@ const preview: Preview = {
       },
       defaultTheme: "light",
     }),
-    (Story) => createElement("div", { className: `font-sans ${geist.variable}` }, createElement(Story)),
+    (Story) => createElement("div", { className: "font-sans" }, createElement(Story)),
   ],
 };
 
