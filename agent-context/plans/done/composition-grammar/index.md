@@ -92,13 +92,13 @@ Encoding must match the result shape: `line`/`area` require `week` in `groupBy`;
 4. zod schema → `parseComposition`; export the function-calling-subset JSON schema.
 5. `serializeComposition`/`deserializeComposition` — canonical query string, `v=` version. No typed `paths.view`.
 6. Encode the five seed compositions: Demand Trend, Movers, Role Lifecycle, Seniority Mix, Demand by Function.
-7. Unit tests: round-trip the five, reject invalid crossings (incl. cohort mismatch), assert `requiresDenominator` per grouping, and assert the exported schema *accepts* a crossing-invalid composition (`lifespan`+`open`) that `parseComposition` *rejects* — proving refinements stay at parse time.
+7. Unit tests: round-trip the five, reject invalid crossings (incl. cohort mismatch), assert `requiresDenominator` per grouping, and assert the exported schema *accepts* a crossing-invalid composition in emission shape (`lifespan`+`open`, modifiers present as `null`) that `parseComposition` *rejects* — proving refinements stay at parse time. Validate against the schema with a real JSON-Schema check, guarded so it can't pass by skipping a keyword.
 8. Inspector story — editable slot builder seeded from a preset; live re-validate/re-serialize; controls from the enums; UI in the story/component, logic from `lib/composition`.
 
 ## Done when
 
 - `pnpm typecheck` and `pnpm test` pass; `{ measure: "count", groupBy: ["location"] }` is a type error you can see.
 - Round-trip holds for all five seeds: `deserializeComposition(serializeComposition(c))` deep-equals `c` in canonical form.
-- `requiresDenominator` is asserted for every grouping; the exported JSON schema *accepts* a crossing-invalid composition (`lifespan`+`open`) that `parseComposition` *rejects* — proving no refinement hardened into schema structure.
+- `requiresDenominator` is asserted for every grouping. The exported JSON schema targets the function-calling subset (`openAi`), which marks every property required-and-nullable — so a crossing-invalid composition is validated against the schema in *emission shape*, with the unused modifiers present as `null`. In that shape the schema *accepts* the `lifespan`+`open` crossing that `parseComposition` *rejects* — proving the crossing rules live in parse-time refinements, not in schema structure. (The schema does reject a bare `{ measure, cohort, encoding }` object, but for missing required keys, not for the crossing — the same rejection a *valid* seed gets, which is why the test asserts on the emission shape.)
 - `grep -r postgres apps/web/lib/composition` is empty — the contract is pure.
 - In Storybook (`pnpm storybook`), the Inspector loads a seed; swapping a slot to an invalid crossing shows the rejection and its reason inline while the serialized link updates live.
