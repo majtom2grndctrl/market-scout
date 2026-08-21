@@ -18,7 +18,6 @@ Take your side, plus **Either side**. Skip the other.
 - **Build, typecheck, and dev commands** → `agent-context/lib/web-guide.md` §Commands
 - **Querying Postgres from the web app; what "currently open posting" means** → `agent-context/lib/project.md` §Settled architecture *(derived in SQL views, not per consumer)*
 - **Charts — which library, why every mark is hand-rendered** → `agent-context/lib/project.md` §Settled architecture *(d3 supplies scales and geometry; no chart component library)*
-- **Cohorts (open/closed/all), coverage denominator, computing a composition into rows** → `agent-context/lib/project.md` §Settled architecture *(read model defines cohorts once; the measure engine computes over it and never emits SQL to the model)*
 - **Chat surface, streaming responses, when a route handler is allowed** → `agent-context/lib/project.md` §Settled architecture *(streaming is the one exception; request-response stays in Server Components)*
 
 **Backend (`apps/tools/`)**
