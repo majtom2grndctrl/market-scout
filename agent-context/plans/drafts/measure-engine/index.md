@@ -74,7 +74,7 @@ Create the engine module under `apps/web/lib/db/` (sibling to `postings.ts`). Na
 - `runComposition`'s input must be a normalized `Composition` as produced by `parseComposition`. `validate()` assumes normalized input — an un-normalized or duplicated `groupBy` would otherwise get the wrong verdict.
 - Build cohort, grouping, and filter as composable SQL fragments from fixed lookups keyed by the vocabulary enums. A grouping or filter dimension maps to its source through a table in code, never a string interpolated from the composition.
 - Map groupings to sources: `company` → company id/name; `role`/`specialization`/`skill` → cohort-agnostic taxonomy terms (Task 1); `function` → role dimensions; `seniority` → the classification seniority column; `week` → `date_trunc('week', started_at)` at UTC.
-- Filter dimensions are the grammar's `FILTER_DIMENSIONS` — the grouping set minus `week` — each filtering against the same source its grouping uses (Boundary inventory).
+- Filter dimensions are the grammar's `FILTER_DIMENSIONS` — the grouping set minus `week` — each filtering against the same source its grouping uses (Boundary inventory). The `company` filter matches `companies.id`; a user-facing name is resolved to that id upstream (`agent-readable-composition-state`), not here.
 - Pass filter values as bound query parameters. A model-supplied value never enters SQL text.
 - Define `MeasureResult` and its row type once, shared by all measures (see sketch). Aggregate and distribution measures share one row shape so the chart seam is single.
 - Compute the denominator here: when `validate()` reports `requiresDenominator`, return classified count and total *for the composition's cohort*. Open is 24% classified, closed differs — the denominator is cohort-scoped, never a constant. `validate()` already folds filter dimensions into `requiresDenominator`, so a filter on a classified dimension triggers the denominator too — no separate path.
@@ -153,9 +153,9 @@ Cross-boundary names are SQL column ↔ TS interface field (no Go struct; the we
 | `seniority` | latest classification's seniority column | yes |
 | `week` | `date_trunc('week', fetch_runs.started_at)` UTC | yes |
 
-## Open questions
+## Cross-spec decisions
 
-- **Read-model boundary — decided: migration.** Cohort membership, lifespan, taxonomy, and as-of-open live in SQL (Task 1), keeping "openness defined once in SQL" — the engine-built-CTE alternative duplicates the open definition and risks drift.
-- **Company filter key.** Filter on `company` matches by name today; `agent-readable-composition-state` (later) fixes the reader-facing identifier. If it lands as id, the filter lookup changes. Low blast radius — one fragment.
-- **Histogram binning owner.** This spec returns raw per-posting durations and leaves bin edges to `chart-primitives`. If that spec expects pre-binned counts, `age`/`lifespan` output shape shifts. Recommendation: raw values (engine = data, chart = geometry).
+- **Read-model boundary — migration.** Cohort membership, lifespan, taxonomy, and as-of-open live in SQL (Task 1), keeping "openness defined once in SQL" — the engine-built-CTE alternative duplicates the open definition and risks drift.
+- **Company filter key — `companies.id`.** The `company` filter matches the stable, unique id, not the name. Resolving a user-facing company name to that id is the model-facing layer's job, deferred to `agent-readable-composition-state`; the engine takes the canonical id.
+- **Distribution shape — raw per-posting durations.** `age`/`lifespan` return one row per posting; `chart-primitives` owns bin edges, since bin width interacts with scale and viewBox. Faithful to the grammar, which defines these as distributions, not aggregates. Forward seam: binned counts a reader narrates are projected in `agent-readable-composition-state`, not computed here.
 </content>
