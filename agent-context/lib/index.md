@@ -17,6 +17,9 @@ Take your side, plus **Either side**. Skip the other.
 - **Storybook stories — where they live, why the font decorator exists** → `agent-context/lib/web-guide.md` §Storybook
 - **Build, typecheck, and dev commands** → `agent-context/lib/web-guide.md` §Commands
 - **Querying Postgres from the web app; what "currently open posting" means** → `agent-context/lib/project.md` §Settled architecture *(derived in SQL views, not per consumer)*
+- **Charts — which library, why every mark is hand-rendered** → `agent-context/lib/project.md` §Settled architecture *(d3 supplies scales and geometry; no chart component library)*
+- **Cohorts (open/closed/all), coverage denominator, computing a composition into rows** → `agent-context/lib/project.md` §Settled architecture *(read model defines cohorts once; the measure engine computes over it and never emits SQL to the model)*
+- **Chat surface, streaming responses, when a route handler is allowed** → `agent-context/lib/project.md` §Settled architecture *(streaming is the one exception; request-response stays in Server Components)*
 
 **Backend (`apps/tools/`)**
 
@@ -53,6 +56,7 @@ Take your side, plus **Either side**. Skip the other.
 | DB client | `sqlc` + `database/sql` + `pgx/v5/stdlib` | Write SQL, get generated type-safe Go. No ORM. pgx is the registered `database/sql` driver. |
 | Vector search | pgvector extension | Enabled from day one. Similarity queries in raw SQL. |
 | Storage model | Append-only snapshots | Every fetch writes timestamped rows. Never upsert. Load-bearing for trend analysis. |
-| App layer | Next.js Server Components → Postgres direct | No separate Go API server, no route handlers. `postgres` on the read-only DSN. |
+| App layer | Next.js Server Components → Postgres direct | No separate Go API server. `postgres` on the read-only DSN. Route handlers reserved for streaming. |
+| Charts | Hand-rendered SVG on d3 modules | d3 supplies scales and path geometry. No chart component library; marks are app-owned so charts inherit design tokens. |
 | Read model | SQL views in numbered migrations | "Open posting" and other derived state defined once in SQL, read by both the web app and the agent. |
 | ATS adapters | Interface in `apps/tools/cmd/fetcher`; implementations in `apps/tools/internal/ats/` | All adapters implement the same `FetchPostings` contract. |
