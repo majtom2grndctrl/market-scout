@@ -43,6 +43,7 @@ Compute a validated `Composition` into typed rows plus a cohort-specific coverag
 - [ ] A composition that requires no denominator returns none.
 - [ ] Grouping by `function` resolves to role dimensions; grouping by `role`/`specialization`/`skill` resolves to the matching taxonomy terms for the composition's cohort, not the open-only view.
 - [ ] Filter values reach SQL as bound parameters; grouping keys resolve through a fixed lookup, so no model-supplied string is concatenated into SQL text.
+- [ ] The migration header records an `EXPLAIN (ANALYZE, TIMING OFF)` median for the lifespan primitive, matching the perf-check convention in migrations 000017 and 000019; no new view reads `raw_data`.
 - [ ] `pnpm test:db` passes with the new fixtures; `pnpm typecheck` passes.
 
 ## Tasks
@@ -56,10 +57,12 @@ Add a numbered migration under `apps/tools/internal/db/migrations/` (up + down) 
 - Add a cohort-agnostic taxonomy keyed by `job_posting_id` — role, specialization, skill, and dimension terms for any seen posting. `open_posting_taxonomy` joins `open_postings_display`, so it cannot serve closed or all cohorts.
 - Add parameterized as-of-open as a SQL function taking a `timestamptz`, returning the open `job_posting_id` set as of that instant. `add_company`/`save_enrichment` (migrations 000010–000015) are the precedent for a function in a migration. A plain view cannot take the date parameter `delta` needs.
 - Confirm `market_scout_readonly` can read the new views/function, matching the grant note in migration 000017's header.
+- Record an `EXPLAIN (ANALYZE, TIMING OFF)` median in the migration header, as 000017 and 000019 do. The lifespan primitive's `GROUP BY job_posting_id` with `min`/`max` over every snapshot is the heaviest new query and the one to measure; add an index if it regresses. `000019` reached 227ms only because it detoasts `raw_data` JSONB per row — these views touch ids and timestamps only, so they should land near 000017's 33–47ms, not that.
 
 Do not:
 - Hand-edit sqlc output. If sqlc regeneration is required, regenerate it (`developer-guide.md` §5.8).
 - Redefine `open_postings`. Build closed/all/as-of on top of the existing open definition.
+- Join `raw_data` into any new view. Workplace-type derivation is the one heavy consumer and it already exists; the cohort and lifespan views have no reason to detoast.
 
 ### Task 2: Engine scaffold — dispatch, fragments, types, denominator
 
