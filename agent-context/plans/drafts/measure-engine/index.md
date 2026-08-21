@@ -32,8 +32,8 @@ Compute a validated `Composition` into typed rows plus a cohort-specific coverag
 ## Acceptance criteria
 
 - [ ] `runComposition` accepts a validated `Composition` and returns a `MeasureResult` with typed rows for each of the six measures.
-- [ ] A composition that fails `validate()` is refused by `runComposition` with the grammar's `GrammarError`, and no query runs.
-- [ ] `count` over the `open` cohort with no grouping returns a total that equals the `open_postings` view's row count.
+- [ ] A composition that fails `validate()` is refused by `runComposition` with the grammar's `GrammarError`, and no query runs — verified by a `sql` proxy that counts invocations (zero on the refusal path).
+- [ ] `count` over the `open` cohort with no grouping returns a total equal to a direct `SELECT count(*) FROM open_postings` on the same client — asserted by equality, not a hardcoded number.
 - [ ] `delta` over a window returns the signed difference between open-count-now and open-count-as-of-(now − window), computed from the read model's as-of-open definition, not a re-implemented one.
 - [ ] `rate` returns one row per UTC week in range; a week with no successful run in scope is present as a gap row, distinguishable from a week whose count is zero.
 - [ ] `lifespan` returns one row per closed posting carrying its duration in days; a posting seen in exactly one successful run follows the single-run rule stated in Task 4 (last-seen == first-seen yields a 0-day row).
@@ -43,8 +43,8 @@ Compute a validated `Composition` into typed rows plus a cohort-specific coverag
 - [ ] A composition whose grouping or filter `requiresDenominator` returns a denominator giving classified count and cohort total; the open-cohort denominator reflects the cohort actually queried, not a corpus-wide constant.
 - [ ] A composition that requires no denominator returns none.
 - [ ] Grouping by `function` resolves to role dimensions; grouping by `role`/`specialization`/`skill` resolves to the matching taxonomy terms for the composition's cohort, not the open-only view.
-- [ ] Filter values reach SQL as bound parameters; grouping keys resolve through a fixed lookup, so no model-supplied string is concatenated into SQL text.
-- [ ] The migration header records an `EXPLAIN (ANALYZE, TIMING OFF)` median for the lifespan primitive, matching the perf-check convention in migrations 000017 and 000019; no new view reads `raw_data`.
+- [ ] Filter values reach SQL as bound parameters; grouping keys resolve through a fixed lookup, so no model-supplied string is concatenated into SQL text. *(Review/grep gate; a filter value carrying SQL metacharacters treated as a literal is the one runnable half.)*
+- [ ] The migration header records an `EXPLAIN (ANALYZE, TIMING OFF)` median for the lifespan primitive, matching the perf-check convention in migrations 000017 and 000019; no new view reads `raw_data`. *(Review/grep gate, not a `pnpm test` assertion.)*
 - [ ] `pnpm test:db` passes with the new fixtures; `pnpm typecheck` passes.
 
 ## Tasks
@@ -55,11 +55,25 @@ Add a numbered migration under `apps/tools/internal/db/migrations/` (up + down) 
 
 - Define closed and all cohort membership so the engine reads each cohort, never reconstructs it. `open` already exists as `open_postings`; closed = seen in a success run but absent from open; all = ever seen in a success run. A cohort a view defines once cannot drift from the engine's copy.
 - Add a per-posting lifespan primitive keyed by `job_posting_id`: first-seen and last-seen from `fetch_runs.started_at` across success runs, and a closed flag. `started_at` is the run's real timestamp — one per run, per `research.md`.
-- Add a cohort-agnostic taxonomy keyed by `job_posting_id` — role, specialization, skill, and dimension terms for any seen posting. `open_posting_taxonomy` joins `open_postings_display`, so it cannot serve closed or all cohorts.
-- The cohort-agnostic taxonomy and the seniority source (Task 2) both derive from `classifications`, keyed to `job_posting_id` independent of any run — so neither needs an open-only source, and both serve every cohort.
+- Add a latest-classification primitive keyed by `job_posting_id`: the single newest classification per posting (`ORDER BY classified_at DESC, id DESC LIMIT 1`), mirroring `open_postings_display`'s lateral. Superseded classifications coexist per posting; a join across all of them double-counts terms. The taxonomy and seniority below both derive from this, so the latest-only rule is stated once.
+- Add a cohort-agnostic taxonomy keyed by `job_posting_id` — role, specialization, skill, and dimension terms for any seen posting, resolved through the latest-classification primitive. `open_posting_taxonomy` joins `open_postings_display`, so it cannot serve closed or all cohorts; the term-junction tables (`job_posting_roles`, `job_posting_specializations`, `job_posting_skills`) key on `classification_id`, which is why the latest-classification primitive is the join root.
+- Add a success-week calendar: the distinct set of UTC weeks (`date_trunc('week', fetch_runs.started_at)`) that carried at least one successful run. `rate` reads it to tell a gap week (no successful run in scope) from a genuine zero-count week without the engine touching `fetch_runs` directly, keeping the read-model boundary.
 - Add parameterized as-of-open as a SQL function taking a `timestamptz`, returning the open `job_posting_id` set as of that instant. `add_company`/`save_enrichment` (migrations 000010–000015) are the precedent for a function in a migration. A plain view cannot take the date parameter `delta` needs.
-- Confirm `market_scout_readonly` can read the new views/function, matching the grant note in migration 000017's header.
+- Confirm `market_scout_readonly` can read the new views/function. The real gate is Task 5 reading them on the read-only DSN; migration 000017's header documents that role grants are provisioned outside migrations.
 - Record an `EXPLAIN (ANALYZE, TIMING OFF)` median in the migration header, as 000017 and 000019 do. The lifespan primitive's `GROUP BY job_posting_id` with `min`/`max` over every snapshot is the heaviest new query and the one to measure; add an index if it regresses. `000019` reached 227ms only because it detoasts `raw_data` JSONB per row — these views touch ids and timestamps only, so they should land near 000017's 33–47ms, not that.
+
+Task 1 produces (the objects later phases reference by name, since they cannot read this task's text):
+
+| Object | Shape | Read by |
+|---|---|---|
+| `closed_postings`, `all_seen_postings` | cohort membership: `job_posting_id` | count, share, denominator |
+| `posting_lifespans` | `job_posting_id`, `first_seen`, `last_seen`, `is_closed` | age, lifespan, rate |
+| `latest_classifications` | `job_posting_id`, `classification_id`, `seniority`, `classified_at` | seniority grouping, denominator |
+| `posting_taxonomy` | `job_posting_id`, `term_kind`, `slug`, `name` | role/specialization/skill/function groupings |
+| `fetch_success_weeks` | `week` | rate gap detection |
+| `open_postings_as_of(timestamptz)` | returns `job_posting_id` set | delta |
+
+Names are the plan's to set; if the implementer picks different ones, update this table so Phase 2–4 stay anchored.
 
 Do not:
 - Hand-edit sqlc output. If sqlc regeneration is required, regenerate it (`developer-guide.md` §5.8).
@@ -68,12 +82,13 @@ Do not:
 
 ### Task 2: Engine scaffold — dispatch, fragments, types, denominator
 
-Create the engine module under `apps/web/lib/db/` (sibling to `postings.ts`). Name the connection-taking core `runCompositionWith(sql, composition)`, mirroring `selectOpenPostings(sql)`, so the db test drives it on the read-only client; `runComposition(composition)` resolves `getSql()` and delegates to it. This task builds the seams the measure modules fill and lands `count` and `share` to exercise them.
+Create the engine module under `apps/web/lib/db/` (sibling to `postings.ts`). Name the connection-taking core `runCompositionWith(sql, composition, opts?)`, mirroring `selectOpenPostings(sql)`, so the db test drives it on the read-only client; `runComposition(composition)` resolves `getSql()` and delegates to it. This task builds the seams the measure modules fill and lands `count` and `share` to exercise them. The objects this task reads come from Task 1's produced-objects table (`closed_postings`, `all_seen_postings`, `posting_lifespans`, `latest_classifications`, `posting_taxonomy`, `fetch_success_weeks`, `open_postings_as_of`).
 
 - Re-validate with `validate()` at entry; on `{ ok: false }` return its `GrammarError` and run no query. The engine defends its own boundary; a caller that skipped validation must still be refused.
-- `runComposition`'s input must be a normalized `Composition` as produced by `parseComposition`. `validate()` assumes normalized input — an un-normalized or duplicated `groupBy` would otherwise get the wrong verdict.
+- Accept a `Composition` that came from `parseComposition` — the normalized, canonical form. `validate()` orders groupings and filters internally, so it is robust either way; the precondition matters because the engine's SQL keys off the composition directly and a duplicated `groupBy` would emit a duplicated grouping column.
+- Thread a clock through `opts.now?: Date`, defaulting to SQL `now()` when absent. `delta` (as-of window), `age` (first-seen → now), and `rate` (range end) all depend on "now"; a fixed `now` is what lets Task 5 assert deterministic magnitudes against fixed-date fixtures.
 - Build cohort, grouping, and filter as composable SQL fragments from fixed lookups keyed by the vocabulary enums. A grouping or filter dimension maps to its source through a table in code, never a string interpolated from the composition.
-- Map groupings to sources: `company` → company id/name; `role`/`specialization`/`skill` → cohort-agnostic taxonomy terms (Task 1); `function` → role dimensions; `seniority` → the classification seniority column; `week` → `date_trunc('week', started_at)` at UTC.
+- Map groupings to sources: `company` → `companies.id`/`.name`; `role`/`specialization`/`skill` → `posting_taxonomy` terms by `term_kind`; `function` → `posting_taxonomy` where `term_kind = 'dimension'`; `seniority` → `latest_classifications.seniority`; `week` → `date_trunc('week', started_at)` at UTC.
 - Filter dimensions are the grammar's `FILTER_DIMENSIONS` — the grouping set minus `week` — each filtering against the same source its grouping uses (Boundary inventory). The `company` filter matches `companies.id`; a user-facing name is resolved to that id upstream (`agent-readable-composition-state`), not here.
 - Pass filter values as bound query parameters. A model-supplied value never enters SQL text.
 - Define `MeasureResult` and its row type once, shared by all measures (see sketch). Aggregate and distribution measures share one row shape so the chart seam is single.
@@ -88,17 +103,17 @@ Do not:
 
 Add `delta` and `rate` to the engine, over Task 2's fragments and Task 1's views. Separate file from Task 4 so the two measure sets land concurrently without sharing edits.
 
-- `delta`: signed change = open-count-now − open-count-as-of-(now − `window`), via Task 1's as-of-open function. Grouping splits the delta per group. The window is required and already validated; read it, never default it.
-- `rate`: new postings per UTC week = first-seen (Task 1 lifespan primitive) bucketed by week over the `all` cohort. Emit one row per week in range.
-- A week with no successful run in scope is a gap row, flagged distinctly from a genuine zero-count week. Absence is data; smoothing it would lie (`research.md`, and the 07-13 gap live).
+- `delta`: signed change = open-count-at-`now` − open-count-as-of-(`now` − `window`), both via `open_postings_as_of`, where `now` is `opts.now` (Task 2's clock). Grouping splits the delta per group. The window is required and already validated; read it, never default it.
+- `rate`: new postings per UTC week = `posting_lifespans.first_seen` bucketed by week over the `all` cohort. The range is the earliest success-run week through the UTC week containing `now`; emit one row per week across it.
+- Gap rows come from `fetch_success_weeks`: a week in range absent from that calendar had no successful run in scope, so it is a gap, distinct from a week that had a run but zero new postings. Absence is data; smoothing it would lie (`research.md`, and the 07-13 gap live).
 - A gap row carries `value: 0` with `gap: true`; consumers distinguish it from a real zero by the flag, never the value.
 
 ### Task 4: Distribution measures — age, lifespan
 
 Add `age` and `lifespan` to the engine as per-posting distributions. Separate file from Task 3.
 
-- `age`: one row per open posting, value = days from first-seen to now. Open cohort only (fixed by the grammar).
-- `lifespan`: one row per closed posting, value = last-seen − first-seen in days, from Task 1's lifespan primitive. Closed cohort only.
+- `age`: one row per open posting, value = days from `posting_lifespans.first_seen` to `now` (Task 2's clock). Open cohort only (fixed by the grammar).
+- `lifespan`: one row per closed posting, value = `posting_lifespans.last_seen` − `first_seen` in days. Closed cohort only.
 - Single-run rule: a posting seen in exactly one success run has last-seen == first-seen, so lifespan is 0 days. Return it as a 0-day row, not dropped — 431 postings live carry this shape and excluding them would bias the distribution short.
 - Return raw per-posting values. Bin edges are the histogram chart's call, not the engine's.
 - With one grouping, tag each row with its group for small multiples; the engine does not aggregate the distribution.
@@ -107,10 +122,11 @@ Add `age` and `lifespan` to the engine as per-posting distributions. Separate fi
 
 Add `measure-engine.db.test.ts` under `apps/web/lib/db/`. Mirror `read-model-views.db.test.ts`: seed through the owner DSN with a per-run marker, read through the read-only DSN, `context.skip()` when either DSN is absent, clean up by marker. The test drives `runCompositionWith` directly on the read-only client.
 
-- Seed a small deterministic fixture: a company, several success runs across weeks, a failed run, postings that stay open, postings that close, one posting seen in a single run, and classified plus unclassified postings.
-- Assert each measure against the fixture: `count` total, `delta` sign and magnitude across the window, `rate` per-week including the gap week, `age` and `lifespan` values, `share` summing to 1.0.
+- Seed a small deterministic fixture: a company, several success runs across weeks, a failed run, postings that stay open, postings that close, one posting seen in a single run, classified plus unclassified postings, and a superseded second classification on one posting so latest-classification selection is exercised.
+- Pass a fixed `opts.now` on every call so `delta`, `age`, and `rate` are deterministic; seed run timestamps relative to that fixed `now`, not the wall clock.
+- Assert each measure against the fixture: `count` total, `delta` sign and magnitude across the window, `rate` per-week including the gap week, `age` and `lifespan` values, `share` summing to 1.0. Assert `count` by equality against a direct `SELECT count(*) FROM open_postings` on the same client, not a hardcoded number — the fixture shares a live table.
 - Assert the denominator is cohort-scoped: classified-count and total for open differ from closed on the same fixture.
-- Assert an invalid crossing is refused before any query runs.
+- Assert an invalid crossing is refused and no query runs — drive the core with a `sql` proxy that counts invocations and assert zero calls on the refusal path.
 
 ## Sequencing
 
@@ -125,6 +141,8 @@ One shared result shape across measures keeps the engine↔chart seam single:
 
 ```ts
 // Proposed design — remove after implementation.
+// runCompositionWith(sql, composition, opts?: { now?: Date }): Promise<MeasureResult>
+// now defaults to SQL now(); tests pass a fixed value for deterministic delta/age/rate.
 interface MeasureRow {
   keys: Partial<Record<Grouping, string>>; // {} for an ungrouped total; per-posting rows carry their grouping
   value: number;                           // count, signed delta, share (0–1), or duration in days
