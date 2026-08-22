@@ -33,7 +33,7 @@ Add `market` as a grouping and filter dimension the agent can compose over, back
 - [ ] `pnpm test:db` passes an assertion that a posting whose location text is `"Everett, WA"` resolves to the `seattle` market, proving suburb spellings fold into their hub rather than being dropped.
 - [ ] `pnpm test:db` passes an assertion that a posting whose single location string is `"San Francisco, CA | New York City, NY"` resolves to **both** `sf-bay-area` and `new-york` (two rows), proving multi-market matching reads the concatenated string rather than trusting one array element per location.
 - [ ] `pnpm test:db` passes an assertion that a posting whose location text is `"US - Remote"` resolves to the `remote-us` market.
-- [ ] `pnpm test:db` passes an assertion that a posting whose location text is `"United States"` (a bare region) resolves to the `us` macro-region market, whose derivation-view row carries `kind = 'region'` (read from the derivation view, which surfaces `kind`; `open_posting_taxonomy` does not).
+- [ ] `pnpm test:db` passes an assertion that a posting whose location text is `"United States"` (a bare region) resolves to the `us` macro-region market, whose `open_posting_markets` row carries `kind = 'region'` (read from `open_posting_markets`, which surfaces `kind`; `open_posting_taxonomy` does not).
 - [ ] `pnpm test:db` passes an assertion that a posting whose location text is `"N/A"` (or empty) resolves to exactly the reserved `unmapped` market (slug `unmapped`) and no named-market row, proving unmapped locations are a visible value, not silently absent.
 - [ ] `pnpm test:db` passes an assertion that `open_posting_taxonomy` returns the derived market rows under `term_kind = 'market'` for an open posting, and returns them for a posting that has **no** classification (market does not depend on classification).
 - [ ] `pnpm test` passes the updated `requiresDenominator` suite: the `EXPECTED` table covers exactly `GROUPINGS` (now including `market`) and `requiresDenominator("market")` returns `false` — location is present on ~99% of snapshots, so market carries no classification-coverage debt; the `unmapped` value carries dictionary-breadth honesty instead.
@@ -53,12 +53,13 @@ Add a numbered migration (`000020`, the next free number) that creates a seed ta
 - Store the resolving patterns as data (a child table or an array column per market), not as branches baked into the view — a curated dictionary changes far more often than view logic, and data-driven patterns let a reviewer read the whole dictionary in one place.
 - Match with word-boundary semantics (Postgres `~*` with `\y`), because bare substring matching maps `"Remote"` inside `"Vermont"`. The word-boundary form is what the workplace-type derivation in `000019` already relies on.
 - Ground every seeded market's patterns in strings that actually occur in the corpus — this is the seeding contract for all listed slugs, not only the two worked below. `seattle` and `sf-bay-area` are worked in detail to show the suburb-folding depth expected; `new-york`, `london`, `singapore`, and `india` need the same grounding at their own scale.
+- Harvest the real spellings first: query the live corpus over the read-only MCP (`select:mcp__market-scout-postgres__query`) — `SELECT location_text, count(*) FROM open_postings_display GROUP BY 1 ORDER BY 2 DESC` and the same over `unnest(location_texts)` from the run-scoped snapshots — and derive patterns from what appears, rather than inventing plausible city names. The patterns are only as honest as the strings they were read from.
 - Fold suburb spellings into their hub: `Everett`/`Bellevue`/`Kirkland`/`Kent`/`Bellingham, WA` into `seattle`, and `Mountain View`/`Fremont`/`Milpitas`/`Palo Alto`/`Menlo Park`/`Sunnyvale`/`San Jose`/`Oakland` into `sf-bay-area`. A hub matching only its headline city drops a large share of its metro — `Everett` alone is 106 open postings.
 - Seed macro-region markets (`us`, `europe`, and the region strings the corpus carries — `north america`, `united kingdom`, `emea`) tagged `kind = 'region'`, because bare-region strings are ~19% of the open cohort and admitting them lifts coverage from ~81% to ~90%+.
 - Seed remote-tier markets (`remote-us`, matching the corpus's remote-scope spellings — `US - Remote`, `Remote - US`, `USA - Remote`, `US-Remote`, `United States - Remote`) tagged `kind = 'remote'`. A remote scope is a distinct grain from both a hub and a region, so it takes its own `kind` value rather than being forced into one of theirs.
 - Seed the reserved `unmapped` market: a slug the derivation assigns when no seeded pattern matches (Task 2). It has no patterns of its own — it is the else. This is what keeps a location matching nothing countable rather than invisible.
 - The seed is complete as delivered — no `TODO` markets.
-- Write the `.down.sql` too: it restores `open_posting_taxonomy` to its pre-000020 four-branch definition, then drops the derivation view and seed table (dependent before base), mirroring the down-ordering in `000017`/`000019`.
+- Write the `.down.sql` too: it restores `open_posting_taxonomy` to its pre-000020 four-branch definition, then drops `open_posting_markets` and the seed table (dependent before base), mirroring the down-ordering in `000017`/`000019`.
 
 Do not:
 - Hand-edit sqlc output or add a `queries/` entry for this; the derivation is read-model SQL consumed by views and the MCP query gateway, not a Go query.
@@ -67,17 +68,18 @@ Do not:
 
 ### Task 2 — Market derivation view
 
-Add, in the same migration, a view that resolves each open posting to its market(s).
+Add, in the same migration, a view `open_posting_markets` that resolves each open posting to its market(s). Later phases read this view by that name and its columns `job_posting_id`, `slug`, `name`, `kind`.
 
 - Resolve each open posting's current snapshot with a run-scoped lateral mirroring `open_postings_display`'s: filter `posting_snapshots` on `job_posting_id` and `fetch_run_id = open_postings.fetch_run_id`, `ORDER BY fetched_at DESC, id DESC LIMIT 1`. Copying the full tiebreak keeps market on the same "open" definition every other read-model view uses; a second definition would drift.
 - Read `location_texts` (the `text[]` column) directly from `posting_snapshots` in that lateral, not from `open_postings_display` — the display view exposes only the scalar `location_text`, not the array.
-- Match each market's patterns against the raw location text, unnesting `location_texts` and matching each element's whole string. Multi-market matching falls out of this: one element can itself carry a concatenation, so matching its full text lets one string resolve to several markets.
-- Emit one row per (posting, matched market) carrying the market's `job_posting_id`, `slug`, `name`, and `kind` (from the seed table): a posting matching two markets yields two rows, mirroring the many-to-many shape roles/skills already have in the taxonomy. `kind` lives here on the derivation view, since the four-column `open_posting_taxonomy` (Task 3) cannot carry it.
-- Emit the reserved `unmapped` market (slug `unmapped`) for a posting whose location matched no seeded pattern — a left-style resolution where no named match yields exactly one `unmapped` row. A posting matching nothing must stay countable, not vanish from the dimension.
+- Run each market's patterns (`~*` with `\y`) against the full text of each unnested `location_texts` element. Multi-market matching falls out of this: one element can itself carry a concatenation, so matching its full text lets one string resolve to several markets.
+- Emit one row per (posting, matched market) carrying `job_posting_id`, `slug`, `name`, and `kind` (from the seed table): a posting matching two markets yields two rows, mirroring the many-to-many shape roles/skills already have in the taxonomy. `kind` lives here on `open_posting_markets`, since the four-column `open_posting_taxonomy` (Task 3) cannot carry it.
+- Emit the reserved `unmapped` market (slug `unmapped`) once per posting that matches no seeded pattern — resolve unmapped at **posting grain**, via `WHERE NOT EXISTS (a matched market for that posting)`, not per unnested element. A posting with several unmatched location strings must still yield exactly one `unmapped` row, never one per string.
 - Carry a header comment with a local performance check (row count, warm `EXPLAIN (ANALYZE, TIMING OFF)` median) in the convention of the `000017` and `000019` headers, because these views run on every analysis read.
 
 Do not:
-- Match against individual `location_texts` elements as if each were one atomic place; the array's own elements carry concatenations (see `research.md`), so treating them as atomic understates multi-market postings.
+- Require an element to *equal* a market name (exact `==`); patterns match *within* an element's full text, which is what lets a concatenated element resolve to several markets (see `research.md`).
+- Emit `unmapped` at element grain; that yields one `unmapped` row per unmatched string instead of one per posting.
 - Alter, upsert, or write `posting_snapshots` — the derivation is read-only over append-only history.
 - Auto-create a named market row for an unrecognized location string; unmatched resolves to `unmapped`, never to a new market.
 
@@ -85,11 +87,12 @@ Do not:
 
 In the same migration, replace `open_posting_taxonomy` (via `CREATE OR REPLACE VIEW`) to add a `'market'` branch.
 
-- Add a `UNION ALL` branch selecting `job_posting_id`, `'market'::text AS term_kind`, and the market `slug`/`name` from the derivation view, matching the existing four-column shape (`job_posting_id`, `term_kind`, `slug`, `name`).
+- Add a `UNION ALL` branch selecting `job_posting_id`, `'market'::text AS term_kind`, and `slug`/`name` from `open_posting_markets` (Task 2's view), matching the existing four-column shape (`job_posting_id`, `term_kind`, `slug`, `name`).
 - Join the market branch on `job_posting_id`, not `classification_id` — every existing branch joins through the current classification, but a market exists whether or not the posting is classified, so classification-joining it would hide markets for the ~65% of the cohort without a classification.
 - Preserve the existing role/specialization/skill/dimension branches unchanged; this task only appends a branch.
 
 Do not:
+- Select `kind` (or any fifth column) into the branch; the four-column shape is what keeps `CREATE OR REPLACE VIEW` legal, and `kind` lives on `open_posting_markets` for consumers that need it.
 - Route the market branch through `open_postings_display.classification_id`; that is the mistake this task exists to avoid.
 - Drop or reorder the existing branches; the taxonomy's four-column contract and its existing `term_kind` values are relied on by the web app and MCP consumers.
 
@@ -104,7 +107,7 @@ Add `market` to the closed vocabulary and its rules in `apps/web/lib/composition
 
 Do not:
 - Add a parallel `market` enum or a bespoke schema branch; the whole design relies on `GROUPINGS`/`FILTER_DIMENSIONS` being the single source the schema derives from.
-- Expose market values as free strings in the schema; the filter value is a market slug from the seed table, validated the same way other filter values are (exact value on the dimension).
+- Add market-specific filter-value validation. Filter values are free strings for every dimension (`schema.ts` validates `filter.value` as a non-empty string, never against a DB table); a market filter value is *semantically* a seed slug but stays a free string like `company` or `skill` — do not special-case it.
 
 ### Task 5 — Update grammar unit tests
 
@@ -121,7 +124,9 @@ Do not:
 Add a db test mirroring `read-model-views.db.test.ts` for the market derivation.
 
 - Follow the established pattern exactly: seed via the owner DSN, read via the read-only DSN, `context.skip()` when either DSN is absent, and clean up marker-scoped rows in a `finally` block. A new pattern would diverge from the one the other read-model tests share.
-- Cover, at minimum: a single-location posting resolving to one market; a suburb spelling folding into its hub; one concatenated location string resolving to two markets; a bare-region string resolving to a macro-region whose derivation-view row carries `kind = 'region'`; and an `N/A`/empty location producing exactly the `unmapped` market row and no named-market row.
+- Populate the `location_texts` (`text[]`) column on every fixture snapshot — that is the column `open_posting_markets` reads. The mirrored `read-model-views.db.test.ts` seeds only the scalar `location_text`; a fixture that leaves `location_texts` NULL resolves every posting to `unmapped` and fails the suite opaquely.
+- Query `open_posting_markets` directly (by that name; columns `job_posting_id`, `slug`, `name`, `kind`) for the derivation assertions; query `open_posting_taxonomy` only for the `term_kind = 'market'` surfacing assertion, which carries no `kind`.
+- Cover, at minimum: a single-location posting resolving to one market; a suburb spelling folding into its hub; one location string carrying a concatenation **in a single array element** resolving to two markets; a bare-region string resolving to a macro-region whose `open_posting_markets` row carries `kind = 'region'`; and an `N/A`/empty location producing exactly one `unmapped` market row and no named-market row.
 - Assert market rows surface through `open_posting_taxonomy` under `term_kind = 'market'`, including for a posting with no classification row, proving the `job_posting_id` join.
 - Clean up any market seed rows the test introduces, if the test seeds its own markets rather than relying on the migration's seeds — leave the shared market table as it was found.
 
