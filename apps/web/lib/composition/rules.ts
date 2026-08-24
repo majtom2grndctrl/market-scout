@@ -49,6 +49,7 @@ const SIGNED_MEASURES = ["delta"] as const satisfies readonly Measure[];
 // grouping that silently reads as full-corpus.
 const REQUIRES_DENOMINATOR = {
   company: false,
+  market: false,
   week: false,
   role: true,
   specialization: true,

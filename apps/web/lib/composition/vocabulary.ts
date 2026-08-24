@@ -11,6 +11,7 @@ export type Measure = (typeof MEASURES)[number];
 // serialize to the same link.
 export const GROUPINGS = [
   "company",
+  "market",
   "role",
   "specialization",
   "skill",
@@ -24,6 +25,7 @@ export type Grouping = (typeof GROUPINGS)[number];
 // modifier competing for the same axis would give one question two spellings.
 export const FILTER_DIMENSIONS = [
   "company",
+  "market",
   "role",
   "specialization",
   "skill",

@@ -89,9 +89,23 @@ type LatestSuccessfulFetchRun struct {
 	StartedAt  time.Time
 }
 
+type MarketSeed struct {
+	Slug     string
+	Name     string
+	Kind     string
+	Patterns []string
+}
+
 type OpenPosting struct {
 	JobPostingID int64
 	FetchRunID   int64
+}
+
+type OpenPostingMarket struct {
+	JobPostingID int64
+	Slug         string
+	Name         string
+	Kind         string
 }
 
 type OpenPostingTaxonomy struct {

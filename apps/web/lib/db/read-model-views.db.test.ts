@@ -236,6 +236,11 @@ describe("read-model views", () => {
           name: 'Fixture dimension',
         },
         {
+          term_kind: 'market',
+          slug: 'unmapped',
+          name: 'Unmapped',
+        },
+        {
           term_kind: 'role',
           slug: `${marker}-role`,
           name: 'Fixture role',

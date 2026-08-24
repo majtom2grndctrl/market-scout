@@ -158,6 +158,10 @@ This feature crosses SQL ↔ TS. The market slug is the shared identifier.
 - **Unmapped is an explicit `unmapped` market value, and `market` needs no denominator (`false`).** Location is present on ~99% of snapshots — market has none of the classification-coverage debt the `true` dimensions carry, so `requiresDenominator` (which means "fraction of the ~35% classified corpus") would misdescribe it. Dictionary-breadth honesty lives in the visible, groupable, filterable `unmapped` value instead of a scalar. Keeps the denominator concept about classification only.
 - **Three grains in one dimension, tagged by `kind` (`hub`/`region`/`remote`).** Bare-region strings are ~19% of the open cohort; admitting `us`/`europe`/etc. lifts coverage from ~81% to ~90%+ and shrinks `unmapped` toward the ~0.8% hard floor. Remote-scope strings are their own grain, neither hub nor region. `kind` keeps all three distinguishable within the one dimension, surfaced on the derivation view (not the four-column taxonomy).
 
+## Implementation note
+
+`000020` was already applied locally, so it remains immutable. `000021` recreates `open_posting_markets` with `matched_markets AS NOT MATERIALIZED`: the CTE is referenced by both the named-market branch and the `unmapped` fallback, and the default materialized shape prevented a filtered read from pushing its `job_posting_id` predicate into the match. The correction preserves every output column, matching rule, and fallback rule.
+
 ## Cross-spec seam
 
 - **measure-engine `share` normalization.** Because multi-market postings count under several markets, a `share` grouped by `market` must normalize over the sum of market assignments, not the posting count — the same treatment any multi-valued taxonomy dimension (`skill`, `role`) already needs. measure-engine owns that normalization; this spec only guarantees the many-rows-per-posting shape it consumes.

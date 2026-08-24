@@ -243,6 +243,7 @@ describe("requiresDenominator", () => {
   // here before it can slip through unasserted.
   const EXPECTED: Record<Grouping, boolean> = {
     company: false,
+    market: false,
     week: false,
     role: true,
     specialization: true,
@@ -261,6 +262,10 @@ describe("requiresDenominator", () => {
       expect(requiresDenominator(grouping)).toBe(EXPECTED[grouping]);
     },
   );
+
+  it("marks market as a full-corpus grouping", () => {
+    expect(requiresDenominator("market")).toBe(false);
+  });
 
   it("carries the debt to the composition and names which groupings owe it", () => {
     expect(
