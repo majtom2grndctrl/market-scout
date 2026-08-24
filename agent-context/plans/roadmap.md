@@ -51,7 +51,7 @@ Goal: Web agent composes analyses from a small vocabulary — measure × groupin
 
 ### Milestone: Grammar
 
-- [ ] `composition-grammar`
+- [x] `composition-grammar`
   Define the vocabulary and its invariant. One measure — count, delta, age, lifespan, rate, share — over a grouping (company, role, specialization, skill, seniority, function, weekly bucket) and filter, rendered by an encoding, with cohort, sort, and limit modifiers. Cohort carries the fetch-run-aware open/closed/all split. Backend computes every primitive; the model selects and combines, never calculates. Unreliable data types are absent from the vocabulary, not refused per question — no compensation measure, no geography grouping — so out-of-scope is structural. A composition serializes to the deep link and back. Versioned as a public contract.
 
 - [ ] `measure-engine`
@@ -59,6 +59,9 @@ Goal: Web agent composes analyses from a small vocabulary — measure × groupin
 
 - [ ] `chart-primitives`
   Define the chart layer. `d3-scale`, `d3-shape`, `d3-array` supply scales and path geometry; the app owns every mark, so charts inherit design tokens rather than a library theme. Three layers — dimensionless shaping, a composition layer owning scales and margins, and primitives that receive scales as props and never build their own. Render target is any shape the grammar produces, not a fixed set of forms. Settle the fixed-`viewBox` default and what earns a measured wrapper, UTC scales so server and client render identical ticks, and a failed-run window as a gap, never an interpolated line. Absence is data; a chart that smooths over it lies.
+
+- [ ] `cooccurrence-measure`
+  Add a co-occurrence measure. Pairwise overlap becomes composable: which skills appear together on a posting, which skills attach to a role. The grammar shapes one measure over one grouping; two terms from the same dimension are a relationship that shape cannot hold, so co-occurrence was deferred. Define the primitive, its symmetric-pair rows, and a denominator honest about the classified slice it reads. `measure-engine` already spans the plain case — a grouping filtered by another dimension, such as roles filtered by a skill — so this spec owns only the pairwise measure the current vocabulary cannot express. Unlocks the Skill Overlap seed composition. Composite (Company Profile) is the sibling deferred primitive; it stays a separate spec.
 
 ### Milestone: Transport
 

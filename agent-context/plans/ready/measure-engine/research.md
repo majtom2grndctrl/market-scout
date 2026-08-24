@@ -26,6 +26,7 @@ Run via the `market-scout-postgres` read-only MCP.
 4. **Gaps are real, not hypothetical.** A week with no successful run in scope must render as a gap, never an interpolated point. Live data already contains one (07-13).
 5. **Single-run postings exist (431).** Lifespan of a posting seen in one run only needs a defined rule (span 0, or excluded).
 6. **`open_posting_taxonomy` is open-only.** It joins `open_postings_display`. Closed/all cohort groupings by role/skill/etc. have no taxonomy source today — the migration must supply a cohort-agnostic one.
+7. **`market` landed after these notes (migrations 000020–000021).** It is now a first-class grouping/filter, multi-valued, and open-only (`open_posting_markets` joins `open_postings`). Two consequences fold into the spec: the cohort-agnostic source this migration builds must include a market branch (same open-only debt as conclusion 6), and `share` over `market`/`role`/`skill` normalizes over the assignment sum, not the posting count — the treatment `market-dimension` assigns here. `market` needs no denominator: location is on ~99% of snapshots (`REQUIRES_DENOMINATOR["market"] = false`), so it is not part of the cohort-scoped classified denominator conclusion 2 describes.
 
 ## Reference queries
 
