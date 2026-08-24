@@ -13,12 +13,13 @@ That guide is Go-first. Working in `apps/web`, read only:
 | Section | Why |
 |---|---|
 | §1 Implementation Quality | Universal — including §1.5's light lane, which is why most UI work skips the plan pipeline. |
+| §2 Development Setup | Follow the `apps/web/.env.local` symlink setup so Next reads the canonical root env file. |
 | §4.1, §4.3, §4.5 File organization | Universal. §4.2's package advice and §4.4's density rule are Go-specific. |
 | §7.1, §7.3, §7.4 Comments | Universal. §7.2 covers Go package doc comments. |
 
-Skip §2, §3, §5, and §6 — Go setup, Go build, Go conventions, Go logging. §5.8 covers sqlc; nothing in `apps/web` is generated.
+Skip the rest of §2, plus §3, §5, and §6 — Go setup, Go build, Go conventions, Go logging. §5.8 covers sqlc; nothing in `apps/web` is generated.
 
-`testing-guide.md` is Go-only. `apps/web` has no JavaScript test runner. Verification is `tsc --noEmit`, the two builds, and review in Storybook.
+`testing-guide.md` covers Go and web tests. `apps/web` uses Vitest: `pnpm test` is DB-free, and `pnpm test:db` runs the Postgres view suite. `pnpm typecheck` remains the type gate; Vitest transpiles without typechecking.
 
 ## Layout
 
@@ -26,6 +27,7 @@ Skip §2, §3, §5, and §6 — Go setup, Go build, Go conventions, Go logging. 
 apps/web/
   app/                # App Router. globals.css is the single stylesheet entry.
   components/ui/      # Vendored shadcn
+  lib/db/             # Read-only Postgres queries for Server Components
   lib/utils.ts        # cn() — shadcn's clsx + tailwind-merge helper
   tokens.css          # The one @theme block we own
   .storybook/
@@ -99,5 +101,7 @@ From `apps/web/`:
 | `pnpm dev` | Next dev server. |
 | `pnpm build` | `next build`. Typechecks as part of the build. |
 | `pnpm typecheck` | `tsc --noEmit`. Covers `.storybook/` too. |
+| `pnpm test` | DB-free Vitest suite. Never connects to Postgres. |
+| `pnpm test:db` | Vitest view integration suite. Requires `DATABASE_URL` and `DATABASE_URL_RO`. |
 | `pnpm storybook` | Dev server on port 6006. |
 | `pnpm build-storybook` | The only check that every story compiles. |

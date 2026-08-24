@@ -8,7 +8,7 @@
 
 ## 1. Test Infrastructure
 
-Standard Go `testing` package. Tests live next to the code they exercise (`foo.go` ↔ `foo_test.go`, package `foo`). Cross-package integration tests use package `foo_test` (black-box) in the same directory.
+Go tests use the standard `testing` package and live next to the code they exercise (`foo.go` ↔ `foo_test.go`, package `foo`). Cross-package integration tests use package `foo_test` (black-box) in the same directory. Web tests use Vitest under `apps/web/`: `*.test.ts` is DB-free, while `*.db.test.ts` runs only through `pnpm test:db`.
 
 | Layer | Scope | Location |
 |-------|-------|----------|
@@ -16,8 +16,12 @@ Standard Go `testing` package. Tests live next to the code they exercise (`foo.g
 | Adapter HTTP | ATS adapter against `httptest.Server` with recorded fixtures | `apps/tools/internal/ats/*_test.go` |
 | DB integration | `sqlc` queries against a real Postgres (testcontainers-go or a shared dev container) | `apps/tools/internal/db/*_integration_test.go`, build tag `//go:build integration` |
 | End-to-end | `apps/tools/cmd/fetcher` run against fixture ATS server + real Postgres | `apps/tools/cmd/fetcher/*_e2e_test.go`, build tag `//go:build e2e` |
+| Web unit | DB-free module behavior | `apps/web/**/*.test.ts`, run with `pnpm test` |
+| Web DB integration | Read-model views through owner seed and read-only DSNs | `apps/web/**/*.db.test.ts`, run with `pnpm test:db` |
 
 Default `go test ./...` runs unit + adapter HTTP tests. Integration and E2E tests require their build tags (`go test -tags=integration ./...`) and a running Postgres.
+
+`pnpm test` never connects to Postgres. `pnpm test:db` skips when `DATABASE_URL` or `DATABASE_URL_RO` is unset; when both are present, it uses the owner DSN to commit fixtures and the read-only DSN to query them.
 
 Fixtures (recorded ATS JSON responses) live in `apps/tools/internal/ats/testdata/<adapter>/`. The `testdata/` directory name is recognized by the Go toolchain and excluded from build.
 
@@ -145,6 +149,14 @@ go vet ./...                               # Static checks (catches struct tag t
 ```
 
 `go test` caches results per package; pass `-count=1` to force re-run.
+
+From `apps/web/`:
+
+```bash
+pnpm test       # DB-free Vitest suite
+pnpm test:db    # Read-model view integration tests; needs both database DSNs
+pnpm typecheck  # Type gate; Vitest itself does not typecheck
+```
 
 ---
 

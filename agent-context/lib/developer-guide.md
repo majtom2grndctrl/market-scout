@@ -104,12 +104,13 @@ After cloning, start the database, link env, and apply migrations:
 
 ```bash
 docker compose up -d                        # Postgres + pgvector (repo root)
-ln -s ../../.env.local apps/tools/.env.local # Fresh-clone setup; root .env.local is canonical
+ln -s ../../.env.local apps/tools/.env.local # Go tools; root .env.local is canonical
+ln -s ../../.env.local apps/web/.env.local   # Next app reads its own directory
 cd apps/tools
 go run ./cmd/migrate up                     # Apply schema migrations
 ```
 
-`.env.local` is canonical at repo root (docker-compose reads it). `apps/tools/.env.local` is a symlink so the Go tools see the same file — no DB-credential drift. Both are gitignored; the symlink is a local-setup step, not checked in.
+`.env.local` is canonical at repo root (docker-compose reads it). `apps/tools/.env.local` and `apps/web/.env.local` point to it, so both apps read the same credentials. All three are gitignored; the symlinks are local-setup steps, not checked in.
 
 Generate sqlc code if any `.sql` files in `apps/tools/internal/db/queries/` have changed:
 
