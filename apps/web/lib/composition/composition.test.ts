@@ -56,11 +56,11 @@ describe("seed round-trip", () => {
 });
 
 describe("cohort per measure", () => {
-  // The Composability table, transcribed. Cohort is free on the count measures
-  // and intrinsic on the time measures.
+  // The Composability table, transcribed. Cohort is free on count and
+  // intrinsic on every other measure.
   const EXPECTED: Record<Measure, { allowed: readonly Cohort[]; fallback: Cohort }> = {
     count: { allowed: ["open", "closed", "all"], fallback: "open" },
-    delta: { allowed: ["open", "closed", "all"], fallback: "open" },
+    delta: { allowed: ["open"], fallback: "open" },
     age: { allowed: ["open"], fallback: "open" },
     lifespan: { allowed: ["closed"], fallback: "closed" },
     rate: { allowed: ["all"], fallback: "all" },
@@ -95,6 +95,22 @@ describe("cohort per measure", () => {
     const codes = codesOf({ ...BASE[measure], measure, cohort });
 
     expect(codes).toStrictEqual(allowed ? [] : ["cohort_not_allowed"]);
+  });
+
+  it.each(["closed", "all"] as const)("refuses delta + %s with the cohort grammar error", (cohort) => {
+    const composition: Composition = {
+      measure: "delta",
+      cohort,
+      groupBy: ["company"],
+      window: { weeks: 2 },
+      encoding: "diverging_bars",
+    };
+
+    expect(codesOf(composition)).toStrictEqual(["cohort_not_allowed"]);
+    expect(validate(composition)).toMatchObject({
+      ok: false,
+      error: { issues: [{ code: "cohort_not_allowed", path: ["cohort"] }] },
+    });
   });
 
   it.each(MEASURES.map((measure) => [measure] as [Measure]))(
@@ -143,6 +159,11 @@ describe("encoding must fit the result shape", () => {
       "share with no grouping to normalize within",
       { measure: "share", encoding: "ranked_bars" },
       "measure_needs_grouping",
+    ],
+    [
+      "rate without its weekly arrival axis",
+      { measure: "rate", encoding: "ranked_bars" },
+      "measure_needs_week",
     ],
     [
       "histogram with two groupings",

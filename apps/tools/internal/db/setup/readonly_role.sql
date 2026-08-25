@@ -76,3 +76,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 -- pg_trgm's similarity() is used by the read-only dedup lookup. Grant only the
 -- required extension function; the role retains no general function access.
 GRANT EXECUTE ON FUNCTION public.similarity(text, text) TO market_scout_readonly;
+
+-- Delta reads the historical open cohort through this narrowly granted
+-- read-model function; every other public function remains unavailable.
+GRANT EXECUTE ON FUNCTION public.open_postings_as_of(timestamptz) TO market_scout_readonly;

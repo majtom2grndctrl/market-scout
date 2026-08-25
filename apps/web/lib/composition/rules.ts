@@ -3,14 +3,13 @@ import { grammarError } from "./errors";
 import type { Cohort, Composition, Encoding, FilterDimension, Grouping, Measure } from "./vocabulary";
 import { FILTER_DIMENSIONS, GROUPINGS } from "./vocabulary";
 
-// Cohort is a free modifier on the count measures — currently-open, closed, or
-// all is the question being asked. On the time measures it is intrinsic: `age`
-// *is* the open cohort and `lifespan` the closed one, so it is fixed rather
-// than chosen. First entry doubles as the default, which is why the free
-// measures list `open` first.
+// Cohort is a free modifier on count — currently-open, closed, or all is the
+// question being asked. Every other measure has an intrinsic cohort: delta is
+// the change in open postings between now and its as-of reconstruction, `age`
+// is open, and `lifespan` is closed. First entry doubles as the default.
 const COHORTS_BY_MEASURE = {
   count: ["open", "closed", "all"],
-  delta: ["open", "closed", "all"],
+  delta: ["open"],
   age: ["open"],
   lifespan: ["closed"],
   rate: ["all"],
@@ -174,6 +173,17 @@ export function crossingIssues(composition: Composition): readonly GrammarIssue[
       code: "measure_needs_grouping",
       path: ["groupBy"],
       message: `measure "share" normalizes within a grouping, so it needs at least one`,
+    });
+  }
+
+  // Rate is an arrival time series. Without its entry-week axis, the engine
+  // would either fabricate a key the composition did not request or return a
+  // time series whose result metadata lies about its shape.
+  if (measure === "rate" && !groupBy.includes("week")) {
+    issues.push({
+      code: "measure_needs_week",
+      path: ["groupBy"],
+      message: 'measure "rate" reports weekly arrivals, so groupBy must include "week"',
     });
   }
 

@@ -18,6 +18,7 @@ export const GRAMMAR_ISSUE_CODES = [
   "encoding_needs_two_groupings",
   "encoding_needs_at_most_one_grouping",
   "measure_needs_grouping",
+  "measure_needs_week",
   "measure_needs_window",
   "measure_needs_distribution_encoding",
 ] as const;

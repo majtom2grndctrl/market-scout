@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+type AllSeenPosting struct {
+	JobPostingID int64
+}
+
 type CanonicalRole struct {
 	ID        int64
 	Slug      string
@@ -30,6 +34,10 @@ type Classification struct {
 	ClassifiedAt  time.Time
 	Seniority     string
 	Notes         sql.NullString
+}
+
+type ClosedPosting struct {
+	JobPostingID int64
 }
 
 type Company struct {
@@ -58,6 +66,11 @@ type FetchRun struct {
 	PostingsCount sql.NullInt32
 }
 
+type FetchSuccessWeek struct {
+	CompanyID int64
+	Week      interface{}
+}
+
 type JobPosting struct {
 	ID          int64
 	CompanyID   int64
@@ -81,6 +94,13 @@ type JobPostingSkill struct {
 type JobPostingSpecialization struct {
 	ClassificationID int64
 	SpecializationID int64
+}
+
+type LatestClassification struct {
+	JobPostingID     int64
+	ClassificationID int64
+	Seniority        string
+	ClassifiedAt     time.Time
 }
 
 type LatestSuccessfulFetchRun struct {
@@ -132,6 +152,20 @@ type OpenPostingsDisplay struct {
 	WorkplaceTypeSource   sql.NullString
 }
 
+type PostingLifespan struct {
+	JobPostingID int64
+	FirstSeen    interface{}
+	LastSeen     interface{}
+	IsClosed     bool
+}
+
+type PostingMarket struct {
+	JobPostingID int64
+	Slug         string
+	Name         string
+	Kind         string
+}
+
 type PostingSnapshot struct {
 	ID                     int64
 	JobPostingID           int64
@@ -154,6 +188,13 @@ type PostingSnapshot struct {
 	CompensationMax        sql.NullInt64
 	CompensationCurrency   sql.NullString
 	CompensationPeriod     sql.NullString
+}
+
+type PostingTaxonomy struct {
+	JobPostingID int64
+	TermKind     string
+	Slug         string
+	Name         string
 }
 
 type RoleDimension struct {

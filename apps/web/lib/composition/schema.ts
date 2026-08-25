@@ -60,7 +60,7 @@ const compositionInput = z
       .enum(COHORTS)
       .nullable()
       .describe(
-        "Which postings count. Free on count and delta; fixed elsewhere — age is open, lifespan closed, rate all, share open. Omit to take the default for the measure.",
+        "Which postings count. Free on count; fixed elsewhere — delta and age are open, lifespan closed, rate all, share open. Omit to take the default for the measure.",
       )
       .optional(),
     groupBy: z
