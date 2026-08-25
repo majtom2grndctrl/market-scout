@@ -1,58 +1,35 @@
 ---
 name: fix-findings
-description: >
-  Acts on review panel findings by dispatching concurrent Sonnet agents for
-  small-blast-radius items (one per file), then an Opus agent for remaining
-  issues with knock-on effects. All agents read relevant agent-context files.
-  Use after /review-panel produces findings.
-allowed-tools: Read, Glob, Grep, Bash, Agent
-argument-hint: ""
+description: Fix confirmed review findings by delegating independent edits first and cross-cutting fixes second. Use after the user accepts findings from review-panel or another review.
 ---
 
 # Fix Findings
 
-Triage review panel findings and dispatch agents to fix them. Coordinate — don't produce.
+Coordinate fixes. Do not start from unverified reviewer claims.
 
-## Agent brief (provide to every agent)
+## Verify
 
-- The specific findings to address (`file:line`, problem, fix)
-- Read `agent-context/lib/index.md` and any files the router points to for the relevant area
-- Read `agent-context/lib/style-guide.md` before updating any comments or docs
-- Read `agent-context/lib/developer-guide.md` before writing code
-- Run `go build ./...` and `go test ./...` before considering the task done
+Open current source for every finding.
 
-## Process
+- Confirmed: triage it.
+- Refuted or already handled: drop it and record why.
+- Uncertain: surface it. Do not dispatch a fix.
 
-### 1. Triage
+Default scope: accepted red and yellow findings. Fix a green only when it is trivial and in a file already being changed.
 
-Classify each finding from the review panel output:
+## Triage
 
-**Small blast radius** — Sonnet, concurrent:
-- Confined to a single file
-- No interface or contract changes
-- No knock-on effects in other packages
-- Examples: missing error handling, nit, stale comment, dead code
+| Class | Dispatch |
+|---|---|
+| One file, no contract change, no likely knock-on effects | Group by file. Delegate independently and concurrently. |
+| Cross-file or package change, interface or contract change, architectural judgment | Delegate one at a time with likely knock-on targets. |
 
-**Everything else** — Opus, sequential:
-- Crosses file or package boundaries
-- Interface, contract, or exported type changes
-- Knock-on effects likely
-- Requires architectural judgment
+Every implementation brief includes the finding, evidence, expected fix direction, relevant context files, and the surface-specific verification commands. Require source grounding for identifier claims.
 
-Group small findings by file. Each file gets one agent.
+## Integrate
 
-### 2. Sonnet agents (parallel)
+Read each completion report. Check its evidence, then run the appropriate final verification. Surface partial work and remaining choices.
 
-Spawn one agent per file in a single message. Provide the agent brief above.
+## Report
 
-### 3. Wait and assess
-
-Review outputs. Note unresolved findings.
-
-### 4. Opus agents (sequential)
-
-Spawn 1–2 agents, one at a time. Provide the agent brief, plus an enumeration of likely knock-on targets.
-
-### 5. Report
-
-What was fixed, what was skipped and why, and whether `go build ./...` and `go test ./...` pass.
+State what was fixed, refuted, uncertain, skipped, and verified.

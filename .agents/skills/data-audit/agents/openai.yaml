@@ -1,0 +1,4 @@
+interface:
+  display_name: "Audit Enrichment Data"
+  short_description: "Audit classification quality without writing data."
+  default_prompt: "Audit recent enrichment data for quality and drift."

@@ -1,156 +1,33 @@
 ---
 name: review-panel
-description: >
-  Runs a multi-agent review panel: parallel code reviewers plus a dedicated
-  comment drift checker. Aggregates findings with deduplication and severity
-  merging. Runs in a forked context so the active agent's context window stays
-  clean and reviewers have no bias from prior work. Use mid-session after
-  implementing a feature, or before opening a pull request.
-allowed-tools: Read, Glob, Grep, Bash, Agent
-argument-hint: "[file-path | plan-name] [reviewers:N] [model:opus|sonnet]"
+description: Run a source-grounded, multi-agent review panel with specialist lenses, a comment-drift pass, deduplication, and refutation. Use after implementation or before a pull request.
 ---
 
 # Review Panel
 
-Review panel coordinator, isolated from the implementing agent's context. Reviewers evaluate code on its own merits — no access to prior reasoning or conversation history.
+Review the diff through separate lenses. Do not review it yourself before delegation.
 
-Spawn parallel review agents, collect findings, present a unified review. Do not review code yourself.
+## Scope
 
-## Defaults
-
-- **Code reviewers:** 2 agents, Opus model
-- **Comment drift checker:** 1 agent, Sonnet model
-- **Total:** 3 agents in parallel
-
-Override with arguments:
-- `reviewers:3` — run 3 code review agents instead of 2
-- `model:sonnet` — use Sonnet for code reviewers instead of Opus
-
-Comment drift checker: always 1 Sonnet agent, unaffected by overrides.
-
-## Scope detection
-
-Determine review target from first argument (same rules as `/code-review`):
-
-- **Plan name:** all files touched by the plan's tasks
-- **File path:** that file and closely related files
-- **No argument:** uncommitted changes
-
-!`git diff --stat HEAD 2>/dev/null`
-!`git diff --stat --cached 2>/dev/null`
-!`ls agent-context/plans/in-progress/ agent-context/plans/done/ 2>/dev/null`
+Review a named plan, path, or uncommitted changes. Partition diffs above roughly 1,500 lines by package into slices of about 1,000–1,500 lines. Keep smaller diffs in one slice.
 
 ## Process
 
-### 1. Parse arguments
+1. Delegate a fast triage per slice. Identify flows, contract surfaces, subtle invariants, write paths, and exit flows.
+2. Run these independent lenses for every non-mechanical slice:
+   - Correctness tracer: execute one flow end-to-end across its producers and consumers.
+   - Contract verifier: compare migration, SQL, generated code, types, JSON, docs, and runtime behavior.
+   - Adversarial tester: construct grounded empty, NULL, cancellation, collision, and repeat-call cases.
+   - Data-integrity reviewer: run when the slice writes rows; check append-only, atomicity, provenance, and NULL semantics.
+   - Hygiene and drift reviewer: always run. Check basic code quality and comments in changed and adjacent code.
+3. Run up to three cross-slice seam traces when flows exit a slice.
+4. Dedupe findings. Keep the precise description, count agreement, and retain the higher severity.
+5. Refute every red and yellow code finding with an independent source pass. Keep a finding only when the refuter cannot disprove it. Comment-drift findings require a quote from current on-disk text instead.
 
-Extract from `$ARGUMENTS`:
-- The review target (plan name, file path, or empty for uncommitted changes)
-- `reviewers:N` — number of code review agents (default: 2)
-- `model:opus|sonnet` — model for code review agents (default: opus)
+## Hygiene and drift
 
-### 2. Spawn all agents in parallel
+Read `developer-guide.md` comment guidance and `style-guide.md`. Check stale file headers, behavior comments that no longer match code, missing why-comments for non-obvious decisions, orphan TODOs, comments that restate code, broken spec pointers, and adjacent comments naming contracts changed by the diff.
 
-Launch all agents simultaneously in a single message. No `isolation: "worktree"` needed — reviewers read code and report findings, they don't write files.
+## Report
 
-**Code review agents (N instances):**
-Use these instructions, plus the review target. Specified model (default: opus).
-
-> You are a code reviewer for a Go web service. Review for:
-> - **Correctness:** logic errors, nil dereferences, off-by-ones, missing error handling, incorrect SQL or HTTP behavior
-> - **Idiomatic Go:** proper error wrapping, context propagation, interface usage, goroutine safety, defer correctness
-> - **Security:** SQL injection, input validation at system boundaries, credential or secret exposure
-> - **Maintainability:** overly complex logic, misleading identifiers, unnecessary abstraction, dead code
-> - **Test coverage:** missing edge cases, assertions that don't verify observable behavior
->
-> Output: list of `{ file:line, severity (🔴/🟡/🟢), problem, fix }` items. "No findings" if clean. No praise.
-
-**Comment drift agent (1 instance, always Sonnet):**
-Comment drift instructions below, plus review target.
-
-### 3. Aggregate results
-
-Once all agents complete:
-
-**Deduplicate:** If multiple reviewers flag the same issue (same file, same concern), keep the most specific description and note how many reviewers caught it. Agreement across reviewers is strong signal.
-
-**Merge severity:** If reviewers disagree on severity for the same issue, use the higher severity. One reviewer seeing a 🔴 outweighs another seeing 🟡.
-
-**Combine comment drift findings** as a separate section — don't mix them into the code review findings.
-
-### 4. Present unified review
-
-```
-## Review Panel Summary
-
-**Panel:** N code reviewers (model) + 1 comment drift checker (sonnet)
-**Target:** [what was reviewed]
-**Verdict:** approve / request changes / needs discussion
-
-## Code Review Findings
-
-### 🔴 Must fix
-[Deduplicated findings, noting reviewer agreement where applicable]
-
-### 🟡 Should fix
-[...]
-
-### 🟢 Nits
-[...]
-
-## Comment Drift Findings
-
-### 🔴 Stale or misleading comments
-[Comments that would lead an agent astray]
-
-### 🟡 Comments that need updating
-[Comments weakened by the changes but not yet wrong]
-
-### 🟢 Suggested improvements
-[Opportunities to add context that would help future agents]
-
-## What's done well
-[Merged from all reviewers — deduplicated]
-```
-
-Omit empty severity categories. If the panel unanimously approves with no findings, say so clearly.
-
----
-
-## Comment Drift Checker Instructions
-
-Pass these instructions to the comment drift agent verbatim.
-
-```
-You are a **Comment Integrity Reviewer** for Market Scout. Comments are living documentation — agents read them to make decisions. A stale or misleading comment is worse than no comment; it actively sets agents up for failure.
-
-Read these files first:
-- `agent-context/lib/developer-guide.md` (Code Comments section)
-- `agent-context/lib/style-guide.md` (durable vs ephemeral content)
-
-Review changed files and adjacent code (importers, importees, shared subsystem boundaries).
-
-Check for:
-
-### In changed code:
-- **File headers that reference wrong context files** — does the header point to a context file that still governs this code?
-- **Comments describing behavior that the code no longer implements** — the code changed but the comment didn't
-- **New code missing "why" comments** — non-obvious decisions, ordering dependencies, architectural constraints that a future agent couldn't derive from the code alone
-- **Orphan TODOs** — `// TODO` without a follow-up reference or actionable context
-- **Comments restating code** — if the code is clear, the comment wastes context budget. If the code is unclear, improve the code.
-- **Spec pointers to nonexistent docs** — `See: context/lib/foo.md` where foo.md doesn't exist
-
-### In adjacent code:
-- **Comments that reference contracts changed by this diff** — e.g., "Renderer expects vertex format X" when the diff just changed that format
-- **File headers in adjacent modules whose responsibilities shifted** — did a subsystem boundary move?
-- **Cross-references between modules that are now stale** — "This is consumed by module Y" when module Y no longer does that
-
-### Output format:
-
-Use the same severity format (🔴/🟡/🟢) as the code review:
-- 🔴 **Stale or misleading** — would actively mislead an agent reading this code
-- 🟡 **Needs updating** — weakened by the changes but not yet wrong
-- 🟢 **Suggested improvement** — opportunity to add context that would help future agents
-
-For each finding: name the file, quote the comment, explain what's wrong, and suggest the fix.
-```
+Use `red`, `yellow`, and `green` severities. Keep comment drift separate from code findings. For every surviving finding, give `file:line`, lens, agreement count, problem, evidence, and proposed fix. List refuted findings separately with the citation. Any red requests changes; yellow-only needs discussion; otherwise approve.

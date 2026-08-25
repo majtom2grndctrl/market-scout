@@ -14,7 +14,7 @@ A drafting session may produce 0, 1, or N plans. Scope often shifts during plann
 
 ## Current plans
 
-!`ls agent-context/plans/drafts/ agent-context/plans/ready/ agent-context/plans/in-progress/ 2>/dev/null`
+List `agent-context/plans/drafts/`, `ready/`, and `in-progress/` before naming a new plan.
 
 ## Process
 
@@ -34,7 +34,7 @@ Read `agent-context/lib/style-guide.md` first. All spec prose follows it.
 
 Load relevant library files:
 
-!`ls agent-context/lib/`
+List `agent-context/lib/`, then read only the files relevant to the proposed work.
 
 Use subagents for exploration — codebase reading, pattern discovery, doc lookup. Target 80% confidence. Stop when you have enough to spec the work.
 
@@ -99,6 +99,8 @@ Unresolved items, risks, alternatives considered.
 
 **Plumbing rule.** Every "edit X to do Y" instruction must say how X gets access to what it needs. New side-tables need owners. New struct fields need writer call-sites. Function signature changes need their callers enumerated. Don't punt access plumbing to the implementer — the implementer has less context than the spec author.
 
+**Write tasks for the implementer's tier.** Follow `style-guide.md` §Task Instructions: one constraint per bullet with its reason attached, prohibitions in one Do-not list, and precedents in a Mirror/Don't-mirror table. Dense prose loses constraints under task pressure.
+
 ### 4. Acceptance criteria
 
 AC names observable behavior. Someone who didn't write the plan must be able to verify it without reading the implementation.
@@ -160,3 +162,4 @@ At promotion:
 1. Capture durable decisions in `agent-context/lib/` — new architectural constraints, subsystem contracts, pipeline topology. Agents working the plan find full context in the library, not in the plan document.
 2. `git mv agent-context/plans/drafts/<name> agent-context/plans/ready/<name>`
 3. Commit the move and the `agent-context/lib/` updates together.
+4. Run `review-implementability` before `orchestrate`.

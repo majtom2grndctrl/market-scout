@@ -1,0 +1,4 @@
+interface:
+  display_name: "Write Frontend Brief"
+  short_description: "Write a lightweight frontend build brief."
+  default_prompt: "Write a one-page brief for [frontend feature]."

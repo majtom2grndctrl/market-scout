@@ -1,41 +1,26 @@
 ---
 name: batch-enrich
-description: Run a stated batch-enrichment job through the Go command.
-argument-hint: "[count] [focus description] [--force]"
-allowed-tools: Bash
+description: Run one authorized Market Scout batch-enrichment job through the Codex-backed Go command. Use when the user asks to classify a stated number of job postings, optionally with a focus or `--force`.
 ---
 
 # Batch Enrich
 
-Run one authorized batch through `apps/tools/cmd/batch-enrich`.
-
-`cmd/batch-enrich` owns selection, classification, validation, retries,
-writeback, and reporting. Do not reproduce those contracts here.
+Run the established command. It owns selection, classification, boilerplate stripping, validation, retries, provenance, writeback, and reporting. Do not reimplement those contracts in the skill.
 
 ## Arguments
 
-Normalize `$ARGUMENTS` before dispatch:
+Parse the request as `<count> [focus] [--force]`.
 
-1. Split arguments into whitespace-delimited tokens.
-2. Remove every token exactly equal to `--force`, wherever it appears. Record
-   whether one or more were removed.
-3. If no tokens remain, use count `10` and an empty focus value.
-4. Otherwise, the first remaining token is the count. It must be decimal digits
-   representing a value greater than zero. Invalid, zero, or negative values
-   stop the run before dispatch.
-5. Join all remaining tokens after the count with one space. Pass that string as
-   one `--focus` value.
-
-`--force` is the only recognized control token. A token that merely contains
-that text is focus text or an invalid count, as determined above.
+- Remove exact `--force` tokens before parsing. A word containing `force` remains focus text.
+- Default to count `10` and an empty focus when count is absent.
+- Reject zero, negative, and non-numeric counts before dispatch.
+- Join remaining focus words into one `--focus` argument.
 
 ## Run
 
-Invoking this skill with arguments authorizes exactly the normalized batch. Do
-not ask for separate confirmation.
+The user's invocation authorizes exactly the normalized batch. Do not ask again.
 
-Set the shell working directory to `apps/tools/`. Build the command as an
-argument array so focus stays one argument:
+Run from `apps/tools/`:
 
 ```bash
 go run ./cmd/batch-enrich \
@@ -45,8 +30,10 @@ go run ./cmd/batch-enrich \
   --focus="$focus"
 ```
 
-Append `--force` only when normalization removed at least one exact force token.
+Append `--force` only when supplied. Surface the command's complete report on success. On failure, surface stdout and stderr, then stop.
 
-On success, surface the final `counts` from the command's stdout report and the
-full stdout report. On failure, surface the command's stderr and stdout, then
-stop.
+## Rules
+
+- Treat this as an operator action, never verification.
+- Do not use `--force` to re-verify code. It spends money and adds provenance history.
+- Do not replace the command with direct MCP writes or delegated classification agents.

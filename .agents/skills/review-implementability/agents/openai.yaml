@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review Implementability"
+  short_description: "Check whether a plan is executable task by task."
+  default_prompt: "Review [plan-name] for task-level implementability."

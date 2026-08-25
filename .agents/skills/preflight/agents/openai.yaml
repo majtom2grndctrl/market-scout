@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Preflight"
+  short_description: "Run applicable project quality gates."
+  default_prompt: "Run preflight for the current changes."

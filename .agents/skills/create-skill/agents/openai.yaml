@@ -1,0 +1,4 @@
+interface:
+  display_name: "Create Project Skill"
+  short_description: "Create a Codex skill for this project."
+  default_prompt: "Create a project skill for [workflow]."
