@@ -102,7 +102,18 @@
       "Skill(one-pager)",
       "Bash(xargs -I{} sh -c 'echo {}')",
       "Bash(xargs -I{} echo {})",
-      "Bash(sort -k2)"
+      "Bash(sort -k2)",
+      "Bash(grep -oE '`[A-Za-z_][A-Za-z0-9_./-]*`' agent-context/plans/drafts/web-data-layer/index.md)",
+      "Bash(grep *)",
+      "WebFetch(domain:registry.npmjs.org)",
+      "Bash(npm view *)",
+      "Bash(pnpm test:db)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__resize_page",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__emulate",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm test *)",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__new_page",
+      "mcp__plugin_chrome-devtools-mcp_chrome-devtools__close_page"
     ]
   },
   "enabledMcpjsonServers": [
