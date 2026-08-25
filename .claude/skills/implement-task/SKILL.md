@@ -20,11 +20,15 @@ Dispatched by `/orchestrate`? Your brief already inlines context and task — sk
 
 ### 1. Load context
 
-Read carefully:
-- `agent-context/lib/developer-guide.md` — conventions, constraints, coding standards
-- `agent-context/lib/testing-guide.md` — what to test, test patterns
+Read `agent-context/lib/index.md` first. Route from the surface this task touches to the guides that govern it, and load only those:
 
-Read `agent-context/lib/index.md`; use the router to load only the files this task needs.
+| Surface | Guides |
+|---|---|
+| `apps/tools/` | `developer-guide.md`, `testing-guide.md` |
+| `apps/web/` | `web-guide.md` — it names the few `developer-guide.md` sections that still apply |
+| Both | Both sets |
+
+Reading the other surface's guide is wasted context and invites its conventions into code they don't govern.
 
 Code-grounding rule: any claim about an identifier's shape or behavior comes from a file opened this session, not memory.
 
@@ -53,19 +57,24 @@ Before writing code:
 
 ### 5. Verify
 
-From `apps/tools/`:
-- `go build ./...` and `go vet ./...` — free, run freely
-- `go test ./<touched-package> -count=1` while iterating, then `go test ./...`
-- `gofmt -l .` — fix anything listed
+Run your surface's checks from `.claude/skills/preflight/SKILL.md` — §Tools gate or §Web gate. Those tables are the single definition of what proves code sound here; don't carry a command list in your head.
 
-Free tier only. Never run live-surface commands: `cmd/fetcher` hits live ATS APIs, `cmd/batch-enrich` spends money per posting. Those belong to the coordinator or the human (developer-guide §2, Cost map).
+While iterating, run the narrow fast check and skip the slow one. Before reporting, run the full set for your surface.
+
+| Surface | Fast loop | Slow, before reporting |
+|---|---|---|
+| `apps/tools/` | `go build ./...`, `go vet ./...`, `go test ./<touched-package> -count=1` | `go test ./...`, `gofmt -l .` |
+| `apps/web/` | `pnpm typecheck`, `pnpm test` | `pnpm build-storybook`, `pnpm build` |
+
+Free tier only. Never run live-surface commands: `cmd/fetcher` hits live ATS APIs, `cmd/batch-enrich` spends money per posting. Those belong to the coordinator or the human (developer-guide §2, Cost map). `apps/web` has no paid surface today; when the chat surface lands, model calls become one.
 
 ### 6. Report
 
 Return exactly this:
 - Each acceptance criterion with a status: met, not met, or deviated
-- Verbatim `go build ./...` and `go test ./...` output — not "tests pass"
+- Verbatim output of your surface's verify commands — not "tests pass". `go build` and `go test` on `tools`; `pnpm typecheck`, `pnpm test`, and `pnpm build-storybook` on `web`
 - **Deviations, guesses, and assumptions** — every departure from the task and every unverified assumption. An empty section asserts "everything I built was verified against source."
 - Files changed
+- **Web only — what a reviewer should look at:** the stories and routes your change added or altered. Name them; don't assess them. A component that compiles can still render a chart that lies, and judging that is the coordinator's or the user's job, not yours.
 
 Do not commit, push, or run `/preflight`. The caller handles integration.

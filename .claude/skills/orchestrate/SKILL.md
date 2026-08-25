@@ -21,17 +21,23 @@ Orchestrate a plan from `agent-context/plans/ready/`. Coordinate — don't produ
 
 ### 1. Load the plan
 
-Read these context library files first:
-- `agent-context/lib/index.md` — agent router, architectural principles
-- `agent-context/lib/developer-guide.md` — conventions, constraints, coding standards
-- `agent-context/lib/testing-guide.md` — what to test, test patterns
-
-Then read `agent-context/plans/ready/$ARGUMENTS/index.md`. If missing, list available plans and ask which to run.
+Read `agent-context/plans/ready/$ARGUMENTS/index.md`. If missing, list available plans and ask which to run.
 
 Understand:
 - Goal section (every agent needs this)
 - Each task's description and acceptance criteria
 - Sequencing: phases, concurrency, and dependencies
+- **Surface** — `tools`, `web`, or both. Use the plan's `Surface:` line when it has one; otherwise infer from the paths its tasks name.
+
+Then read `agent-context/lib/index.md` and route from the surface to the guides that govern it. Load only those:
+
+| Surface | Guides |
+|---|---|
+| `tools` | `developer-guide.md`, `testing-guide.md` |
+| `web` | `web-guide.md` — it names the few `developer-guide.md` sections that still apply |
+| Both | Both sets |
+
+A coordinator carrying the wrong surface's conventions pastes them into dispatch packets, and the implementer follows them.
 
 ### 2. Move to in-progress
 
@@ -51,9 +57,10 @@ For each phase in the sequencing section:
 **For each agent, provide:**
 1. The plan's **Goal** section
 2. The agent's **specific task** description, plus the plan's Acceptance criteria section (AC is plan-level; the templates define no per-task AC)
-3. The relevant `agent-context/lib/` slices **inlined** — route via `agent-context/lib/index.md`, paste the sections that govern the task's subsystems. Agents under task pressure skip "go read X" instructions; paths drift.
-4. The code-grounding rule: any claim about an identifier's shape or behavior comes from a file opened this session, not memory.
-5. §3 Examine dependencies through §6 Report from `.claude/skills/implement-task/SKILL.md`, pasted verbatim — that skill owns the implementer process. Its §1–§2 (context and task loading) are superseded by items 1–3 of this packet.
+3. The **surface** this task targets — `tools`, `web`, or both. It selects the guides in item 4 and the verify set the implementer runs. An implementer left to infer it from a file path will guess wrong on a task that touches one file outside its surface.
+4. The relevant `agent-context/lib/` slices **inlined** — route via `agent-context/lib/index.md`, paste the sections that govern the task's subsystems. Agents under task pressure skip "go read X" instructions; paths drift.
+5. The code-grounding rule: any claim about an identifier's shape or behavior comes from a file opened this session, not memory.
+6. §3 Examine dependencies through §6 Report from `.claude/skills/implement-task/SKILL.md`, pasted verbatim — that skill owns the implementer process. Its §1–§2 (context and task loading) are superseded by items 1–4 of this packet.
 
 This list is the dispatch contract. `/review-implementability` simulates it when reviewing specs; if the two drift, this list wins.
 
@@ -76,11 +83,11 @@ Between phases, check that prerequisites for the next phase are satisfied.
 ### 5. Complete
 
 When all phases are done:
-- Run `/preflight` — the coordinator's single full gate
+- Run `/preflight` — the coordinator's single full gate. It detects the surfaces the change touched and runs each one's checks.
 - Run a `/review-panel` on code edited in this session
 - Report review panel findings to user to discuss which feedback to act on
 - Run `/fix-findings` on the findings the user accepts
-- Name the two or three idiomatic Go choices this feature made that are worth the user's understanding — the project is a learning vehicle (project.md §Why it exists)
+- Name the two or three choices this feature made that are worth the user's understanding — idiomatic Go on `tools`, interaction and design-system decisions on `web`. The project is a learning vehicle (project.md §Why it exists)
 
 ### 6. Landing the plane
 
@@ -94,7 +101,7 @@ When the user says "land the plane":
 
 - **Agent fails a task:** Surface the error and acceptance criteria to the user. Ask whether to retry, skip, or abort.
 - **Merge conflict from concurrent agents:** Resolve if straightforward; escalate to user if the conflict involves architectural decisions.
-- **Preflight fails:** Fix if the issue is mechanical (formatting, simple staticcheck lint). Escalate if the fix requires design decisions.
+- **Preflight fails:** Fix if the issue is mechanical (formatting, a simple staticcheck lint, a moved import). Escalate if the fix requires design decisions.
 
 ### Principles
 
