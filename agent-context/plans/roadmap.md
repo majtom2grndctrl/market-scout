@@ -63,6 +63,22 @@ Goal: Web agent composes analyses from a small vocabulary — measure × groupin
 - [ ] `cooccurrence-measure`
   Add a co-occurrence measure. Pairwise overlap becomes composable: which skills appear together on a posting, which skills attach to a role. The grammar shapes one measure over one grouping; two terms from the same dimension are a relationship that shape cannot hold, so co-occurrence was deferred. Define the primitive, its symmetric-pair rows, and a denominator honest about the classified slice it reads. `measure-engine` already spans the plain case — a grouping filtered by another dimension, such as roles filtered by a skill — so this spec owns only the pairwise measure the current vocabulary cannot express. Unlocks the Skill Overlap seed composition. Composite (Company Profile) is the sibling deferred primitive; it stays a separate spec.
 
+#### Candidates — deferred from chart-primitives design
+
+Surfaced while designing `chart-primitives`. Each is a vocabulary or encoding extension that waits on its own spec; none blocks the demo chain.
+
+- [ ] `scatter-with-trend`
+  Add a `scatter` encoding for per-posting measures — raw points plus an optional quantile band (p25/median/p75) computed in the shaping layer as a reading aid, never a fitted model. Honest because every point is a real posting and the band only summarizes points shown. Gives `age`/`lifespan` a distribution form beyond the histogram. Needs an encoding-enum addition in the grammar; the band math stays chart-side because it is drawn, not narrated.
+
+- [ ] `survival-measure`
+  Add a survival measure — postings still open at day *t*, a real aggregate over fetch-run-aware absence, engine-computed as source of truth. In this market it plateaus on the persistent core rather than decaying to zero; the plateau is the finding. Distinct from `lifespan`: not derivable from the per-posting values, so it is a new measure, not a chart restyle.
+
+- [ ] `time-grain-modifier`
+  Add a `grain` modifier (`week | month`) on time groupings, engine-aggregated from the weekly source. Daily stays absent for cause — too few fetch days to render honestly. Gated on data volume: monthly over the current ~10-week window yields two or three points, so this earns its spec once the corpus spans a quarter or more.
+
+- [ ] `radial-share-encoding`
+  Add a hero radial encoding for `share` — a nested-donut form sizing each circle by its base-N as a confidence cue, so thin classified slices read as visually quiet. A glanceable companion, not the precision read: angle and arc are weaker channels than aligned length, so it pairs with `stacked_bar`/`table` for exact numbers. Needs an encoding-enum addition; the extreme seniority skew (senior vs. a handful of interns) means tiny categories need a minimum-size treatment or the chart hides its own headline.
+
 ### Milestone: Transport
 
 - [ ] `chat-transport-and-tool-parts`
