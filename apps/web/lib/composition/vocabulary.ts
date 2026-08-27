@@ -1,7 +1,6 @@
-// The vocabulary is closed on purpose. Compensation and geography are absent
-// rather than refused per question, so an unanswerable question is
-// uncomposable and the "no" comes for free — a compile error for us, and a
-// value the model's schema never offers it.
+// The vocabulary is closed on purpose. Compensation and raw geography are
+// absent; curated market is the supported location dimension. An unsupported
+// question is uncomposable, so the model's schema never offers it.
 
 export const MEASURES = ["count", "delta", "age", "lifespan", "rate", "share"] as const;
 export type Measure = (typeof MEASURES)[number];

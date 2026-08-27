@@ -16,6 +16,7 @@ Take your side, plus **Either side**. Skip the other.
 - **Tailwind classes, custom utilities, design tokens, `cn()` silently dropping a class** → `agent-context/lib/web-guide.md` §Styling
 - **Storybook stories — where they live, why the font decorator exists** → `agent-context/lib/web-guide.md` §Storybook
 - **Build, typecheck, and dev commands** → `agent-context/lib/web-guide.md` §Commands
+- **Web tests, route states, Storybook a11y, or DB view tests** → `agent-context/lib/web-testing-guide.md`
 - **Querying Postgres from the web app; what "currently open posting" means** → `agent-context/lib/project.md` §Settled architecture *(derived in SQL views, not per consumer)*
 - **Charts — which library, why every mark is hand-rendered** → `agent-context/lib/project.md` §Settled architecture *(d3 supplies scales and geometry; no chart component library)*
 - **Geography / `market` dimension, why location is curated not raw** → `agent-context/lib/project.md` §Settled architecture *(curated market dictionary; `unmapped` is an explicit value; no coverage denominator)*

@@ -307,7 +307,7 @@ market-scout/
 └── docker-compose.yml               # Postgres + pgvector
 ```
 
-The Next.js app layer lands at `apps/web/` later; see [`project.md` §Non-goals](./project.md).
+The Next.js app lives at `apps/web/`. Its setup and conventions are in [`web-guide.md`](./web-guide.md).
 
 ---
 

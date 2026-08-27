@@ -1,38 +1,34 @@
 # Testing Guide
 
-> **Read this when:** writing new tests, deciding what to test, or setting up test infrastructure.
+> **Read this when:** writing new tests, deciding what to test, or setting up test infrastructure under `apps/tools/`.
 > **Key invariant:** tests document market-scout-specific behavior and cross-boundary interactions — not language or framework basics.
-> **Related:** [Developer Guide](./developer-guide.md), [Project](./project.md) (architecture and ATS adapter contract)
+> **Related:** [Web Testing Guide](./web-testing-guide.md) · [Developer Guide](./developer-guide.md) · [Project](./project.md)
 
 ---
 
+This guide covers the Go application. Web tests have separate route, Storybook, and two-role database concerns; read [`web-testing-guide.md`](./web-testing-guide.md) for `apps/web/`. Both guides share the same priorities: test observable behavior, exercise real boundaries, and avoid testing framework internals.
+
 ## 1. Test Infrastructure
 
-Go tests use the standard `testing` package and live next to the code they exercise (`foo.go` ↔ `foo_test.go`, package `foo`). Cross-package integration tests use package `foo_test` (black-box) in the same directory. Web tests use Vitest under `apps/web/`: `*.test.ts` is DB-free, while `*.db.test.ts` runs only through `pnpm test:db`.
+Go tests use the standard `testing` package and live next to the code they exercise (`foo.go` ↔ `foo_test.go`, package `foo`). Cross-package integration tests use package `foo_test` (black-box) in the same directory.
 
 | Layer | Scope | Location |
-|-------|-------|----------|
+|---|---|---|
 | Unit | Pure logic, parsers, response decoding | Alongside source (`apps/tools/internal/ats/greenhouse_test.go`) |
 | Adapter HTTP | ATS adapter against `httptest.Server` with recorded fixtures | `apps/tools/internal/ats/*_test.go` |
 | DB integration | `sqlc` queries against a real Postgres (testcontainers-go or a shared dev container) | `apps/tools/internal/db/*_integration_test.go`, build tag `//go:build integration` |
 | End-to-end | `apps/tools/cmd/fetcher` run against fixture ATS server + real Postgres | `apps/tools/cmd/fetcher/*_e2e_test.go`, build tag `//go:build e2e` |
-| Web unit | DB-free module behavior | `apps/web/**/*.test.ts`, run with `pnpm test` |
-| Web DB integration | Read-model views through owner seed and read-only DSNs | `apps/web/**/*.db.test.ts`, run with `pnpm test:db` |
 
 Default `go test ./...` runs unit + adapter HTTP tests. Integration and E2E tests require their build tags (`go test -tags=integration ./...`) and a running Postgres.
 
-`pnpm test` never connects to Postgres. `pnpm test:db` skips when `DATABASE_URL` or `DATABASE_URL_RO` is unset; when both are present, it uses the owner DSN to commit fixtures and the read-only DSN to query them.
-
 Fixtures (recorded ATS JSON responses) live in `apps/tools/internal/ats/testdata/<adapter>/`. The `testdata/` directory name is recognized by the Go toolchain and excluded from build.
-
----
 
 ## 2. What to Test
 
 ### Priority targets
 
 | Category | Examples |
-|----------|----------|
+|---|---|
 | ATS adapter HTTP boundary | Real HTTP roundtrip against `httptest.Server`, pagination, rate-limit/retry behavior, non-200 handling |
 | ATS response parsing | Decoding recorded JSON fixtures into adapter types; missing fields, nullable fields, schema drift |
 | Snapshot write correctness | One fetch produces N rows in `posting_snapshots` with correct timestamp, fetch_id, and payload — never upserts existing rows |
@@ -44,13 +40,12 @@ Fixtures (recorded ATS JSON responses) live in `apps/tools/internal/ats/testdata
 ### Decision criteria
 
 Test it if **all** of these hold:
+
 - Market-scout-specific behavior (not a language feature or library API)
 - Crosses a boundary or shows how the system behaves at a seam (HTTP, DB, adapter interface)
 - Captures a real fetch/parse/store/query scenario or documents a workflow for future readers
 
 Skip it otherwise.
-
----
 
 ## 3. What Not to Test
 
@@ -59,8 +54,6 @@ Skip it otherwise.
 - HTTP client internals (`net/http` redirect handling, transport pooling)
 - SQL the database itself defines (don't test that `INSERT` inserts — test that the `INSERT` shape matches the snapshot model)
 - Logging output text. Test what gets written to the DB or returned to the caller, not what shows up in logs. Logs are observation, not contract.
-
----
 
 ## 4. Test Patterns
 
@@ -92,7 +85,7 @@ Use table-driven subtests (`t.Run`) when several inputs exercise the same behavi
 ### Stable test harnesses
 
 | Rule | Rationale |
-|------|-----------|
+|---|---|
 | Each integration test gets a fresh schema or transaction-wrapped DB | Cross-test row leakage produces flaky, order-dependent failures. |
 | Use `t.Cleanup` for teardown | Runs even on `t.Fatal`. Prefer over `defer` in helpers. |
 | Use `context.Context` with `t.Context()` (Go 1.24+) or a per-test `context.WithCancel` | Prevents goroutine leaks when a test fails mid-fetch. |
@@ -112,14 +105,12 @@ package db_test
 
 Place at the top of the file, before the package declaration, with a blank line after.
 
----
-
 ## 5. Test Organization
 
 Tests co-locate with source (`*_test.go`). Shared infrastructure:
 
 | Directory | Purpose |
-|-----------|---------|
+|---|---|
 | `apps/tools/internal/testutil/` | Reusable helpers (`NewTestDB`, fixture loaders, fake clock) |
 | `apps/tools/internal/ats/testdata/<adapter>/` | Recorded ATS JSON responses |
 | `apps/tools/internal/db/testdata/` | SQL seed scripts for integration tests |
@@ -127,8 +118,6 @@ Tests co-locate with source (`*_test.go`). Shared infrastructure:
 Test files are exempt from source file size guidance. Test suites are flat and linear — large is fine. A 600-line `_test.go` with 30 table cases is healthier than three files split by aesthetic.
 
 Helpers go in `apps/tools/internal/testutil/` only when reused across packages. Package-local helpers stay in `helpers_test.go` next to the tests that use them.
-
----
 
 ## 6. Running Tests
 
@@ -149,16 +138,6 @@ go vet ./...                               # Static checks (catches struct tag t
 ```
 
 `go test` caches results per package; pass `-count=1` to force re-run.
-
-From `apps/web/`:
-
-```bash
-pnpm test       # DB-free Vitest suite
-pnpm test:db    # Read-model view integration tests; needs both database DSNs
-pnpm typecheck  # Type gate; Vitest itself does not typecheck
-```
-
----
 
 ## 7. Non-Goals
 

@@ -36,8 +36,8 @@ Working today:
 
 Not built yet:
 
-- **Web UI** — the Next.js app is scaffolded with the design system in place, but
-  no product screens exist
+- **Web app** — shared shell, `/status` fetch-health screen, and `/postings`
+  listing. Analytical composition and chat workflows are still in progress.
 - **Scheduler** — the binaries are cron-ready; there's no scheduler bundled
 
 ## How it works
@@ -85,8 +85,8 @@ carry no description text, so they don't classify yet.
 
 ## Quickstart
 
-Requires Go 1.26+ (per `go.mod`) and Docker. The web app additionally needs Node
-and pnpm; the repo doesn't pin a Node version.
+Requires Go 1.26+ (per `go.mod`) and Docker. The web app additionally requires
+Node 26.7.0 and pnpm 11.21.0; `apps/web/package.json` pins both.
 
 ```bash
 git clone <your-fork-url> market-scout
@@ -104,6 +104,24 @@ go run ./cmd/fetcher                # one-shot fetch across seeded companies
 
 Go commands run from `apps/tools/`, not the repo root — the module root and a
 couple of path literals assume it. `docker compose` runs from the repo root.
+
+Web commands run from `apps/web/`. Install its lockfile exactly, then run the
+DB-free gate:
+
+```bash
+npm install --global pnpm@11.21.0
+cd apps/web
+pnpm install --frozen-lockfile
+pnpm preflight
+```
+
+The default web gate does not need database credentials. For a local web server
+that reads data, link the root environment file first:
+
+```bash
+ln -s ../../.env.local .env.local
+pnpm dev
+```
 
 Full setup, including the read-only role the MCP server requires, is in
 [`agent-context/lib/developer-guide.md`](agent-context/lib/developer-guide.md).
