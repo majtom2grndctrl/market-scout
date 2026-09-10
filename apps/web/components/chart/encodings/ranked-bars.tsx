@@ -34,7 +34,7 @@ function BarEndLabels({ context }: RankedBarsProps) {
   const { xScale, yScale } = context.scales;
 
   return (
-    <g className="fill-foreground text-xs">
+    <g className="fill-content-primary text-xs">
       {context.shaped.bars.map((bar) => {
         const y = yScale(bar.key);
         if (y == null) return null;

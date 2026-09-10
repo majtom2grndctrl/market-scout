@@ -56,7 +56,7 @@ type AssertNever<T extends never> = T;
 type UnroutedField = AssertNever<Exclude<keyof Composition, SlotName>>;
 
 const CONTROL =
-  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:bg-input/30";
+  "h-8 w-full rounded-lg border border-edge-strong bg-transparent px-2.5 text-sm outline-none transition-colors focus-visible:border-focus focus-visible:ring-3 focus-visible:ring-focus/50 aria-invalid:border-danger-solid aria-invalid:ring-3 aria-invalid:ring-danger-solid/20 dark:bg-surface-sunken/30";
 
 // Window and Limit are the only controls that can hold something no
 // `Composition` can: `1e` is neither a number nor a cleared field. The text is
@@ -133,10 +133,10 @@ export function CompositionInspector({
   const filters = draft.filter ?? [];
 
   return (
-    <div className="space-y-6 p-4 text-foreground sm:p-6">
+    <div className="space-y-6 p-4 text-content-primary sm:p-6">
       <header className="space-y-2">
         <h2 className="text-lg font-semibold tracking-tight">Composition Inspector</h2>
-        <p className="max-w-[65ch] text-sm text-muted-foreground">
+        <p className="max-w-[65ch] text-sm text-content-muted">
           Load a seed, change a slot, watch the verdict and the link move. Every
           control is the closed enum it edits, so an out-of-vocabulary value is
           not offered. Nothing here is computed — no rows, no chart.
@@ -144,7 +144,7 @@ export function CompositionInspector({
       </header>
 
       <div className="space-y-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        <span className="text-xs font-medium uppercase tracking-wider text-content-muted">
           Seeds
         </span>
         <div className="flex flex-wrap gap-2">
@@ -159,7 +159,7 @@ export function CompositionInspector({
             </Button>
           ))}
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-content-muted">
           Loading a seed replaces the draft. The highlighted seed is the one last
           loaded, not a claim the draft still matches it.
         </p>
@@ -217,7 +217,7 @@ export function CompositionInspector({
                   <input
                     id={`${ids.groupBy}-${grouping}`}
                     type="checkbox"
-                    className="size-4 accent-primary"
+                    className="size-4 accent-accent-solid"
                     checked={groupBy.includes(grouping)}
                     // The refusals that target this slot are about the set, not
                     // one box, so every box carries the signal the group does.
@@ -234,7 +234,7 @@ export function CompositionInspector({
                   {requiresDenominator(grouping) ? (
                     <span
                       aria-label="requires a denominator"
-                      className="text-muted-foreground"
+                      className="text-content-muted"
                     >
                       ✳
                     </span>
@@ -378,18 +378,18 @@ export function CompositionInspector({
         </div>
 
         <div className="space-y-4">
-          <section className="space-y-2 rounded-lg border bg-card p-4">
-            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <section className="space-y-2 rounded-lg border bg-surface-raised p-4">
+            <h3 className="text-xs font-medium uppercase tracking-wider text-content-muted">
               Link
             </h3>
             <code className="block break-all font-mono text-xs">{link}</code>
           </section>
 
-          <section className="space-y-3 rounded-lg border bg-card p-4">
-            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <section className="space-y-3 rounded-lg border bg-surface-raised p-4">
+            <h3 className="text-xs font-medium uppercase tracking-wider text-content-muted">
               Verdict
             </h3>
-            <p className={cn("text-sm font-medium", !parsed.ok && "text-destructive")}>
+            <p className={cn("text-sm font-medium", !parsed.ok && "text-danger-ink")}>
               {parsed.ok ? "Accepted" : "Rejected"}
             </p>
 
@@ -398,11 +398,11 @@ export function CompositionInspector({
             <IssueList issues={issues.filter((issue) => slotOf(issue) === undefined)} />
 
             <div className="space-y-1 text-sm">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <p className="text-xs font-medium uppercase tracking-wider text-content-muted">
                 Denominator
               </p>
               {denominator === null ? (
-                <p className="text-muted-foreground">
+                <p className="text-content-muted">
                   Unknown while rejected — coverage debt is marked ✳ per grouping above.
                 </p>
               ) : (
@@ -416,7 +416,7 @@ export function CompositionInspector({
 
             {parsed.ok ? (
               <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                <p className="text-xs font-medium uppercase tracking-wider text-content-muted">
                   Canonical form
                 </p>
                 <pre className="overflow-x-auto font-mono text-xs">
@@ -452,20 +452,20 @@ function Slot({
       {labelFor === undefined ? (
         <span
           id={headingId}
-          className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          className="text-xs font-medium uppercase tracking-wider text-content-muted"
         >
           {label}
         </span>
       ) : (
         <label
           htmlFor={labelFor}
-          className="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          className="text-xs font-medium uppercase tracking-wider text-content-muted"
         >
           {label}
         </label>
       )}
       {hint === undefined ? null : (
-        <span className="text-xs text-muted-foreground">{hint}</span>
+        <span className="text-xs text-content-muted">{hint}</span>
       )}
     </div>
   );
@@ -508,7 +508,7 @@ function IssueList({
         // collapses to the code "shape".
         <li
           key={`${index}:${issue.code}:${issue.path.join(".")}`}
-          className="text-xs text-destructive"
+          className="text-xs text-danger-ink"
         >
           {prefix === undefined ? null : <span>{prefix} · </span>}
           <span className="font-mono">{issue.code}</span> — {issue.message}

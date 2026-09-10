@@ -19,8 +19,8 @@ export function CoveragePill({ coverage, x = 0, y = 0, className }: CoveragePill
 
   return (
     <g className={cn(className)} transform={`translate(${x}, ${y})`}>
-      <rect width={width} height={24} rx={12} className="fill-muted" />
-      <text x={8} y={16} className="fill-muted-foreground text-xs">
+      <rect width={width} height={24} rx={12} className="fill-surface-sunken" />
+      <text x={8} y={16} className="fill-content-muted text-xs">
         {label}
       </text>
     </g>

@@ -16,7 +16,9 @@
     "start": "next start",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
-    "preflight": "pnpm typecheck && pnpm test && pnpm build-storybook && pnpm build"
+    "preflight": "pnpm theme:check && pnpm typecheck && pnpm test && pnpm build-storybook && pnpm build",
+    "theme:build": "node scripts/theme/generate.mjs",
+    "theme:check": "node scripts/theme/check.mjs && node scripts/theme/generate.mjs --check && node scripts/theme/verify-usage.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

@@ -37,7 +37,7 @@ export function AppSidebar() {
               </div>
               <div className="grid flex-1 text-left leading-tight">
                 <span className="truncate font-display font-semibold">Market Scout</span>
-                <span className="truncate text-xs text-muted-foreground">
+                <span className="truncate text-xs text-content-muted">
                   Job market intelligence
                 </span>
               </div>

@@ -18,8 +18,8 @@ export function Meter({
   const fraction = share(value, total);
 
   return (
-    <div className="rounded-lg border bg-card p-4 sm:p-5">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
+    <div className="rounded-lg border bg-surface-raised p-4 sm:p-5">
+      <dt className="text-sm text-content-muted">{label}</dt>
       <dd className="mt-2">
         <span className="text-3xl font-semibold tracking-tight">
           {percentLabel(fraction)}
@@ -29,14 +29,14 @@ export function Meter({
             just be noise. */}
         <div
           aria-hidden="true"
-          className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted"
+          className="mt-3 h-2 w-full overflow-hidden rounded-full bg-surface-sunken"
         >
           <div
-            className="h-full rounded-r-full bg-primary"
+            className="h-full rounded-r-full bg-accent-solid"
             style={{ width: `${fraction * 100}%` }}
           />
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 text-sm text-content-muted">
           {exactCount(value)} of {exactCount(total)} {noun}
         </p>
       </dd>

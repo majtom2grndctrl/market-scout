@@ -22,12 +22,12 @@ export function GapBand({ regions, xScale, y, height, className }: GapBandProps)
 
         return (
           <g key={`${region.start.toISOString()}-${region.end.toISOString()}`}>
-            <rect x={start} y={y} width={width} height={height} className="fill-muted" />
+            <rect x={start} y={y} width={width} height={height} className="fill-unavailable-subtle" />
             <text
               x={start + width / 2}
               y={y + 14}
               textAnchor="middle"
-              className="fill-muted-foreground text-xs"
+              className="fill-unavailable-ink text-xs"
             >
               gray marks a gap in collected data
             </text>

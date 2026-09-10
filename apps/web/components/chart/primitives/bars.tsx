@@ -20,7 +20,7 @@ export function Bars({ bars, xScale, yScale, className }: BarsProps) {
     <g className={cn(className)}>
       <defs>
         <pattern id={hatchId} width="6" height="6" patternUnits="userSpaceOnUse">
-          <path d="M-1,1 L1,-1 M0,6 L6,0 M5,7 L7,5" className="stroke-muted-foreground" />
+          <path d="M-1,1 L1,-1 M0,6 L6,0 M5,7 L7,5" className="stroke-unavailable-ink" />
         </pattern>
       </defs>
       {bars.map((bar) => {
@@ -39,7 +39,7 @@ export function Bars({ bars, xScale, yScale, className }: BarsProps) {
               y={y}
               width={8}
               height={yScale.bandwidth()}
-              className="fill-muted stroke-muted-foreground"
+              className="fill-unavailable-subtle stroke-unavailable-edge"
               fill={`url(#${hatchId})`}
             />
           );
@@ -53,8 +53,8 @@ export function Bars({ bars, xScale, yScale, className }: BarsProps) {
             width={width}
             height={yScale.bandwidth()}
             className={cn(
-              "stroke-background",
-              bar.variant === "unmapped" ? "fill-muted-foreground" : "fill-primary",
+              "stroke-surface-raised",
+              bar.variant === "unmapped" ? "fill-series-other" : "fill-series-1",
             )}
           />
         );

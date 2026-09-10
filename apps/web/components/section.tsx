@@ -7,7 +7,7 @@ export function Section({
 }) {
   return (
     <section className="space-y-3">
-      <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <h2 className="text-xs font-medium uppercase tracking-wider text-content-muted">
         {title}
       </h2>
       {children}

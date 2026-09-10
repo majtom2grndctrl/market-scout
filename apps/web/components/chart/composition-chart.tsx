@@ -367,9 +367,8 @@ function stackedScales(
   const yScale = scaleLinear()
     .domain([0, positiveDomain(cells.map((cell) => cell.y1))])
     .range([geometry.plot.height, 0]);
-  const colorScale = scaleOrdinal<string, string>()
-    .domain(orderedKeys(cells.map((cell) => cell.series)))
-    .range(["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"]);
+  const seriesKeys = orderedKeys(cells.map((cell) => cell.series));
+  const colorScale = scaleOrdinal<string, string>().domain(seriesKeys).range(seriesPalette(seriesKeys.length));
 
   return {
     scales: { kind: "stacked" as const, xScale, yScale, colorScale },
@@ -378,6 +377,18 @@ function stackedScales(
       y: linearAxis(yScale, geometry.plot.height, reflow),
     },
   };
+}
+
+/**
+ * Categorical slots are assigned in fixed order and never cycled. d3's ordinal
+ * scale wraps a short range, which would repaint a ninth series as series 1 and
+ * read as the same entity; everything past slot 8 takes the explicit overflow
+ * colour instead.
+ */
+function seriesPalette(count: number): readonly string[] {
+  return Array.from({ length: count }, (_, index) =>
+    index < 8 ? `var(--series-${index + 1})` : "var(--series-other)",
+  );
 }
 
 function temporalScales(
@@ -714,7 +725,7 @@ function ReflowAxis({
   }
 
   return (
-    <g className="stroke-muted-foreground fill-muted-foreground text-xs">
+    <g className="stroke-content-muted fill-content-muted text-xs">
       <line x1={0} x2={axis.length} y1={0} y2={0} />
       {axis.ticks.map((tick) => {
         const position = axis.scale(tick.value);

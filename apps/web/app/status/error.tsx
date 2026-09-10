@@ -17,7 +17,7 @@ export default function StatusError({
     <div className="mx-auto w-full max-w-wide space-y-4 px-4 py-8 sm:px-6 lg:px-8">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Status</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-content-muted">
           The read model is unreachable. No figures below could be collected.
         </p>
       </header>

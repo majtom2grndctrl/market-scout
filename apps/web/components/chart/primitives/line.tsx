@@ -24,10 +24,10 @@ export function Line({ segments, xScale, yScale, className }: LineProps) {
         const point = segment[0];
 
         if (segment.length === 1 && point != null) {
-          return <circle key={key} cx={xScale(point.x)} cy={yScale(point.y)} r={4} className="fill-primary" />;
+          return <circle key={key} cx={xScale(point.x)} cy={yScale(point.y)} r={4} className="fill-series-1" />;
         }
 
-        return <path key={key} d={pathFor(segment) ?? undefined} className="fill-none stroke-primary stroke-2" />;
+        return <path key={key} d={pathFor(segment) ?? undefined} className="fill-none stroke-series-1 stroke-2" />;
       })}
     </g>
   );

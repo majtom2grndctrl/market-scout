@@ -21,7 +21,7 @@ export function StackedBars({ cells, xScale, yScale, colorScale, className }: St
     <g className={cn(className)}>
       <defs>
         <pattern id={hatchId} width="6" height="6" patternUnits="userSpaceOnUse">
-          <path d="M-1,1 L1,-1 M0,6 L6,0 M5,7 L7,5" className="stroke-muted-foreground" />
+          <path d="M-1,1 L1,-1 M0,6 L6,0 M5,7 L7,5" className="stroke-unavailable-ink" />
         </pattern>
       </defs>
       {cells.map((cell, index) => {
@@ -36,7 +36,7 @@ export function StackedBars({ cells, xScale, yScale, colorScale, className }: St
               y={baseline - 8}
               width={xScale.bandwidth()}
               height={8}
-              className="fill-muted stroke-muted-foreground"
+              className="fill-unavailable-subtle stroke-unavailable-edge"
               fill={`url(#${hatchId})`}
             />
           );
@@ -53,7 +53,7 @@ export function StackedBars({ cells, xScale, yScale, colorScale, className }: St
             width={xScale.bandwidth()}
             height={Math.abs(y1 - y0)}
             fill={colorScale(cell.series)}
-            className="stroke-background"
+            className="stroke-surface-raised"
           />
         );
       })}

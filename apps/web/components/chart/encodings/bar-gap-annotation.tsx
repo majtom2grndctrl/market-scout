@@ -8,7 +8,7 @@ export function BarGapAnnotation({ hasGap }: BarGapAnnotationProps) {
   if (!hasGap) return null;
 
   return (
-    <text x={0} y={-8} className="fill-muted-foreground text-xs">
+    <text x={0} y={-8} className="fill-unavailable-ink text-xs">
       gray marks a gap in collected data
     </text>
   );

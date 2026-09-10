@@ -23,7 +23,7 @@ export function SeriesGapMarker({ regions, xScale, className }: SeriesGapMarkerP
             aria-label={`Gap in collected data for ${region.label}`}
           >
             <title>Gap in collected data for {region.label}</title>
-            <line x1={start} x2={end} y1={3} y2={3} className="stroke-muted-foreground stroke-2" />
+            <line x1={start} x2={end} y1={3} y2={3} className="stroke-unavailable-ink stroke-2" />
           </g>
         );
       })}

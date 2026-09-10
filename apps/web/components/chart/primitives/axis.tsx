@@ -29,7 +29,7 @@ export function Axis({
   className,
 }: AxisProps) {
   return (
-    <g className={cn("stroke-muted-foreground fill-muted-foreground text-xs", className)}>
+    <g className={cn("stroke-content-muted fill-content-muted text-xs", className)}>
       {orientation === "bottom" ? (
         <line x1={0} x2={length} y1={0} y2={0} />
       ) : (

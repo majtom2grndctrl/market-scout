@@ -62,7 +62,7 @@ function HistogramPanelMark({
   return (
     <g transform={`translate(${frame.x}, ${frame.y})`}>
       {panel.group === "" ? null : (
-        <text x={0} y={-titleOffset} className="fill-foreground text-xs font-medium">
+        <text x={0} y={-titleOffset} className="fill-content-primary text-xs font-medium">
           {panel.group}
         </text>
       )}
@@ -100,7 +100,7 @@ function HistogramBar({
       y={y}
       width={xScale.bandwidth()}
       height={Math.max(0, height - y)}
-      className={bin.isZeroDay ? "fill-chart-2 stroke-background" : "fill-primary stroke-background"}
+      className={bin.isZeroDay ? "fill-series-2 stroke-surface-raised" : "fill-series-1 stroke-surface-raised"}
     />
   );
 }
@@ -115,7 +115,7 @@ function HistogramEdgeLabels({
   readonly y: number;
 }) {
   return (
-    <g className="fill-muted-foreground text-xs">
+    <g className="fill-content-muted text-xs">
       {bins.map((bin) => {
         const x = xScale(histogramBinKey(bin));
         if (x == null) return null;

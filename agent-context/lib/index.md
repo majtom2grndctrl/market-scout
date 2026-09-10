@@ -14,6 +14,8 @@ Take your side, plus **Either side**. Skip the other.
 
 - **Anything under `apps/web/`** → `agent-context/lib/web-guide.md` *(names which `developer-guide.md` sections still apply)*
 - **Tailwind classes, custom utilities, design tokens, `cn()` silently dropping a class** → `agent-context/lib/web-guide.md` §Styling
+- **Colour tokens — which family to reach for, why trend is not status, series slot order** → `agent-context/lib/web-guide.md` §Colour
+- **Changing a colour, adding a token, `shadcn add` output that renders unstyled** → `agent-context/lib/web-guide.md` §Colour *(`app/theme.css` is generated; edit `scripts/theme/tokens.mjs`)*
 - **Storybook stories — where they live, why the font decorator exists** → `agent-context/lib/web-guide.md` §Storybook
 - **Build, typecheck, and dev commands** → `agent-context/lib/web-guide.md` §Commands
 - **Web tests, route states, Storybook a11y, or DB view tests** → `agent-context/lib/web-testing-guide.md`
@@ -41,7 +43,7 @@ Take your side, plus **Either side**. Skip the other.
 - **Project purpose, goals, audience** → `agent-context/lib/project.md`
 - **Repo layout (`apps/`, `research/`)** → `agent-context/lib/project.md` §Repo layout
 - **Settled architecture decisions** → `agent-context/lib/project.md` §Settled architecture
-- **Generated files — never hand-edit** → `agent-context/lib/developer-guide.md` §5.8 *(sqlc)*
+- **Generated files — never hand-edit** → `agent-context/lib/developer-guide.md` §5.8 *(sqlc)* · `agent-context/lib/web-guide.md` §Colour *(`apps/web/app/theme.css`)*
 - **When to skip the plan pipeline** → `agent-context/lib/developer-guide.md` §1.5 *(the light lane)*
 - **Writing / editing `agent-context/` files** → `agent-context/lib/style-guide.md`
 - **What's deferred / out of scope** → `agent-context/lib/project.md` §Non-goals
@@ -59,5 +61,6 @@ Take your side, plus **Either side**. Skip the other.
 | Storage model | Append-only snapshots | Every fetch writes timestamped rows. Never upsert. Load-bearing for trend analysis. |
 | App layer | Next.js Server Components → Postgres direct | No separate Go API server. `postgres` on the read-only DSN. Route handlers reserved for streaming. |
 | Charts | Hand-rendered SVG on d3 modules | d3 supplies scales and path geometry. No chart component library; marks are app-owned so charts inherit design tokens. |
+| Colour | Generated semantic tokens, `apps/web/app/theme.css` | Nine families over one calibrated OKLCH palette. Trend (blue/orange) is deliberately separate from status (green/amber/red): a falling posting count is not a failure. Accent is achromatic so hue stays reserved for data. |
 | Read model | SQL views in numbered migrations | "Open posting" and other derived state defined once in SQL, read by both the web app and the agent. |
 | ATS adapters | Interface in `apps/tools/cmd/fetcher`; implementations in `apps/tools/internal/ats/` | All adapters implement the same `FetchPostings` contract. |

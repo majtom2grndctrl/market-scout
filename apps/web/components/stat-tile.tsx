@@ -11,8 +11,8 @@ export function StatTile({ label, value }: { label: string; value: number }) {
     // an equal-height tile: at that width "Companies tracked" wraps to two lines
     // and the others don't, so without this the three values sit on three
     // different baselines.
-    <div className="flex h-full flex-col justify-between rounded-lg border bg-card p-4 sm:p-5">
-      <dt className="text-xs text-muted-foreground sm:text-sm">{label}</dt>
+    <div className="flex h-full flex-col justify-between rounded-lg border bg-surface-raised p-4 sm:p-5">
+      <dt className="text-xs text-content-muted sm:text-sm">{label}</dt>
       {/* Proportional figures, not tabular-nums — these sit apart, not in a
           column, and equal-width digits read loose at this size. */}
       <dd

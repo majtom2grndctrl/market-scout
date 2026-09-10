@@ -21,7 +21,7 @@ export function DivergingBars({ context }: DivergingBarsProps) {
   return (
     <>
       <BarGapAnnotation hasGap={bars.some((bar) => bar.variant === "no-data")} />
-      <line x1={zero} x2={zero} y1={0} y2={context.geometry.plot.height} className="stroke-muted-foreground" />
+      <line x1={zero} x2={zero} y1={0} y2={context.geometry.plot.height} className="stroke-edge-strong" />
       {bars.map((bar) => (
         <Bars
           key={bar.key}
@@ -44,7 +44,7 @@ function DivergingEndLabels({ context }: DivergingBarsProps) {
   const { xScale, yScale } = context.scales;
 
   return (
-    <g className="fill-foreground text-xs">
+    <g className="fill-content-primary text-xs">
       {context.shaped.bars.map((bar) => {
         const y = yScale(bar.key);
         if (y == null) return null;
@@ -72,8 +72,8 @@ function barColorClass(value: number, variant: "normal" | "unmapped" | "no-data"
 
   // Bars deliberately owns the rect geometry and variant treatment. The
   // encoding supplies only the sign color, at a more-specific descendant rule.
-  const signColor = value < 0 ? "[&_rect]:fill-destructive" : "[&_rect]:fill-primary";
-  return variant === "unmapped" ? `${signColor} [&_rect]:stroke-muted-foreground [&_rect]:stroke-2` : signColor;
+  const signColor = value < 0 ? "[&_rect]:fill-trend-down-solid" : "[&_rect]:fill-trend-up-solid";
+  return variant === "unmapped" ? `${signColor} [&_rect]:stroke-edge-strong [&_rect]:stroke-2` : signColor;
 }
 
 function formatSignedValue(value: number): string {

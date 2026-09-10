@@ -27,13 +27,13 @@ function HealthRow({
 }) {
   return (
     <div className="grid gap-x-6 py-3 first:pt-0 last:pb-0 sm:grid-cols-[12rem_1fr] sm:items-baseline">
-      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dt className="text-sm text-content-muted">{label}</dt>
       <dd className="mt-1 sm:mt-0">
         <span className="text-base font-semibold">{value}</span>
         {detail ? (
           // Below the figure on mobile, beside it once there is room — the
           // figure keeps the same left edge either way.
-          <span className="mt-0.5 block text-sm text-muted-foreground sm:mt-0 sm:ml-3 sm:inline">
+          <span className="mt-0.5 block text-sm text-content-muted sm:mt-0 sm:ml-3 sm:inline">
             {detail}
           </span>
         ) : null}
@@ -60,7 +60,7 @@ export default async function StatusPage() {
     <div className="mx-auto w-full max-w-wide space-y-10 px-4 py-8 sm:px-6 lg:px-8">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Status</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-content-muted">
           What the system holds, and whether it is still collecting.
         </p>
       </header>
@@ -93,7 +93,7 @@ export default async function StatusPage() {
       {/* Four facts, no verdict. Nothing in the data says what error rate counts
           as bad, so the page reports and the reader judges. */}
       <Section title="Pipeline health">
-        <dl className="divide-y rounded-lg border bg-card p-4 sm:p-5">
+        <dl className="divide-y rounded-lg border bg-surface-raised p-4 sm:p-5">
           <HealthRow
             label="Run frequency"
             value={`${ratePerDay(runsPerDay)} runs/day`}
