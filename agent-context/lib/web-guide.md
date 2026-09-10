@@ -105,13 +105,15 @@ Use Storybook to exercise reusable interactive states. The a11y addon checks sto
 
 ## Commands
 
-Run every web command from `apps/web/`. The supported toolchain is Node 26.7.0 and pnpm 11.21.0, pinned in `package.json`. After installing Node 26.7.0, install that pnpm version and then install exactly what the lockfile declares:
+Run every web command from `apps/web/`. The supported toolchain is Node 26.7.0 and pnpm 11.21.0 or newer, declared as ranges in `package.json`. Install pnpm, then install exactly what the lockfile declares:
 
 ```bash
-npm install --global pnpm@11.21.0
+npm install --global pnpm
 cd apps/web
 pnpm install --frozen-lockfile
 ```
+
+`packageManager` names the pnpm version in use rather than pinning an older one. When it names a version below the one installed, pnpm self-installs that version as a native binary — and pnpm 11 ships no macOS x64 build, so on an Intel Mac every script fails before it runs. Raise `packageManager` when you upgrade pnpm.
 
 | Command | Notes |
 |---|---|
