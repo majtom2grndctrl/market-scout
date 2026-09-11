@@ -33,7 +33,7 @@ That key also failed on its own motivating cases:
 | Workday | `bulletFields[0]` (e.g. `R_105961`) | Already the URL identity; never fans out |
 | Workable | `code` | Listing-level only |
 | Lever, Ashby | `id` | 1:1 with posting |
-| Gem | `id` | Zero postings in corpus — unverified |
+| Gem | `id` | Never fetched — see below |
 
 Greenhouse `requisition_id` is unusable: NULL on 54 rows, and Stripe fills it with the literal `See Opening ID`.
 
@@ -47,7 +47,9 @@ Normalizing case and whitespace collapses 7,917 distinct titles to 7,784.
 
 ## Why not clean at ingest
 
-`raw_data` is populated on 100% of snapshots, so a write-time field normalization would be recoverable in principle. But the only current `raw_data` reader (`migrations/000019_workplace_type_derivation.up.sql`) reads other keys, so that recoverability is untested. A `STORED GENERATED` column reaches the same clean-column outcome while re-deriving across all history whenever the expression changes — no version drift, nothing to backfill twice.
+This mattered while the plan still carried a title-normalization step. It no longer does, but the reasoning governs any future proposal to clean at ingest, so it is recorded here.
+
+`raw_data` is populated on 100% of snapshots, so a write-time field normalization would be recoverable in principle. But the only current `raw_data` reader (`migrations/000019_workplace_type_derivation.up.sql`) reads other keys, so that recoverability is untested. Where a clean column is genuinely wanted, a `STORED GENERATED` column reaches the same outcome while re-deriving across all history whenever the expression changes — no version drift, nothing to backfill twice.
 
 The deeper argument is that a rule baked into ingest versions across time. Fix it in November and May–October carries v1 while November onward carries v2, putting a step change in the trend line that came from code. The classifier already demonstrates this cost: `prompt_version` cohorts, trust tiers, the `data-audit` skill, and migration `000025` all exist because derived data got written into rows and the rules changed.
 
@@ -56,3 +58,21 @@ Row collapsing is worse than field normalization either way: a field rewrite lea
 ## Neither number is headcount
 
 A Greenhouse job can carry multiple openings, and the public Job Board API does not expose that count. "Requisitions" means distinct jobs as the ATS identifies them, nothing more. The two counts also diverge only on Greenhouse today — Workday, Workable, Lever, and Ashby all key one posting per requisition — so collapsing to equal is expected, not a bug.
+
+## Requisition key stability
+
+Greenhouse `internal_job_id` changed on **0 of 4,992** postings observed across more than one snapshot — 0.00%. For contrast, `source_first_published_at` was rewritten mid-life on 51.5% of Workday postings and 9.5% of Ashby postings.
+
+So the architecture's distrust of ATS-reported fields is specific to timestamps that refresh on repost. An identity key is empirically a different class of signal.
+
+## Why repost detection cannot be measured yet
+
+Searching for repost signatures — a closed posting followed by a new `source_url` under the same requisition key — returns 889 pairs across 53 requisitions and 12 companies. **This measurement is confounded and should not be cited.** A fan-out group produces closed-then-reopened pairs whenever a territory closes and another opens, and Boulder Care's 49-posting requisition manufactures hundreds on its own.
+
+Separating repost from fan-out requires the requisition key this spec delivers. The question is sequenced after this work, not deferred by neglect.
+
+## Why template fan-out left scope
+
+The only company it explains is Snap! Raise, whose posting and requisition counts already agree (153 and 153). The pair discharges the honesty contract; a third number would narrate a gap that does not exist. The residual discomfort — commission-only territory reps counted beside engineering requisitions — is a `filter:function` question, not a duplication one.
+
+Dropping it also dropped `normalized_title`, which had no other consumer: title is not a member of `GROUPINGS` in `apps/web/lib/composition/vocabulary.ts`. The 709 stray-whitespace titles remain cosmetic until something groups on title.
