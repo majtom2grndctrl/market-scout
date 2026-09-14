@@ -20,6 +20,7 @@ Take your side, plus **Either side**. Skip the other.
 - **Build, typecheck, and dev commands** → `agent-context/lib/web-guide.md` §Commands
 - **Web tests, route states, Storybook a11y, or DB view tests** → `agent-context/lib/web-testing-guide.md`
 - **Querying Postgres from the web app; what "currently open posting" means** → `agent-context/lib/project.md` §Settled architecture *(derived in SQL views, not per consumer)*
+- **Posting count vs requisition count; why a measure omits a number instead of returning 0** → `agent-context/lib/project.md` §Settled architecture *(both counts are honest; absent is not zero)*
 - **Charts — which library, why every mark is hand-rendered** → `agent-context/lib/project.md` §Settled architecture *(d3 supplies scales and geometry; no chart component library)*
 - **Geography / `market` dimension, why location is curated not raw** → `agent-context/lib/project.md` §Settled architecture *(curated market dictionary; `unmapped` is an explicit value; no coverage denominator)*
 - **Chat surface, streaming responses, when a route handler is allowed** → `agent-context/lib/project.md` §Settled architecture *(streaming is the one exception; request-response stays in Server Components)*
@@ -31,6 +32,7 @@ Take your side, plus **Either side**. Skip the other.
 - **Test strategy, patterns, running tests** → `agent-context/lib/testing-guide.md` *(Go only)*
 - **Go fetcher (structure, conventions)** → `agent-context/lib/project.md` §Settled architecture
 - **ATS adapter (adding or modifying)** → `agent-context/lib/project.md` §ATS targets
+- **Which platforms distinguish a job from a job post; requisition identifiers** → `agent-context/lib/project.md` §ATS targets *(three of six; Gem boards are Greenhouse-shaped)*
 - **Database schema / migrations** → `agent-context/lib/project.md` §Settled architecture
 - **Snapshot storage model** → `agent-context/lib/project.md` §Settled architecture *(append-only, never upsert)*
 - **pgvector / semantic search** → `agent-context/lib/project.md` §The database as AI agent knowledge store
