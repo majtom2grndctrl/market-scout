@@ -51,7 +51,9 @@ Row collapsing is worse than field normalization either way: a field rewrite lea
 
 ## Neither number is headcount
 
-A Greenhouse job can carry multiple openings, and the public Job Board API does not expose that count. "Requisitions" means distinct jobs as the ATS identifies them, nothing more. The two counts also diverge only on Greenhouse today — Workday, Workable, Lever, and Ashby all key one posting per requisition — so collapsing to equal is expected, not a bug.
+A Greenhouse job can carry multiple openings, and the public Job Board API does not expose that count. "Requisitions" means distinct jobs as the ATS identifies them, nothing more.
+
+The two counts are equal for most companies, which is expected rather than a bug: Ashby, Lever, and Gem write no key at all, and even where a key exists most requisitions carry a single posting. Divergence is concentrated in Greenhouse — see *Fan-out value per platform* below for the per-platform split, which corrects an earlier claim here that only Greenhouse diverges.
 
 ## Requisition key stability
 
