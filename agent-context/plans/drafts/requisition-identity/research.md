@@ -99,3 +99,17 @@ Copying the older shape reproduces the bug 000019 fixed, and a fixture test stay
 `count` serves `open`, `closed`, and `all`. `posting_requisitions` derives from `open_postings`, so under the other two an inner join would drop rows and change `value` — the posting count itself — while a left join would report 0 requisitions as though measured. Closed postings would need a non-run-scoped resolution, which is exactly the derivation the run predicate above exists to avoid trusting. The cohorts carry no `requisitions` key instead.
 
 Observed fan-out on the open cohort, for fixture sizing: Anthropic 600 postings / 561 requisitions, Stripe 614/592, Scale AI 219/199, Glean 112/85, Boulder Care 19/8.
+
+## Fan-out value per platform
+
+Measured 2026-09-14 over current snapshots of all postings. Collapses = postings carrying a key, minus distinct `(company_id, key)` pairs.
+
+| Platform | Postings | Carry a key | Distinct keys | Collapses |
+|---|---|---|---|---|
+| Greenhouse | 5,581 | 100% | 5,109 | 452 |
+| Workday | 594 | 100% | 588 | 6 |
+| Workable | 56 | 5 (9%) | 3 | 2 |
+
+Greenhouse is roughly 98% of the value this spec delivers. Workday and Workable each still produce real collapses from honest platform keys, so both stay in — the cost is a struct field and a backfill branch each.
+
+Workable's keys live entirely on the `seeq` board: codes `2026-37`, `2026-92`, `SQ204` across 5 of its 51 postings, two sharing a code. The other Workable board (`vouched`) populates none. That makes `seeq` the fixture source for the non-empty half of the Workable extraction rule — the half that produces the collapse, and the half no existing fixture covers.

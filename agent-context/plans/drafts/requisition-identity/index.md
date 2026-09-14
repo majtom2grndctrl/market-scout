@@ -76,7 +76,8 @@ Add `RequisitionKey *string` to `domain.Posting`, populate it in the three adapt
 - Add `RequisitionKey: nullStr(p.RequisitionKey)` to `buildSnapshotParams` in `apps/tools/cmd/fetcher/main.go`, the sole construction site for `InsertPostingSnapshotParams` outside tests. Without it the change compiles clean and every row writes NULL — the adapters correct, the column present, the feature silently dead.
 - Add the column to `InsertPostingSnapshot` in `apps/tools/internal/db/queries/fetcher.sql`, then run `sqlc generate` from `apps/tools/`. No call site breaks: every construction of the params struct uses named fields.
 - Extend the `buildSnapshotParams` forwarding tests in `apps/tools/cmd/fetcher/main_test.go` to cover `RequisitionKey` nil and set. Those tests exist precisely so a new column cannot be silently dropped from the mapping.
-- Add an adapter fixture test per platform asserting the extracted key, following the table-driven tests in `apps/tools/internal/ats/*_test.go`. Greenhouse and Workday fixtures already carry usable values; the only Workable fixture carrying `code` has it as JSON-null, so either record a real fixture from a board that populates it or assert only the nil case and say so in the completion report. Do not hand-write fixture JSON — see `testing-guide.md` §4.
+- Add an adapter fixture test per platform asserting the extracted key, following the table-driven tests in `apps/tools/internal/ats/*_test.go`. Greenhouse and Workday fixtures already carry usable values.
+- Record a new Workable fixture from the `seeq` board, which populates `code` on 5 of 51 postings — two of them sharing a code, so the fixture exercises fan-out and not just presence. The existing Workable fixture has `code` as JSON-null and tests only the nil half; the non-empty half is the one that produces a collapse. Do not hand-write the JSON — see `testing-guide.md` §4.
 
 | Mirror | Don't mirror |
 |---|---|
@@ -158,8 +159,12 @@ Measure-engine field:
 
 ## Open questions
 
-- Whether `requisition_key` should later anchor repost detection. Greenhouse `internal_job_id` is stable across every multi-snapshot posting measured (0 of 4,992 changed), unlike the ATS timestamps the architecture distrusts. But repost and fan-out cannot be separated until this spec ships, and the first-observed-timestamp anchor is settled architecture — so this is a later discussion, with evidence, not a scope question here.
+None. Every fork is decided above.
+
+## Follow-on, once this ships
+
+- Whether `requisition_key` should anchor repost detection. Greenhouse `internal_job_id` is stable across every multi-snapshot posting measured — 0 of 4,992 changed — unlike the ATS timestamps the architecture distrusts. Repost and fan-out cannot be separated until this spec ships, and the first-observed-timestamp anchor is settled architecture, so this is a later discussion with evidence rather than a decision this spec waits on. Measurements in `research.md`.
 
 ## Known gaps outside this spec
 
-- Supio (Gem) has never been fetched: zero fetch runs since it was added 2026-08-14, no error rows, adapter registered 2026-08-15. Gem extraction therefore ships untested against live data. This is a fetch-pipeline bug, not a spec risk.
+- Supio (Gem) has never been fetched: zero fetch runs since it was added 2026-08-14, no error rows, adapter registered 2026-08-15. A fetch-pipeline bug, unrelated to this spec — Gem writes no `requisition_key` either way, so nothing here depends on it.
