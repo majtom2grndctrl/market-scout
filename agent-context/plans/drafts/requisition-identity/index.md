@@ -32,12 +32,12 @@ Each AC names how it is observed. Three are operator or review gates, not runnab
 - [ ] After backfill, every Greenhouse snapshot whose `raw_data` `internal_job_id` is a non-null number has a non-NULL `requisition_key`, and every snapshot where that key is JSON-null has `requisition_key` NULL. *(Operator gate: psql against both databases, result pasted into Task 1's completion report.)*
 - [ ] `posting_requisitions` returns exactly one row per open posting, with `requisition_key` non-NULL on every row. *(Integration-tagged Go test under `apps/tools/internal/db/`, run with `go test -tags=integration ./...`.)*
 - [ ] `posting_requisitions` sets `requisition_source` to `ats` when the platform supplied the key and to `posting` when the row fell back to posting identity. *(Same integration test.)*
-- [ ] For a fixture Ashby or Lever company, every `posting_requisitions` row reports `requisition_source` of `posting`. *(Same integration test.)*
+- [ ] For a fixture company whose postings carry no `requisition_key`, `{measure: count, cohort: open, groupBy: [company]}` returns `requisitions` equal to `value` — the fallback gives each posting its own requisition. *(`pnpm test:db`.)*
 - [ ] For a fixture Greenhouse company with N open postings whose current snapshots carry M distinct non-NULL `requisition_key` values, `{measure: count, cohort: open, groupBy: [company]}` returns `value` N and `requisitions` M. Seed N=5, M=3. *(`pnpm test:db`.)*
 - [ ] A `count` row over `cohort: open` carries a `requisitions` number alongside `value`; over `cohort: closed` and `cohort: all` it carries no `requisitions` key at all. *(`pnpm test:db`.)*
-- [ ] A week-grouped `count` row has no `requisitions` key at all — absent, not null, not 0. *(`pnpm test:db`.)*
+- [ ] `{measure: count, cohort: open, groupBy: ["week"]}` returns rows with no `requisitions` key at all — absent, not null, not 0. The open cohort is load-bearing: under `all` the cohort rule already suppresses it and the weekly path goes untested. *(`pnpm test:db`.)*
 - [ ] `requisition_key` appears in neither `GROUPINGS` nor `FILTER_DIMENSIONS` in `apps/web/lib/composition/vocabulary.ts`. *(Review gate: coordinator reads the file. Negative existence — nothing runnable proves it.)*
-- [ ] `migrate version` reports the same version with the dirty flag clear against both `market_scout` and `market_scout_test`. *(Operator gate: two shell invocations. This spec adds no routine, so the `executable_by_readonly` function-parity check in `developer-guide.md` §2 does not apply.)*
+- [ ] `migrate version` reports the same version with the dirty flag clear against both `market_scout` and `market_scout_test`. Both start at 25 with an unapplied `000026` in the tree, so the reported version moves by that migration plus this spec's two. *(Operator gate: two shell invocations. This spec adds no routine, so the `executable_by_readonly` function-parity check in `developer-guide.md` §2 does not apply.)*
 
 ## Tasks
 
@@ -53,6 +53,9 @@ Add `requisition_key text` to `posting_snapshots` in a numbered migration, then 
 - Do not sniff `raw_data` for the key instead of branching on `companies.ats`. Gem boards are Greenhouse-shaped and carry `internal_job_id` in their payload, so a sniffing backfill would populate Gem rows and break the NULL contract.
 - Expect `internal_job_id` to be present-but-JSON-null on 356 Greenhouse snapshots across 20 postings. Those must land NULL, which `->>` gives you and `->` followed by a cast would not.
 - Read `raw_data` in the backfill. It is a one-time repair over history, so it is the right source even though adapters own extraction going forward.
+- The backfill is an `UPDATE` over existing snapshot rows, and that is correct here. `developer-guide.md` §5.7's append-only rule governs the fetcher's write path, not a migration populating a newly added column.
+- Expect `sqlc diff` to report drift from the moment this migration lands, and leave it. `sqlc.yaml` reads `internal/db/migrations/` as its schema source, so generated models go stale until Task 2 regenerates in a later phase. Do not run `sqlc generate` and do not commit generated output.
+- Write the matching `.down.sql`, as every migration in the tree has one.
 - Add no index. `idx_posting_snapshots_posting_fetched` on `(job_posting_id, fetched_at DESC)` already serves the current-snapshot lateral the read-model view uses, and a second index on an 84,500-row append-only table would be write amplification with no reader.
 - Apply to both `market_scout` and `market_scout_test`. `migrate` reads `DATABASE_URL` only and lands in one database per run — see `developer-guide.md` §2.
 - Paste two results into the completion report: `migrate version` from each database, and the backfill coverage query proving the second acceptance criterion.
@@ -76,8 +79,11 @@ Add `RequisitionKey *string` to `domain.Posting`, populate it in the three adapt
 - Add `RequisitionKey: nullStr(p.RequisitionKey)` to `buildSnapshotParams` in `apps/tools/cmd/fetcher/main.go`, the sole construction site for `InsertPostingSnapshotParams` outside tests. Without it the change compiles clean and every row writes NULL — the adapters correct, the column present, the feature silently dead.
 - Add the column to `InsertPostingSnapshot` in `apps/tools/internal/db/queries/fetcher.sql`, then run `sqlc generate` from `apps/tools/`. No call site breaks: every construction of the params struct uses named fields.
 - Extend the `buildSnapshotParams` forwarding tests in `apps/tools/cmd/fetcher/main_test.go` to cover `RequisitionKey` nil and set. Those tests exist precisely so a new column cannot be silently dropped from the mapping.
-- Add an adapter fixture test per platform asserting the extracted key, following the table-driven tests in `apps/tools/internal/ats/*_test.go`. Greenhouse and Workday fixtures already carry usable values.
-- Record a new Workable fixture from the `seeq` board, which populates `code` on 5 of 51 postings — two of them sharing a code, so the fixture exercises fan-out and not just presence. The existing Workable fixture has `code` as JSON-null and tests only the nil half; the non-empty half is the one that produces a collapse. Do not hand-write the JSON — see `testing-guide.md` §4.
+- Add an adapter fixture test per platform asserting the extracted key, following the table-driven tests in `apps/tools/internal/ats/*_test.go`. Existing Greenhouse and Workday fixtures cover the populated case.
+- Two fixtures are missing and both need recording from a live board, which `developer-guide.md` §Cost map assigns to the coordinator or the human, not to a task agent. Ask for them rather than fetching them:
+  - A Greenhouse board with `internal_job_id` as JSON-null, to cover the nil half of the pointer branch. `amperity` qualifies — 6 postings, 102 snapshots, currently open.
+  - The Workable `seeq` board (`https://apply.workable.com/api/v1/widget/accounts/seeq`), which populates `code` on 5 of 51 postings across 3 distinct values — `2026-37` and `2026-92` on two postings each, `SQ204` on one. The existing Workable fixture has `code` as JSON-null and covers only the nil half.
+- Do not hand-write fixture JSON to fill either gap — see `testing-guide.md` §4. If a recording is unavailable when the task runs, assert the half the existing fixtures support and say which half is uncovered in the completion report.
 
 | Mirror | Don't mirror |
 |---|---|
@@ -86,7 +92,7 @@ Add `RequisitionKey *string` to `domain.Posting`, populate it in the three adapt
 Do not:
 - Derive `RequisitionKey` from title, URL, or description. Only the platform's own identifier counts.
 - Copy `SourceID` into `RequisitionKey` on any adapter. A key identical to posting identity carries no information and makes `requisition_source` a fiction.
-- Use Greenhouse `requisition_id`. It is NULL on 57 postings and one board fills it with the literal string `See Opening ID`; `internal_job_id` is present on 100%.
+- Use Greenhouse `requisition_id`. It is NULL on 57 postings and one board fills it with the literal string `See Opening ID`. `internal_job_id` is the usable key — a non-null number on 99.3% of snapshots, JSON-null on the rest.
 
 ### Task 3: Read-model view
 
@@ -106,7 +112,11 @@ Expose exactly these four columns, one row per open posting. Task 4 consumes the
 - Derive "currently open" from `open_postings`, not by re-deriving fetch-run logic. That derivation lives in one place by design.
 - Reach the current snapshot with the **run-scoped** lateral from `apps/tools/internal/db/migrations/000019_workplace_type_derivation.up.sql`: the lateral carries `AND posting_snapshots.fetch_run_id = open_postings.fetch_run_id` and orders by `fetched_at DESC, id DESC`. Do not copy the lateral in `000017_read_model_views.up.sql` — it predates that predicate, and without it a snapshot from a later failed run can supply the row. The bug is invisible in a green fixture test.
 - Mirror `workplace_type_source` in that same migration for the shape of `requisition_source`. Absent a source column, a fallback is indistinguishable from a real key.
-- Add an integration-tagged test under `apps/tools/internal/db/` covering one row per open posting, `requisition_key` non-NULL on every row, both `requisition_source` values, and an Ashby or Lever company reporting `posting` throughout. Run with `go test -tags=integration ./...`. This task owns those assertions; Task 4's tests cover the measure, not the view.
+- Add an integration-tagged test under `apps/tools/internal/db/` covering one row per open posting, `requisition_key` non-NULL on every row, and both `requisition_source` values. Run with `go test -tags=integration ./...`. This task owns those assertions; Task 4's tests cover the measure, not the view.
+- Create every fixture row inside a transaction that is rolled back — see `testing-guide.md` §4. The suites in that directory read `DATABASE_URL`, which is the **development** database, and a fixture company survives with a NOT NULL `ats`, which is exactly what the fetch list selects on. A leaked fixture becomes a permanent fetcher target; that failure is what the in-flight `test-data-isolation` work exists to stop.
+- Take `company_id` from `job_postings.company_id`, equivalent by construction to the `latest_successful_fetch_runs` path `000019` uses and one join shorter.
+- Expect `sqlc` to emit a `PostingRequisition` model from this view on the next regeneration, with `requisition_key` as `sql.NullString`. That is correct and needs no `sqlc.yaml` override. Do not run `sqlc generate` here — Task 2 owns it — and expect `sqlc diff` to stay red until then.
+- Write the matching `.down.sql`, as every migration in the tree has one.
 - Apply to both `market_scout` and `market_scout_test`. `migrate` reads `DATABASE_URL` only and lands in one database per run — see `developer-guide.md` §2.
 - Re-run `internal/db/setup/readonly_role.sql` against both databases after the migration. The script's `ALTER DEFAULT PRIVILEGES` already grants SELECT on a view created by the migration owner, so this reconfirms rather than repairs — a passing pre-check is expected, not evidence the grant is broken.
 
@@ -115,15 +125,19 @@ Expose exactly these four columns, one row per open posting. Task 4 consumes the
 Return a per-row requisition count for the `count` measure, joining `posting_requisitions` into the aggregate query.
 
 - Add `readonly requisitions?: number` to `MeasureRow` in `apps/web/lib/db/measure-engine.ts`. Optional, because `measure-distributions.ts` also produces `MeasureRow` for `age` and `lifespan` and will not set it.
-- Set the field by conditional spread, mirroring how `gap` is attached in that same file. A signal the row cannot supply is an absent key, never 0 and never null, so "0 real" stays distinct from "0 unknown."
+- Set the field by conditional spread, mirroring how `gap` is attached in `apps/web/lib/db/measure-aggregates.ts`. A signal the row cannot supply is an absent key, never 0 and never null, so "0 real" stays distinct from "0 unknown."
+- `posting_requisitions.requisition_key` is never NULL. A posting whose platform supplied no key falls back to `posting:<job_posting_id>`, so a company with no ATS keys reports `requisitions` equal to `value` — one requisition per posting, not one requisition total. Counting a NULL through instead would return 1 for the whole company, and the test would be green on the wrong number.
 - Emit `requisitions` only when `composition.measure === "count"` **and** `composition.cohort === "open"`. `posting_requisitions` covers open postings only: an inner join under another cohort would silently change `value` itself, and a left join would report a fabricated 0.
 - Join `posting_requisitions` on `job_posting_id` in `selectAggregateRows` in `apps/web/lib/db/measure-aggregates.ts`, threading the new number through the `grouped` and `selected` CTEs and the outer projection, and widening the `AggregateSqlRow` interface. Count distinct over `(company_id, requisition_key)`, not the key alone — requisition keys are board-scoped, so a bare distinct count can merge two companies.
+- Suppress the column in SQL, not only in the TypeScript spread. `selectAggregateRows(context, normalize)` serves `share` as well as `count`, so an unconditionally threaded column reaches share rows too — and no existing assertion would catch it, since the share test maps rows to `[keys.market, value]` alone.
 - Count over the same fanned rows `value` counts. `scope.joins` expands a posting into one row per taxonomy term when grouping by market, role, skill, specialization, or function, and `value` is `count(*)` over that expansion; a distinct count over the same rows keeps both numbers on one denominator.
 - Leave `requisitions` unset on every row from `selectWeeklyAggregateRows`, the path week-grouped `count` takes. `posting_requisitions` resolves against the current snapshot and cannot answer a historical week.
 - Do not extend `createMeasureScope` in `apps/web/lib/db/measure-scope.ts`. It builds the cohort and filter fragments shared by every measure, and a join valid for one measure and one cohort does not belong there.
-- Update the six existing `toEqual` assertions on `count` rows in `apps/web/lib/db/measure-engine.db.test.ts`. They are exact-match and break the moment a `requisitions` key appears; a red suite here is expected, not a regression you introduced. Do not switch them to `toMatchObject` — exact matching is what pins the absent-versus-zero contract.
-- Add `.db.test.ts` cases for a Greenhouse fan-out company, a NULL-key company, a `cohort: closed` row asserting `requisitions` is absent, and a week-grouped row asserting the same. Seed each as a fixture: these suites run against `market_scout_test`, which holds no production rows.
-- Confirm `apps/web/lib/chart/shaping.ts` and `apps/web/components/chart/composition-chart.tsx` still compile — both read `MeasureRow`/`MeasureResult`. The widening is optional so neither should break. Gate on `pnpm typecheck`; Vitest does not typecheck.
+- Update the six existing `toEqual` assertions on `count` rows in `apps/web/lib/db/measure-engine.db.test.ts` — lines 276, 281, 291, 572, 580, 588. They are exact-match and break the moment a `requisitions` key appears; a red suite here is expected, not a regression you introduced. Do not switch them to `toMatchObject` — exact matching is what pins the absent-versus-zero contract.
+- Line 276 is not a literal update. It compares against a live `SELECT count(*) FROM open_postings` inside a repeatable-read snapshot, so its requisitions expectation needs a companion `SELECT count(DISTINCT (company_id, requisition_key)) FROM posting_requisitions` issued inside the same `readOnly.begin` block.
+- Add `.db.test.ts` cases for a Greenhouse fan-out company, a company with no ATS keys, a `cohort: closed` row asserting `requisitions` is absent, and `{cohort: open, groupBy: ["week"]}` asserting the same. Seed each as a fixture: these suites run against `market_scout_test`, which holds no production rows.
+- Seed `requisition_key` on `posting_snapshots` — it is a column on the snapshot, and the view reads the run-scoped current snapshot, so the value must sit on the snapshot belonging to the latest successful fetch run.
+- Confirm the widened interface still compiles. `apps/web/lib/chart/shaping.ts` and `apps/web/components/chart/composition-chart.tsx` are the main readers of `MeasureRow`/`MeasureResult`, with `chart-gallery.stories.tsx` and `shaping.test.ts` also consuming them; an optional field should break none. Gate on `pnpm typecheck`, which covers `.storybook/` — Vitest does not typecheck.
 
 Do not:
 - Add `requisition_key` or `requisitions` to `GROUPINGS` or `FILTER_DIMENSIONS` in `apps/web/lib/composition/vocabulary.ts`. The vocabulary is closed by design, and a second count the agent could group on would let it pick whichever number tells the better story.
@@ -133,7 +147,9 @@ Do not:
 
 **Phase 1 (sequential):** Task 1 — migration `000027`. Every later task reads the new column.
 **Phase 2 (sequential):** Task 3 — migration `000028`. Kept apart from Task 2 because `sqlc.yaml` reads `internal/db/migrations/` as its schema source, so a half-written migration would poison Task 2's generated output.
-**Phase 3 (concurrent):** Task 2, Task 4 — Go adapters against TypeScript measure engine, no shared files. Task 2 runs `sqlc generate` here, after both migrations have landed.
+**Phase 3 (concurrent):** Task 2, Task 4 — Go adapters against TypeScript measure engine, no shared files. Task 2 runs `sqlc generate` here, after both migrations have landed, which is also what clears the `sqlc diff` drift Tasks 1 and 3 leave behind.
+
+Re-check the two migration numbers at orchestration time. `000026_serialize_mcp_save_enrichment` is in the tree untracked and unapplied — both databases report version 25 — so `migrate up` in Phase 1 lands that unrelated migration too, and the numbers below it are only free while that work stays where it is.
 
 ## Boundary inventory
 

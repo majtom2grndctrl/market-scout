@@ -115,3 +115,23 @@ Measured 2026-09-14 over current snapshots of all postings. Collapses = postings
 Greenhouse is roughly 98% of the value this spec delivers. Workday and Workable each still produce real collapses from honest platform keys, so both stay in — the cost is a struct field and a backfill branch each.
 
 Workable's keys live entirely on the `seeq` board: codes `2026-37`, `2026-92`, `SQ204` across 5 of its 51 postings, two sharing a code. The other Workable board (`vouched`) populates none. That makes `seeq` the fixture source for the non-empty half of the Workable extraction rule — the half that produces the collapse, and the half no existing fixture covers.
+
+## seeq requisition codes
+
+The Workable `seeq` board carries `code` on 5 of its 51 postings, across three distinct values — not one shared pair:
+
+| Code | Postings | Open now |
+|---|---|---|
+| `2026-37` | 2 | 2 |
+| `2026-92` | 2 | 2 |
+| `SQ204` | 1 | 0 |
+
+Two pairs and a singleton. A fixture recorded from this board exercises both the collapse and the singleton case.
+
+## Why the view test must roll back its fixtures
+
+The integration suites under `apps/tools/internal/db/` read `DATABASE_URL`, which is the development database — verified in `unsupported_companies_integration_test.go`, `careers_url_host_integration_test.go`, and `snapshot_integration_test.go`. A fixture company survives with a NOT NULL `ats`, and the fetch list selects on exactly that, so a leaked fixture becomes a permanent fetcher target. Transaction-wrapped fixtures are the guard, per `testing-guide.md` §4.
+
+## Recording fixtures is not a task-agent action
+
+`developer-guide.md` §Cost map: "Task agents run the free tier only. Live-surface commands belong to the coordinator or the human." Two fixtures this spec needs do not exist yet — a Greenhouse board with `internal_job_id` as JSON-null (`amperity` qualifies) and the Workable `seeq` board. Both must be recorded by the coordinator or the human and handed to the task, not fetched by the task agent.
