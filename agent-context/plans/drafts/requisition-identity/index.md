@@ -8,8 +8,8 @@ Count postings and requisitions side by side; collapse only what the ATS itself 
 
 ### In scope
 
-- `requisition_key` column on `posting_snapshots`, populated by every ATS adapter from the platform's own job identifier.
-- Backfill of `requisition_key` over existing snapshots from `raw_data`.
+- `requisition_key` column on `posting_snapshots`, populated by the three adapters whose platform distinguishes a job from a job post — Greenhouse, Workday, and Workable.
+- Backfill of `requisition_key` over existing snapshots from `raw_data`, for those same three platforms.
 - `posting_requisitions` read-model view mapping each posting to its requisition, falling back to posting identity when the platform exposes none.
 - `count` measure returns requisition count alongside posting count.
 
@@ -25,13 +25,14 @@ Count postings and requisitions side by side; collapse only what the ATS itself 
 
 ## Acceptance criteria
 
-- [ ] Every adapter populates `requisition_key` when its platform exposes a job identifier, and leaves it NULL when the platform does not.
+- [ ] Greenhouse, Workday, and Workable adapters populate `requisition_key` when the platform supplies the identifier; Ashby, Lever, and Gem leave it NULL.
 - [ ] After backfill, every Greenhouse snapshot carrying `internal_job_id` in `raw_data` has a non-NULL `requisition_key`.
 - [ ] `posting_requisitions` returns exactly one row per open posting.
 - [ ] `posting_requisitions` sets `requisition_source` to `ats` when the platform supplied the key and to `posting` when the row fell back to posting identity.
-- [ ] A company whose postings each carry a distinct requisition key reports equal posting and requisition counts.
-- [ ] Boulder Care's 49 postings sharing Greenhouse requisition `4458330008` report 49 postings and 1 requisition.
-- [ ] A `count` measure result carries a requisition count for each row alongside the posting count.
+- [ ] An Ashby, Lever, or Gem company reports `requisition_source` of `posting` on every row, and equal posting and requisition counts.
+- [ ] A Greenhouse company with two or more open postings sharing one `internal_job_id` reports a requisition count lower than its posting count, by exactly the number of surplus postings in each shared requisition.
+- [ ] A `count` measure row carries a `requisitions` number alongside `value`.
+- [ ] A week-grouped `count` row carries `requisitions` as null, never 0, so an absent number stays distinct from a real zero.
 - [ ] `requisition_key` appears in neither `GROUPINGS` nor `FILTER_DIMENSIONS` in `apps/web/lib/composition/vocabulary.ts`.
 - [ ] `migrate version` reports the same version with the dirty flag clear against both `market_scout` and `market_scout_test`.
 
@@ -41,8 +42,9 @@ Count postings and requisitions side by side; collapse only what the ATS itself 
 
 Add `requisition_key text` to `posting_snapshots` in a numbered migration, then backfill it from `raw_data` for existing rows.
 
-- Index `requisition_key` alongside `job_posting_id`. The read-model view groups on it per company.
-- Backfill each platform from its own key using the Boundary inventory below, joining through `companies.ats` to pick the path. Backfill is a one-time repair, so reading `raw_data` here is correct even though adapters own extraction going forward.
+- Add a composite index on `(job_posting_id, requisition_key)`. The read-model view resolves the current snapshot per posting, so posting id leads.
+- Backfill Greenhouse, Workday, and Workable rows only, from the wire keys in the Boundary inventory below, joining through `companies.ats` to pick the path. Ashby, Lever, and Gem expose no key distinct from posting identity, so their rows stay NULL.
+- Read `raw_data` in the backfill. It is a one-time repair over history, so it is the right source even though adapters own extraction going forward.
 - Apply to both `market_scout` and `market_scout_test`. `migrate` reads `DATABASE_URL` only and lands in one database per run — see `developer-guide.md` §2.
 
 Do not:
@@ -52,12 +54,16 @@ Do not:
 
 ### Task 2: Adapter extraction
 
-Add `RequisitionKey *string` to `domain.Posting`, populate it in all six adapters, and carry it through the snapshot write path.
+Add `RequisitionKey *string` to `domain.Posting`, populate it in the three adapters whose platform distinguishes a job from a job post, and carry it through the snapshot write path.
 
-- Extract from each platform's own identifier per the Boundary inventory. The ATS's job-versus-job-post distinction is the only authority on what counts as one job.
-- Leave `RequisitionKey` nil when the platform exposes no job identifier. A nil is an honest absence; the view falls back to posting identity.
-- Extract in the adapter, not from `raw_data` in SQL. Adapters own wire formats, and `000019` measured `raw_data` detoasting at 227ms against 33ms for a column.
+- Populate `RequisitionKey` in Greenhouse, Workday, and Workable only. Those three expose an identifier distinct from posting identity; the ATS's job-versus-job-post distinction is the only authority on what counts as one job.
+- Leave `RequisitionKey` nil in Ashby, Lever, and Gem. All three already assign the platform's `id` to `SourceID` (`ashby.go:149`, `lever.go:213`, `gem.go:154`), so a key copied from it would assert a distinction the platform does not make.
+- Add an `InternalJobID int64` field tagged `json:"internal_job_id"` to the Greenhouse job struct in `apps/tools/internal/ats/greenhouse.go`, and convert it to string. The adapter parses only `id` today, which is the job-post id already used for `SourceID`.
+- Add a `code` field to the Workable job struct in `apps/tools/internal/ats/workable.go`, which parses only `shortcode` today. Expect `requisition_key` NULL on roughly 83% of Workable rows — `code` is non-null on 86 of 498 snapshots.
+- Treat an absent, empty, or null platform identifier as nil rather than an empty string, so the view's fallback branch stays distinguishable from a real key. Workday's `bulletFields` may be an empty array.
+- Extract in the adapter, not from `raw_data` in SQL. Adapters own wire formats, and `apps/tools/internal/db/migrations/000019_workplace_type_derivation.up.sql` measured a 227.567ms median for the view that reads `raw_data`.
 - Add the column to `InsertPostingSnapshot` in `apps/tools/internal/db/queries/fetcher.sql`, then run `sqlc generate` from `apps/tools/`.
+- Add an adapter fixture test per platform asserting the extracted key, following the existing table-driven tests in `apps/tools/internal/ats/*_test.go`.
 
 | Mirror | Don't mirror |
 |---|---|
@@ -65,37 +71,63 @@ Add `RequisitionKey *string` to `domain.Posting`, populate it in all six adapter
 
 Do not:
 - Derive `RequisitionKey` from title, URL, or description. Only the platform's own identifier counts.
-- Use Greenhouse `requisition_id`. It is NULL on 54 rows and one board fills it with the literal string `See Opening ID`; `internal_job_id` is present on 100%.
+- Copy `SourceID` into `RequisitionKey` on any adapter. A key identical to posting identity carries no information and makes `requisition_source` a fiction.
+- Use Greenhouse `requisition_id`. It is NULL on 57 postings and one board fills it with the literal string `See Opening ID`; `internal_job_id` is present on 100%.
 
 ### Task 3: Read-model view
 
 Add `posting_requisitions` to the read model as a SQL view in a numbered migration.
 
 - Key the view on the current snapshot's `requisition_key`, falling back to a posting-identity value when NULL, so every open posting yields exactly one row and a NULL-key platform degrades to one requisition per posting.
-- Carry a `requisition_source` column naming which path produced the key, mirroring `workplace_type_source` in `000019`. Absent a source column, a fallback is indistinguishable from a real key.
-- Derive "currently open" from `open_postings`, not by re-deriving fetch-run logic. That derivation lives in one place by design.
+- Carry a `requisition_source` column naming which path produced the key, mirroring `workplace_type_source` in `apps/tools/internal/db/migrations/000019_workplace_type_derivation.up.sql`. Absent a source column, a fallback is indistinguishable from a real key.
+- Derive "currently open" from `open_postings`, not by re-deriving fetch-run logic. That derivation lives in one place by design. `open_postings` carries only `job_posting_id` and `fetch_run_id`, so reach the current snapshot through the run-scoped lateral join that `open_postings_display` uses in `apps/tools/internal/db/migrations/000017_read_model_views.up.sql`.
+- Apply to both `market_scout` and `market_scout_test`. `migrate` reads `DATABASE_URL` only and lands in one database per run — see `developer-guide.md` §2.
+- Re-run `internal/db/setup/readonly_role.sql` against both databases after the migration, so the new view is readable on the read-only DSN — see `developer-guide.md` §2.
 
 ### Task 4: Measure engine consumer
 
-Return a requisition count alongside the posting count for the `count` measure in `apps/web/lib/db/measure-aggregates.ts`.
+Return a per-row requisition count for the `count` measure, joining `posting_requisitions` into the aggregate query.
 
-- Add the requisition count to `count` only. `delta`, `rate`, and `share` also route through `runAggregateMeasure`, and a second number on a ratio has no defined meaning.
-- Mirror the existing `denominator` shape in `apps/web/lib/db/measure-engine.ts`, which already returns `classified` against `total` as a coverage pair. The same honesty contract covers fan-out.
-- Count distinct requisitions within each grouped row, so a per-company row reports that company's requisitions rather than a corpus-wide total.
-- Add a `.db.test.ts` case following `apps/web/lib/db/measure-engine.db.test.ts`.
+- Add `readonly requisitions?: number` to `MeasureRow` in `apps/web/lib/db/measure-engine.ts`. Optional, because `measure-distributions.ts` also produces `MeasureRow` for `age` and `lifespan` and will not set it.
+- Mirror the `gap` field's precedent in that same interface: a signal the row cannot supply is absent, never 0, so "0 real" stays distinct from "0 unknown."
+- Join `posting_requisitions` on `job_posting_id` against the cohort in `selectAggregateRows` in `apps/web/lib/db/measure-aggregates.ts`, and count distinct resolved keys within each grouped row, so a per-company row reports that company's requisitions.
+- Emit `requisitions` only when `composition.measure === "count"`. `selectAggregateRows(context, normalize)` serves `share` too, and a second number on a ratio has no defined meaning.
+- Leave `requisitions` unset on every row from `selectWeeklyAggregateRows`, the path week-grouped `count` takes. `posting_requisitions` resolves against the current snapshot and cannot answer a historical week.
+- Do not extend `createMeasureScope` in `apps/web/lib/db/measure-scope.ts`. It builds the cohort and filter fragments shared by every measure, and a `count`-only join does not belong there.
+- Check `apps/web/lib/chart/shaping.ts`, the one consumer outside the db layer that reads `MeasureRow`, still compiles against the widened interface.
+- Add a `.db.test.ts` case following `apps/web/lib/db/measure-engine.db.test.ts`, covering a Greenhouse fan-out company, a NULL-key company, and a week-grouped row asserting `requisitions` is absent. Seed each case as a fixture: these suites run against `market_scout_test`, which holds no production rows.
+
+Do not:
+- Add `requisition_key` or `requisitions` to `GROUPINGS` or `FILTER_DIMENSIONS` in `apps/web/lib/composition/vocabulary.ts`. The vocabulary is closed by design, and a second count the agent could group on would let it pick whichever number tells the better story.
+- Emit `requisitions` as 0 when the number is unavailable. Absent and zero mean different things.
 
 ## Sequencing
 
-**Phase 1 (sequential):** Task 1 — every later task reads the new column.
-**Phase 2 (concurrent):** Task 2, Task 3 — Task 2 touches Go adapters and sqlc output; Task 3 touches SQL views. Task 3 runs against Task 1's backfill, so it does not wait on Task 2.
-**Phase 3 (sequential):** Task 4 — consumes the `posting_requisitions` view from Task 3.
+**Phase 1 (sequential):** Task 1 — migration `000026`. Every later task reads the new column.
+**Phase 2 (sequential):** Task 3 — migration `000027`. Kept apart from Task 2 because `sqlc.yaml` reads `internal/db/migrations/` as its schema source, so a half-written migration would poison Task 2's generated output.
+**Phase 3 (concurrent):** Task 2, Task 4 — Go adapters against TypeScript measure engine, no shared files. Task 2 runs `sqlc generate` here, after both migrations have landed.
 
 ## Boundary inventory
 
+Snapshot column and its wire sources:
+
 | Name | Go struct field | ATS source key | SQL column |
 |---|---|---|---|
-| Requisition key | `RequisitionKey` | Greenhouse `internal_job_id`; Workday `bulletFields[0]`; Workable `code`; Lever `id`; Ashby `id`; Gem `id` | `requisition_key` |
-| Requisition source | — (derived in view) | — | `requisition_source` |
+| Requisition key | `RequisitionKey` | Greenhouse `internal_job_id`; Workday `bulletFields[0]`; Workable `code`. Ashby, Lever, and Gem supply none — nil. | `posting_snapshots.requisition_key` |
+
+Columns `posting_requisitions` exposes, pinned here because Task 3 and Task 4 run in different phases:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `job_posting_id` | bigint | Join key against the cohort. One row per open posting. |
+| `requisition_key` | text | Resolved key — the platform's, or the posting-identity fallback. Never NULL. |
+| `requisition_source` | text | `ats` or `posting`. |
+
+Measure-engine field:
+
+| Name | TypeScript field | JSON key | Source |
+|---|---|---|---|
+| Requisition count | `MeasureRow.requisitions?: number` | `"requisitions"` | `count(DISTINCT posting_requisitions.requisition_key)` |
 
 ## Rough sketch
 
