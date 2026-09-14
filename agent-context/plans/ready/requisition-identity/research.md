@@ -135,3 +135,13 @@ The integration suites under `apps/tools/internal/db/` read `DATABASE_URL`, whic
 ## Recording fixtures is not a task-agent action
 
 `developer-guide.md` §Cost map: "Task agents run the free tier only. Live-surface commands belong to the coordinator or the human." Two fixtures this spec needs do not exist yet — a Greenhouse board with `internal_job_id` as JSON-null (`amperity` qualifies) and the Workable `seeq` board. Both must be recorded by the coordinator or the human and handed to the task, not fetched by the task agent.
+
+## Recorded fixtures
+
+Captured from live boards on 2026-09-14 by the coordinator, per `developer-guide.md` §Cost map.
+
+`testdata/greenhouse/jobs_null_internal_job_id.json` — three Amperity jobs. Two carry a numeric `internal_job_id`; one carries JSON-null. The null row is a "Submit Your Application for Future Consideration" catch-all — a posting with no requisition behind it, which is why the field is null rather than missing. Amperity exposed exactly one such job at capture time and no two jobs shared a key.
+
+`testdata/workable/jobs_requisition_codes.json` — four Seeq jobs: one with `code` absent, two sharing `2026-37`, one carrying `2026-92`.
+
+The `SQ204` code recorded in the corpus was gone from the live board at capture time — that posting had closed. Two shared pairs remain, which is enough to exercise a collapse. The board carried 25 jobs, 4 of them coded.

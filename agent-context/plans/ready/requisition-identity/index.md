@@ -80,10 +80,10 @@ Add `RequisitionKey *string` to `domain.Posting`, populate it in the three adapt
 - Add the column to `InsertPostingSnapshot` in `apps/tools/internal/db/queries/fetcher.sql`, then run `sqlc generate` from `apps/tools/`. No call site breaks: every construction of the params struct uses named fields.
 - Extend the `buildSnapshotParams` forwarding tests in `apps/tools/cmd/fetcher/main_test.go` to cover `RequisitionKey` nil and set. Those tests exist precisely so a new column cannot be silently dropped from the mapping.
 - Add an adapter fixture test per platform asserting the extracted key, following the table-driven tests in `apps/tools/internal/ats/*_test.go`. Existing Greenhouse and Workday fixtures cover the populated case.
-- Two fixtures are missing and both need recording from a live board, which `developer-guide.md` §Cost map assigns to the coordinator or the human, not to a task agent. Ask for them rather than fetching them:
-  - A Greenhouse board with `internal_job_id` as JSON-null, to cover the nil half of the pointer branch. `amperity` qualifies — 6 postings, 102 snapshots, currently open.
-  - The Workable `seeq` board (`https://apply.workable.com/api/v1/widget/accounts/seeq`), which populates `code` on 5 of 51 postings across 3 distinct values — `2026-37` and `2026-92` on two postings each, `SQ204` on one. The existing Workable fixture has `code` as JSON-null and covers only the nil half.
-- Do not hand-write fixture JSON to fill either gap — see `testing-guide.md` §4. If a recording is unavailable when the task runs, assert the half the existing fixtures support and say which half is uncovered in the completion report.
+- Two recorded fixtures already cover the cases the existing testdata missed. Both were captured from live boards on 2026-09-14 and are committed:
+  - `testdata/greenhouse/jobs_null_internal_job_id.json` — three Amperity jobs, two carrying a numeric `internal_job_id` and one carrying JSON-null. The null row is a "Submit Your Application for Future Consideration" catch-all, which is why it has no requisition behind it. This is the fixture that guards the `*int64` branch.
+  - `testdata/workable/jobs_requisition_codes.json` — four Seeq jobs: one with `code` absent, two sharing `2026-37`, and one carrying `2026-92`. Covers the nil half, a collapse, and a singleton.
+- Do not record new fixtures or hand-write JSON. Live-surface commands belong to the coordinator per `developer-guide.md` §Cost map, and `testing-guide.md` §4 rules out fabricated payloads. If a case is genuinely uncovered, say so in the completion report rather than inventing data.
 
 | Mirror | Don't mirror |
 |---|---|

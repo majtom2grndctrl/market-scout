@@ -1,0 +1,122 @@
+{
+  "name": "Seeq",
+  "description": "<p>Seeq is a global leader in advanced analytics for process manufacturing industries. We’re transforming the way companies do business by harnessing the power of unused manufacturing data to generate faster insights and better business outcomes.<br><br>Seeq empowers manufacturers with advanced analytics to quickly gain insights from time series data to optimize business outcomes.<br><br>Seeq is a privately held virtual company with employees across the United States, Asia, Canada, Europe, and South America.</p>",
+  "jobs": [
+    {
+      "title": "AI Customer Insights Engineer",
+      "shortcode": "6F40FF632B",
+      "code": null,
+      "employment_type": "Full-time",
+      "telecommuting": true,
+      "department": "Customer Success",
+      "url": "https://apply.workable.com/j/6F40FF632B",
+      "shortlink": "https://apply.workable.com/j/6F40FF632B",
+      "application_url": "https://apply.workable.com/j/6F40FF632B/apply",
+      "published_on": "2026-08-19",
+      "created_at": "2026-03-28",
+      "country": "United States",
+      "city": "",
+      "state": "",
+      "education": "Bachelor's Degree",
+      "experience": "Associate",
+      "function": "Sales",
+      "industry": "Computer Software",
+      "locations": [
+        {
+          "country": "United States",
+          "countryCode": "US",
+          "city": "",
+          "region": null,
+          "hidden": false
+        }
+      ]
+    },
+    {
+      "title": "Senior Full Stack Software Engineer",
+      "shortcode": "763AE68666",
+      "code": "2026-37",
+      "employment_type": "Full-time",
+      "telecommuting": true,
+      "department": "Software Engineering",
+      "url": "https://apply.workable.com/j/763AE68666",
+      "shortlink": "https://apply.workable.com/j/763AE68666",
+      "application_url": "https://apply.workable.com/j/763AE68666/apply",
+      "published_on": "2026-09-10",
+      "created_at": "2026-07-09",
+      "country": "United States",
+      "city": "",
+      "state": "",
+      "education": null,
+      "experience": "Mid-Senior level",
+      "function": "Engineering",
+      "industry": "Computer Software",
+      "locations": [
+        {
+          "country": "United States",
+          "countryCode": "US",
+          "city": null,
+          "region": null,
+          "hidden": false
+        }
+      ]
+    },
+    {
+      "title": "Senior Full Stack Software Engineer",
+      "shortcode": "C2318392FE",
+      "code": "2026-37",
+      "employment_type": "Full-time",
+      "telecommuting": true,
+      "department": "Software Engineering",
+      "url": "https://apply.workable.com/j/C2318392FE",
+      "shortlink": "https://apply.workable.com/j/C2318392FE",
+      "application_url": "https://apply.workable.com/j/C2318392FE/apply",
+      "published_on": "2026-09-10",
+      "created_at": "2026-07-10",
+      "country": "Canada",
+      "city": "",
+      "state": "",
+      "education": null,
+      "experience": "Mid-Senior level",
+      "function": "Engineering",
+      "industry": "Computer Software",
+      "locations": [
+        {
+          "country": "Canada",
+          "countryCode": "CA",
+          "city": "",
+          "region": null,
+          "hidden": false
+        }
+      ]
+    },
+    {
+      "title": "Technical Account Manager",
+      "shortcode": "CA86062D7B",
+      "code": "2026-92",
+      "employment_type": "Full-time",
+      "telecommuting": true,
+      "department": "Software Engineering",
+      "url": "https://apply.workable.com/j/CA86062D7B",
+      "shortlink": "https://apply.workable.com/j/CA86062D7B",
+      "application_url": "https://apply.workable.com/j/CA86062D7B/apply",
+      "published_on": "2026-08-26",
+      "created_at": "2026-08-25",
+      "country": "United States",
+      "city": "",
+      "state": "",
+      "education": null,
+      "experience": "Mid-Senior level",
+      "function": "Engineering",
+      "industry": "Computer Software",
+      "locations": [
+        {
+          "country": "United States",
+          "countryCode": "US",
+          "city": "",
+          "region": null,
+          "hidden": false
+        }
+      ]
+    }
+  ]
+}

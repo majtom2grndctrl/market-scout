@@ -1,0 +1,144 @@
+{
+  "jobs": [
+    {
+      "absolute_url": "https://amperity.com/careers?gh_jid=7955072#openpositions",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "internal_job_id": 3453845,
+      "location": {
+        "name": "Argentina - Remote"
+      },
+      "metadata": null,
+      "id": 7955072,
+      "updated_at": "2026-09-10T11:39:16-04:00",
+      "requisition_id": "481",
+      "title": "Senior Software Development Engineer",
+      "company_name": "Amperity",
+      "first_published": "2026-07-02T17:10:10-04:00",
+      "language": "en",
+      "application_deadline": null,
+      "content": "&lt;h3&gt;&lt;strong&gt;About Amperity—Why This, Why Now&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;Most customer data is a lie by omission.&lt;/p&gt;\n&lt;p&gt;Every consumer brand wants to know its customers. Unfortunately, almost none actually do. Data is scattered across a dozen systems, half of it contradicts the other half, and &quot;insights&quot; teams are forced to act on incomplete guesses. We started &lt;a href=&quot;https://amperity.com/&quot; target=&quot;_blank&quot;&gt;Amperity&lt;/a&gt; ten years ago because that gap—between what a brand believes about its customers and what is true—is the most expensive problem in the industry, and nobody had solved it.&lt;/p&gt;\n&lt;p&gt;With a lot of hard work and a little bit of luck, we did. Our patented identity resolution takes billions of messy, conflicting records and resolves them into an accurate picture of a real human being—in hours, not months. That’s not a feature; it’s the foundation everything else stands on. It’s why &lt;a href=&quot;https://amperity.com/customers&quot; target=&quot;_blank&quot;&gt;more than 400 brands&lt;/a&gt;—like Alaska Airlines, Wyndham Hotels &amp;amp; Resorts, DICK’S Sporting Goods, Virgin Atlantic, and Brooks Running—trust us with the one thing they can’t afford to get wrong, and why IDC named us a Leader in the category in 2026.&lt;/p&gt;\n&lt;p&gt;Now we’re doing something harder. We’re rebuilding Amperity as an AI-first company—not bolting a chatbot onto old software, but putting agents at the center of how customer data actually gets used. We shipped the industry’s first identity resolution agent, then the first enterprise Customer Data Agent that turns a plain-language question into a live segment without waiting on an engineering queue. The bet underneath all of it is simple, and we think it’s correct: The potential of AI will not be realized for a brand until it’s grounded and activated against a true, unified view of the customer. The market at-large is focused on intelligence, and we are focused on being&amp;nbsp; the ones who can make it trustworthy.&lt;/p&gt;\n&lt;p&gt;So here’s the honest pitch. If you want a tour of a category that’s already been figured out, this isn’t it. If you want to help decide what the next version of an entire industry looks like—alongside people who are remarkably exceptional at what they do, solving a problem that requires deep, sustained focus—this is one of the few places that work exists. Our goal is to build a highly impactful, generational business.&lt;/p&gt;\n&lt;p&gt;We measure our success by one standard: whether what we build moves the business. Return on cognition, not return on hype. If that’s how you want to be measured, we would love to speak with you.&lt;/p&gt;\n&lt;h3&gt;&lt;strong&gt;The Role&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;At Amperity, we empower businesses to unlock the full potential of their customer data. Our clients are industry leaders making bold investments in cutting-edge customer data infrastructure. As a Senior Software Development Engineer, you’ll join a highly motivated and collaborative engineering team to develop advanced data pipelines, create flexible marketing solutions, and integrate powerful AI capabilities enabling our clients to gain deeper insights and activate their data strategically. You’ll work on a world-class, mission-critical platform that sits at the heart of our customers’ data ecosystems, directly influencing how they understand and engage with their audiences.&lt;/p&gt;\n&lt;p&gt;As one of the first teammates building our footprint in Argentina, you’ll play a meaningful role in our growth and be part of shaping this new chapter from the beginning.&amp;nbsp; If you’re excited about working on complex challenges, driving innovation, and helping industry-leading brands thrive through data-driven strategies, we’d love to hear from you.&lt;/p&gt;\n&lt;h3&gt;&lt;strong&gt;Interesting Problems&lt;/strong&gt;&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;Process and understand large amounts of structured and unstructured customer, product, and event data&lt;/li&gt;\n&lt;li&gt;Building delightful, full-stack experiences and toolsets to help users visualize their data, understand their customers, and surface the most impactful insights.&lt;/li&gt;\n&lt;li&gt;Integrate our system into the operating core of the businesses we serve.&lt;/li&gt;\n&lt;li&gt;Change how marketers use their customer data.&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h3&gt;&lt;strong&gt;About You&lt;/strong&gt;&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;8+&amp;nbsp; years of experience developing commercial software systems&lt;/li&gt;\n&lt;li&gt;Experience building applications on big data technologies such as Trino, Athena, or Spark&lt;/li&gt;\n&lt;li&gt;You have been in a software engineering environment where you had to take ownership to get products and features released in a production environment.&lt;/li&gt;\n&lt;li&gt;Experience with or willingness to participate in professional development activities to stay current on industry knowledge (like Clojure!) in a production environment.&lt;/li&gt;\n&lt;li&gt;Stay informed about relevant technology trends and developments and investigate new technologies.&lt;/li&gt;\n&lt;li&gt;Passionate about building elegant user experiences on top of complex technology.&lt;/li&gt;\n&lt;li&gt;Team player, collaborative, inclusive, and inspired by your customers’ success.&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h3&gt;&lt;strong&gt;Location&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;&lt;strong&gt;Argentina - Remote&lt;/strong&gt;&lt;strong&gt;&lt;br&gt;&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;This role is remote, with a small number of meaningful in-person gatherings designed to support alignment and collaboration.&lt;/p&gt;\n&lt;h3&gt;&lt;strong&gt;Compensation &amp;amp; Benefits&amp;nbsp;&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;We offer a competitive compensation package, along with benefits designed to support your well-being and long-term growth. Our total rewards program includes base compensation, benefits, and the opportunity to participate in our company’s equity plan.&amp;nbsp;&lt;/p&gt;\n&lt;p&gt;Amperity is proud to be an equal opportunity employer. We do not discriminate on the basis of race, religion, color, national origin, sex (including pregnancy, childbirth, and reproductive health choices), sexual orientation, gender identity, gender expression, age, status as a protected veteran, status as someone with a disability, political views or activity, or other applicable legally protected characteristics. We also consider qualified applicants with criminal histories, consistent with applicable federal, state, and local law.&lt;/p&gt;",
+      "departments": [
+        {
+          "id": 35559,
+          "name": "Engineering",
+          "child_ids": [
+            266796
+          ],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 313822,
+          "name": "Argentina ",
+          "location": "Buenos Aires, Buenos Aires, Argentina",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "ai_disclaimer": null,
+      "include_ai_disclaimer": null,
+      "ai_opt_out_request_url": null
+    },
+    {
+      "absolute_url": "https://amperity.com/careers?gh_jid=7955043#openpositions",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "internal_job_id": 3453830,
+      "location": {
+        "name": "Argentina - Remote"
+      },
+      "metadata": null,
+      "id": 7955043,
+      "updated_at": "2026-09-10T11:40:04-04:00",
+      "requisition_id": "480",
+      "title": "Software Development Engineer II",
+      "company_name": "Amperity",
+      "first_published": "2026-07-02T17:09:41-04:00",
+      "language": "en",
+      "application_deadline": null,
+      "content": "&lt;h3&gt;&lt;strong&gt;About Amperity—Why This, Why Now&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;Most customer data is a lie by omission.&lt;/p&gt;\n&lt;p&gt;Every consumer brand wants to know its customers. Unfortunately, almost none actually do. Data is scattered across a dozen systems, half of it contradicts the other half, and &quot;insights&quot; teams are forced to act on incomplete guesses. We started &lt;a href=&quot;https://amperity.com/&quot; target=&quot;_blank&quot;&gt;Amperity&lt;/a&gt; ten years ago because that gap—between what a brand believes about its customers and what is true—is the most expensive problem in the industry, and nobody had solved it.&lt;/p&gt;\n&lt;p&gt;With a lot of hard work and a little bit of luck, we did. Our patented identity resolution takes billions of messy, conflicting records and resolves them into an accurate picture of a real human being—in hours, not months. That’s not a feature; it’s the foundation everything else stands on. It’s why &lt;a href=&quot;https://amperity.com/customers&quot; target=&quot;_blank&quot;&gt;more than 400 brands&lt;/a&gt;—like Alaska Airlines, Wyndham Hotels &amp;amp; Resorts, DICK’S Sporting Goods, Virgin Atlantic, and Brooks Running—trust us with the one thing they can’t afford to get wrong, and why IDC named us a Leader in the category in 2026.&lt;/p&gt;\n&lt;p&gt;Now we’re doing something harder. We’re rebuilding Amperity as an AI-first company—not bolting a chatbot onto old software, but putting agents at the center of how customer data actually gets used. We shipped the industry’s first identity resolution agent, then the first enterprise Customer Data Agent that turns a plain-language question into a live segment without waiting on an engineering queue. The bet underneath all of it is simple, and we think it’s correct: The potential of AI will not be realized for a brand until it’s grounded and activated against a true, unified view of the customer. The market at-large is focused on intelligence, and we are focused on being&amp;nbsp; the ones who can make it trustworthy.&lt;/p&gt;\n&lt;p&gt;So here’s the honest pitch. If you want a tour of a category that’s already been figured out, this isn’t it. If you want to help decide what the next version of an entire industry looks like—alongside people who are remarkably exceptional at what they do, solving a problem that requires deep, sustained focus—this is one of the few places that work exists. Our goal is to build a highly impactful, generational business.&lt;/p&gt;\n&lt;p&gt;We measure our success by one standard: whether what we build moves the business. Return on cognition, not return on hype. If that’s how you want to be measured, we would love to speak with you.&lt;/p&gt;\n&lt;h3&gt;&lt;strong&gt;The Role&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;At Amperity, we empower businesses to unlock the full potential of their customer data. Our clients are industry leaders making bold investments in cutting-edge customer data infrastructure. As a Software Development Engineer, you’ll join a highly motivated and collaborative engineering team to develop advanced data pipelines, create flexible marketing solutions, and integrate powerful AI capabilities enabling our clients to gain deeper insights and activate their data strategically. You’ll work on a world-class, mission-critical platform that sits at the heart of our customers’ data ecosystems, directly influencing how they understand and engage with their audiences.&lt;/p&gt;\n&lt;p&gt;As one of the first teammates building our footprint in Argentina, you’ll play a meaningful role in our growth and be part of shaping this new chapter from the beginning. If you&#39;re excited about working on complex challenges, driving innovation, and helping industry-leading brands thrive through data-driven strategies, we’d love to hear from you.&lt;/p&gt;\n&lt;h3&gt;&lt;strong&gt;Interesting Problems&lt;/strong&gt;&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;Process and understand large amounts of structured and unstructured customer, product, and event data&lt;/li&gt;\n&lt;li&gt;Building delightful, full-stack experiences and toolsets to help users visualize their data, understand their customers and surface the most impactful insight&amp;nbsp;&lt;/li&gt;\n&lt;li&gt;Use the latest data science and AI advancements to build experiences that accelerate the time to value for data developers and marketers&amp;nbsp;&lt;/li&gt;\n&lt;li&gt;Integrate our system into the operating core of the businesses we serve&amp;nbsp;&lt;/li&gt;\n&lt;li&gt;Improve how marketers use their customer data&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h3&gt;&lt;strong&gt;About You&lt;/strong&gt;&lt;/h3&gt;\n&lt;ul&gt;\n&lt;li&gt;5+ experience including 3+ years developing enterprise software&amp;nbsp;&lt;/li&gt;\n&lt;li&gt;3+ years of experience building applications on database technologies experience with big data technologies&lt;/li&gt;\n&lt;li&gt;3+ years working in a production environment. In this duration, you have shown an ability to get products and features released to customers&amp;nbsp;&lt;/li&gt;\n&lt;li&gt;Excited about using or learning functional languages (like Clojure!) in a production environment&lt;/li&gt;\n&lt;li&gt;&amp;nbsp;Passionate about building elegant user experiences on top of complex technology&lt;/li&gt;\n&lt;li&gt;Collaborative, inclusive, and inspired by your customers’ success&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h3&gt;&lt;strong&gt;Technologies We Use&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;We don’t expect you to have experience with everything we use—but if you’re excited about learning, you’ll do great here. Our tech stack includes:&lt;/p&gt;\n&lt;ul&gt;\n&lt;li&gt;Large-scale data engines like Apache Spark, Presto, and Kafka.&lt;/li&gt;\n&lt;li&gt;Functional programming languages including Clojure, ClojureScript, and the React ecosystem.&lt;/li&gt;\n&lt;li&gt;Cloud-native infrastructure built with Kubernetes and Terraform, deployed across multiple cloud providers.&lt;/li&gt;\n&lt;li&gt;Machine learning models and systems including random forests, logistic regression, and probabilistic databases.&lt;/li&gt;\n&lt;/ul&gt;\n&lt;h3&gt;&lt;strong&gt;Location&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;&lt;strong&gt;Argentina - Remote&lt;/strong&gt;&lt;strong&gt;&lt;br&gt;&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;This role is remote, with a small number of meaningful in-person gatherings designed to support alignment and collaboration.&lt;/p&gt;\n&lt;h3&gt;&lt;strong&gt;Compensation &amp;amp; Benefits&amp;nbsp;&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;We offer a competitive compensation package, along with benefits designed to support your well-being and long-term growth. Our total rewards program includes base compensation, benefits, and the opportunity to participate in our company’s equity plan.&amp;nbsp;&lt;/p&gt;\n&lt;p&gt;Amperity is proud to be an equal opportunity employer. We do not discriminate on the basis of race, religion, color, national origin, sex (including pregnancy, childbirth, and reproductive health choices), sexual orientation, gender identity, gender expression, age, status as a protected veteran, status as someone with a disability, political views or activity, or other applicable legally protected characteristics. We also consider qualified applicants with criminal histories, consistent with applicable federal, state, and local law.&lt;/p&gt;",
+      "departments": [
+        {
+          "id": 35559,
+          "name": "Engineering",
+          "child_ids": [
+            266796
+          ],
+          "parent_id": null
+        }
+      ],
+      "offices": [
+        {
+          "id": 313822,
+          "name": "Argentina ",
+          "location": "Buenos Aires, Buenos Aires, Argentina",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "ai_disclaimer": null,
+      "include_ai_disclaimer": null,
+      "ai_opt_out_request_url": null
+    },
+    {
+      "absolute_url": "https://amperity.com/careers?gh_jid=7345019#openpositions",
+      "data_compliance": [
+        {
+          "type": "gdpr",
+          "requires_consent": false,
+          "requires_processing_consent": false,
+          "requires_retention_consent": false,
+          "retention_period": null,
+          "demographic_data_consent_applies": false
+        }
+      ],
+      "internal_job_id": null,
+      "location": {
+        "name": "New York, NY; Remote; Seattle, WA"
+      },
+      "metadata": null,
+      "id": 7345019,
+      "updated_at": "2026-07-09T17:43:14-04:00",
+      "requisition_id": null,
+      "title": "Submit Your Application for Future Consideration",
+      "company_name": "Amperity",
+      "first_published": "2025-10-20T17:16:39-04:00",
+      "language": "en",
+      "application_deadline": null,
+      "content": "&lt;h3&gt;&lt;strong&gt;About Amperity—Why This, Why Now&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;Most customer data is a lie by omission.&lt;/p&gt;\n&lt;p&gt;Every consumer brand wants to know its customers. Unfortunately, almost none actually do. Data is scattered across a dozen systems, half of it contradicts the other half, and &quot;insights&quot; teams are forced to act on incomplete guesses. We started &lt;a href=&quot;https://amperity.com/&quot; target=&quot;_blank&quot;&gt;Amperity&lt;/a&gt; ten years ago because that gap—between what a brand believes about its customers and what is true—is the most expensive problem in the industry, and nobody had solved it.&lt;/p&gt;\n&lt;p&gt;With a lot of hard work and a little bit of luck, we did. Our patented identity resolution takes billions of messy, conflicting records and resolves them into an accurate picture of a real human being—in hours, not months. That’s not a feature; it’s the foundation everything else stands on. It’s why &lt;a href=&quot;https://amperity.com/customers&quot; target=&quot;_blank&quot;&gt;more than 400 brands&lt;/a&gt;—like Alaska Airlines, Wyndham Hotels &amp;amp; Resorts, DICK’S Sporting Goods, Virgin Atlantic, and Brooks Running—trust us with the one thing they can’t afford to get wrong, and why IDC named us a Leader in the category in 2026.&lt;/p&gt;\n&lt;p&gt;Now we’re doing something harder. We’re rebuilding Amperity as an AI-first company—not bolting a chatbot onto old software, but putting agents at the center of how customer data actually gets used. We shipped the industry’s first identity resolution agent, then the first enterprise Customer Data Agent that turns a plain-language question into a live segment without waiting on an engineering queue. The bet underneath all of it is simple, and we think it’s correct: The potential of AI will not be realized for a brand until it’s grounded and activated against a true, unified view of the customer. The market at-large is focused on intelligence, and we are focused on being&amp;nbsp; the ones who can make it trustworthy.&lt;/p&gt;\n&lt;p&gt;So here’s the honest pitch. If you want a tour of a category that’s already been figured out, this isn’t it. If you want to help decide what the next version of an entire industry looks like—alongside people who are remarkably exceptional at what they do, solving a problem that requires deep, sustained focus—this is one of the few places that work exists. Our goal is to build a highly impactful, generational business.&lt;/p&gt;\n&lt;p&gt;We measure our success by one standard: whether what we build moves the business. Return on cognition, not return on hype. If that’s how you want to be measured, we would love to speak with you.&lt;/p&gt;\n&lt;h3&gt;&lt;strong&gt;The Opportunity&lt;/strong&gt;&lt;/h3&gt;\n&lt;p&gt;We’re always eager to connect with driven and customer-focused sales professionals who are passionate about helping organizations unlock the full potential of their customer data. While we don&#39;t currently have an open position available, we’re growing and regularly hire for a range of sales roles.&lt;/p&gt;\n&lt;p&gt;At Amperity, our Sales team plays a pivotal role in shaping the company’s growth and success. From identifying opportunities and building lasting relationships to delivering strategic solutions that address complex business challenges, you’ll help prospects and customers discover the value of our platform and achieve their goals. Whether your strengths are in new business development, pre-sales solutions consulting, operations, enablement, business value consulting, or strategic partnerships, you’ll collaborate closely with prospects and customers to create meaningful impact.&lt;/p&gt;\n&lt;p&gt;If you’re interested in joining Amperity’s Sales team but don’t see an opportunity that fits right now, please submit your resume. We’ll keep your information on file and reach out when we find a match!&lt;br&gt;&lt;span data-sheets-root=&quot;1&quot;&gt;#LI-DNI&lt;/span&gt;&lt;/p&gt;",
+      "departments": [
+        {
+          "id": 35563,
+          "name": "Sales",
+          "child_ids": [],
+          "parent_id": null
+        }
+      ],
+      "offices": [],
+      "ai_disclaimer": null,
+      "include_ai_disclaimer": null,
+      "ai_opt_out_request_url": null
+    }
+  ],
+  "meta": {
+    "total": 3
+  }
+}
