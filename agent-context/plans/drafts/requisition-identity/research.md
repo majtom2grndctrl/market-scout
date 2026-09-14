@@ -27,15 +27,9 @@ That key also failed on its own motivating cases:
 
 ## Requisition key availability
 
-| Platform | Key | Coverage |
-|---|---|---|
-| Greenhouse | `internal_job_id` | 100% of 5,581 |
-| Workday | `bulletFields[0]` (e.g. `R_105961`) | Already the URL identity; never fans out |
-| Workable | `code` | Listing-level only |
-| Lever, Ashby | `id` | 1:1 with posting |
-| Gem | `id` | Never fetched — see below |
+First pass, superseded in detail by *Wire-key reality per platform* below — which corrects the Greenhouse and Workable coverage figures after reading the adapters and re-querying.
 
-Greenhouse `requisition_id` is unusable: NULL on 54 rows, and Stripe fills it with the literal `See Opening ID`.
+Greenhouse `requisition_id` is unusable: NULL on 57 postings, and Stripe fills it with the literal `See Opening ID`. `internal_job_id` is the usable key.
 
 Greenhouse fan-out corpus-wide: 5,109 requisition groups over 5,581 postings; **258 groups show fan-out, collapsing 452 rows (8.1% of Greenhouse postings).**
 
@@ -76,3 +70,32 @@ Separating repost from fan-out requires the requisition key this spec delivers. 
 The only company it explains is Snap! Raise, whose posting and requisition counts already agree (153 and 153). The pair discharges the honesty contract; a third number would narrate a gap that does not exist. The residual discomfort — commission-only territory reps counted beside engineering requisitions — is a `filter:function` question, not a duplication one.
 
 Dropping it also dropped `normalized_title`, which had no other consumer: title is not a member of `GROUPINGS` in `apps/web/lib/composition/vocabulary.ts`. The 709 stray-whitespace titles remain cosmetic until something groups on title.
+
+## Wire-key reality per platform
+
+Measured 2026-09-14. Only three platforms expose an identifier distinct from posting identity:
+
+| Platform | Key | Reality |
+|---|---|---|
+| Greenhouse | `internal_job_id` | Non-null number on 99.3% of snapshots. **Present-but-JSON-null on 356 snapshots across 20 postings** — must land NULL, not `"0"`. |
+| Workday | `bulletFields[0]` | Present on 100%. `BulletFields` already parsed on `wdJob` but unread. |
+| Workable | `code` | Non-empty on **20 of 498** snapshots (96% NULL). A further 66 carry it as an empty string. |
+| Ashby, Lever, Gem | — | `job.ID` is already `SourceID` (`ashby.go:149`, `lever.go:213`, `gem.go:154`). No distinction to record. |
+
+Gem boards are Greenhouse-shaped and carry `internal_job_id` in their payload, so any backfill that sniffs `raw_data` for the key instead of branching on `companies.ats` would wrongly populate Gem rows.
+
+## Requisition keys are board-scoped, not global
+
+Greenhouse ids are board-scoped, Workday's tenant-scoped, and Workable `code` is human-typed — live values are `2026-37`, `2026-92`, `SQ204`. Zero cross-company collisions exist among the current 5,700 keys, but two Workable boards numbering by year-week collide on the first overlap. An ungrouped `count` has no company boundary of its own, so the view exposes `company_id` and consumers count distinct over the pair.
+
+## Why the current-snapshot lateral must come from 000019
+
+`000017_read_model_views.up.sql` resolves the current snapshot with `WHERE job_posting_id = ... ORDER BY fetched_at DESC LIMIT 1` — no run predicate. `000019_workplace_type_derivation.up.sql` added `AND posting_snapshots.fetch_run_id = open_postings.fetch_run_id` plus an `id DESC` tie-breaker, with a comment explaining that without it "a snapshot written by a later failed run — or by no run at all — could supply the displayed row."
+
+Copying the older shape reproduces the bug 000019 fixed, and a fixture test stays green either way.
+
+## Why requisitions stop at the open cohort
+
+`count` serves `open`, `closed`, and `all`. `posting_requisitions` derives from `open_postings`, so under the other two an inner join would drop rows and change `value` — the posting count itself — while a left join would report 0 requisitions as though measured. Closed postings would need a non-run-scoped resolution, which is exactly the derivation the run predicate above exists to avoid trusting. The cohorts carry no `requisitions` key instead.
+
+Observed fan-out on the open cohort, for fixture sizing: Anthropic 600 postings / 561 requisitions, Stripe 614/592, Scale AI 219/199, Glean 112/85, Boulder Care 19/8.
