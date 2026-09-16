@@ -99,11 +99,11 @@ Workable adapter v1 returns the listing-level fields only; the widget endpoint i
 
 Gem's single list endpoint returns a bare array with full descriptions. Gem postings classify immediately; no per-posting description fetch is needed.
 
-Only three platforms distinguish a job from a job post. Greenhouse, Workday, and Workable each expose a requisition identifier separate from the posting's own id, so one requisition can carry several postings. Ashby, Lever, and Gem expose one id and it is the posting identity the adapter already records — there is no second identity to capture, and synthesizing one would assert a distinction the platform does not make. The split is a property of the platforms, not of the adapters.
+Four platforms distinguish a job from a job post. Greenhouse, Workday, Workable, and Gem each expose a requisition identifier separate from the posting's own id, so one requisition can carry several postings. Ashby and Lever expose one id, and it is the posting identity the adapter already records — there is no second identity to capture, and synthesizing one would assert a distinction the platform does not make. The split is a property of the platforms, not of the adapters.
 
 Greenhouse exposes two requisition-shaped fields and only one is usable. The internal job id is present on effectively every posting; the field named for requisitions is absent on some boards and filled with prose on others.
 
-Gem boards are Greenhouse-shaped and carry Greenhouse's internal job id in their payload. Anything reading that key must branch on the company's recorded platform rather than sniffing the payload, or Gem rows acquire a requisition identity the adapter never emitted.
+Gem boards are Greenhouse-shaped: the payload carries the same internal job id field, and it means the same thing there, the requisition identifier, separate from the posting's own id. The shared shape is platform lineage, not a shared identity space — anything reading that field must still branch on the company's recorded platform rather than sniffing the payload, since the same field name on a different platform carries no guarantee of meaning the same thing.
 
 ## The database as AI agent knowledge store
 

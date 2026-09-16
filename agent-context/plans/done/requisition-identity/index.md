@@ -181,6 +181,16 @@ None. Every fork is decided above.
 
 - Whether `requisition_key` should anchor repost detection. Greenhouse `internal_job_id` is stable across every multi-snapshot posting measured — 0 of 4,992 changed — unlike the ATS timestamps the architecture distrusts. Repost and fan-out cannot be separated until this spec ships, and the first-observed-timestamp anchor is settled architecture, so this is a later discussion with evidence rather than a decision this spec waits on. Measurements in `research.md`.
 
+### Carried out of implementation
+
+Three things were found after `000027` and `000028` had been applied. A migration that has run is never edited, so each is recorded here rather than fixed in place.
+
+- **`000027`'s comments still describe Gem as exposing no identifier distinct from posting identity.** False as of this spec — Gem's `internal_job_id` decodes to `job:…` against the job post's `jobpost:…`, and the adapter extracts it. The migration's *behaviour* stays correct: excluding `gem` from the backfill is right, because those historical rows were never extracted and there are zero Gem snapshots either way. Only the rationale is stale.
+- **The backfill folds `''` but not whitespace, while the adapters fold both.** `nullif(raw_data->>'code', '')` leaves a whitespace-only historical key in place as a shared fake key, where the adapter would now write NULL. Confirmed absent today — no row has `requisition_key <> btrim(requisition_key)` — so this is a latent divergence, not a live defect.
+- **Gem's sibling collapse is inferred, not observed.** The base64 prefixes establish that Gem models a job apart from a job post, but no Gem board has ever been fetched (one company, zero fetch runs since 2026-08-14), and the recorded fixture carries seven jobs with seven distinct ids. Whether a Gem board actually reuses the key across sibling posts is unverified until the fetch-pipeline gap below is closed.
+
+Also unverified at ship time: no adapter-written `requisition_key` exists in either database. Every value today came from the backfill. A single fetcher run would both close that and give a free differential check — the adapter's key on a new snapshot against the backfill's key on the prior snapshot of the same posting, two independent extractions that should agree.
+
 ## Known gaps outside this spec
 
 - Supio (Gem) has never been fetched: zero fetch runs since it was added 2026-08-14, no error rows, adapter registered 2026-08-15. A fetch-pipeline bug, unrelated to this spec — Gem writes no `requisition_key` either way, so nothing here depends on it.

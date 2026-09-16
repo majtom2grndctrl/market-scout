@@ -32,7 +32,7 @@ Take your side, plus **Either side**. Skip the other.
 - **Test strategy, patterns, running tests** → `agent-context/lib/testing-guide.md` *(Go only)*
 - **Go fetcher (structure, conventions)** → `agent-context/lib/project.md` §Settled architecture
 - **ATS adapter (adding or modifying)** → `agent-context/lib/project.md` §ATS targets
-- **Which platforms distinguish a job from a job post; requisition identifiers** → `agent-context/lib/project.md` §ATS targets *(three of six; Gem boards are Greenhouse-shaped)*
+- **Which platforms distinguish a job from a job post; requisition identifiers** → `agent-context/lib/project.md` §ATS targets *(four of six; Gem boards are Greenhouse-shaped)*
 - **Database schema / migrations** → `agent-context/lib/project.md` §Settled architecture
 - **Snapshot storage model** → `agent-context/lib/project.md` §Settled architecture *(append-only, never upsert)*
 - **pgvector / semantic search** → `agent-context/lib/project.md` §The database as AI agent knowledge store
