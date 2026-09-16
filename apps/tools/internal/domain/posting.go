@@ -23,10 +23,19 @@ import (
 // fields follow the same contract: nil = NULL, non-nil = array (an empty
 // non-nil slice persists as an explicit empty array, distinct from NULL).
 type Posting struct {
-	SourceID     string
-	SourceURL    string
-	Title        *string
-	LocationText *string
+	SourceID  string
+	SourceURL string
+	// RequisitionKey is the ATS's own identifier for the underlying job, as
+	// distinct from this job post. It groups the sibling posts published under
+	// one platform-level job, which may differ in title as well as location —
+	// on live Greenhouse boards a single key routinely covers several
+	// differently-titled roles. Counting distinct keys counts jobs rather than
+	// posts. nil when the platform draws no job-versus-job-post distinction
+	// (Ashby and Lever use the posting id for both) or when the board leaves
+	// the field empty.
+	RequisitionKey *string
+	Title          *string
+	LocationText   *string
 	// LocationTexts is the multi-market location list. nil = source did not
 	// supply locations; empty slice = source returned an explicit empty array
 	// (rare but distinct); populated = one or more strings. The nil-vs-empty

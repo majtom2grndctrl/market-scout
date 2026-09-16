@@ -735,3 +735,27 @@ func TestLeverAdapter_NilCompOnInvalidCurrency(t *testing.T) {
 }
 
 func strPtr(s string) *string { return &s }
+
+// TestLever_LeavesRequisitionKeyNil pins the deliberate omission. Lever's `id`
+// is already SourceID; a requisition key copied from it would carry no
+// information beyond posting identity.
+func TestLever_LeavesRequisitionKeyNil(t *testing.T) {
+	fixture := loadAdapterFixture(t, "lever", "jobs_full.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(fixture)
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newLeverWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "leverdemo")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	if len(postings) == 0 {
+		t.Fatal("got 0 postings, want at least 1")
+	}
+	for i, p := range postings {
+		if p.RequisitionKey != nil {
+			t.Errorf("posting %d: RequisitionKey: got pointer to %q, want nil", i, *p.RequisitionKey)
+		}
+	}
+}

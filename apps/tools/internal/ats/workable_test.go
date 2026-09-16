@@ -237,3 +237,94 @@ func TestWorkableAdapter_MissingShortcode(t *testing.T) {
 		t.Errorf("error %q does not mention shortcode", err.Error())
 	}
 }
+
+// TestWorkableAdapter_RequisitionKeyFromCode pins the requisition key to the
+// widget response's `code`. jobs_requisition_codes.json is a recorded Seeq
+// board covering all three shapes that matter: a JSON-null code (the common
+// case — most Workable accounts never set one), two postings sharing "2026-37"
+// (the collapse the read model exists to make), and a singleton "2026-92".
+func TestWorkableAdapter_RequisitionKeyFromCode(t *testing.T) {
+	fixture := loadAdapterFixture(t, "workable", "jobs_requisition_codes.json")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(fixture)
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newWorkableWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), workableBoardToken)
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+
+	want := []struct {
+		shortcode      string
+		requisitionKey *string
+	}{
+		{"6F40FF632B", nil}, // "code": null on the wire
+		{"763AE68666", strPtr("2026-37")},
+		{"C2318392FE", strPtr("2026-37")},
+		{"CA86062D7B", strPtr("2026-92")},
+	}
+	if len(postings) != len(want) {
+		t.Fatalf("got %d postings, want %d", len(postings), len(want))
+	}
+	for i, tc := range want {
+		p := postings[i]
+		if p.SourceID != tc.shortcode {
+			t.Errorf("posting %d: SourceID: got %q, want %q", i, p.SourceID, tc.shortcode)
+		}
+		switch {
+		case tc.requisitionKey == nil && p.RequisitionKey != nil:
+			t.Errorf("posting %d (%s): RequisitionKey: got pointer to %q, want nil", i, tc.shortcode, *p.RequisitionKey)
+		case tc.requisitionKey != nil && p.RequisitionKey == nil:
+			t.Errorf("posting %d (%s): RequisitionKey: got nil, want pointer to %q", i, tc.shortcode, *tc.requisitionKey)
+		case tc.requisitionKey != nil && *p.RequisitionKey != *tc.requisitionKey:
+			t.Errorf("posting %d (%s): RequisitionKey: got %q, want %q", i, tc.shortcode, *p.RequisitionKey, *tc.requisitionKey)
+		}
+	}
+
+	// The whole point of the key: two distinct postings, one requisition.
+	if postings[1].RequisitionKey == nil || postings[2].RequisitionKey == nil ||
+		*postings[1].RequisitionKey != *postings[2].RequisitionKey {
+		t.Errorf("postings 1 and 2 must share a requisition key; got %v and %v",
+			postings[1].RequisitionKey, postings[2].RequisitionKey)
+	}
+	if postings[1].SourceID == postings[2].SourceID {
+		t.Error("postings 1 and 2 must remain distinct postings — shared requisition, separate rows")
+	}
+}
+
+// TestWorkableAdapter_EmptyStringCode_LeavesRequisitionKeyNil covers the
+// blank-string shape live boards also emit alongside null and absent, plus a
+// whitespace-only code. All must land as nil so the view's fallback branch
+// stays distinguishable — a whitespace-only code that survived would become a
+// shared fake key across every posting on the board.
+func TestWorkableAdapter_EmptyStringCode_LeavesRequisitionKeyNil(t *testing.T) {
+	cases := []struct {
+		name string
+		job  string
+	}{
+		{"empty_string", `{"shortcode":"AAA111","title":"Role","url":"https://apply.workable.com/acme/j/AAA111","code":""}`},
+		{"absent", `{"shortcode":"AAA111","title":"Role","url":"https://apply.workable.com/acme/j/AAA111"}`},
+		{"whitespace_only", `{"shortcode":"AAA111","title":"Role","url":"https://apply.workable.com/acme/j/AAA111","code":"   "}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{"name":"Acme","jobs":[` + tc.job + `]}`))
+			}))
+			t.Cleanup(srv.Close)
+
+			postings, err := newWorkableWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), workableBoardToken)
+			if err != nil {
+				t.Fatalf("FetchPostings: %v", err)
+			}
+			if len(postings) != 1 {
+				t.Fatalf("got %d postings, want 1", len(postings))
+			}
+			if postings[0].RequisitionKey != nil {
+				t.Errorf("RequisitionKey: got pointer to %q, want nil", *postings[0].RequisitionKey)
+			}
+		})
+	}
+}

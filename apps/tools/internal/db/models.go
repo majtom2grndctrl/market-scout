@@ -166,6 +166,13 @@ type PostingMarket struct {
 	Kind         string
 }
 
+type PostingRequisition struct {
+	JobPostingID      int64
+	CompanyID         int64
+	RequisitionKey    sql.NullString
+	RequisitionSource string
+}
+
 type PostingSnapshot struct {
 	ID                     int64
 	JobPostingID           int64
@@ -188,6 +195,7 @@ type PostingSnapshot struct {
 	CompensationMax        sql.NullInt64
 	CompensationCurrency   sql.NullString
 	CompensationPeriod     sql.NullString
+	RequisitionKey         sql.NullString
 }
 
 type PostingTaxonomy struct {

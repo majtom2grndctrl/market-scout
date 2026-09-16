@@ -406,6 +406,7 @@ func buildSnapshotParams(jobPostingID int64, fetchRunID int64, fetchedAt time.Ti
 		CompensationMax:        nullInt64(p.CompensationMax),
 		CompensationCurrency:   nullStr(p.CompensationCurrency),
 		CompensationPeriod:     nullStr(p.CompensationPeriod),
+		RequisitionKey:         nullStr(p.RequisitionKey),
 	}
 }
 

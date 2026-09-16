@@ -478,3 +478,28 @@ func TestAshby_EmptyPostalAddressParts_AreSkipped(t *testing.T) {
 		}
 	}
 }
+
+// TestAshby_LeavesRequisitionKeyNil pins the deliberate omission. Ashby's
+// per-job `id` is already SourceID; copying it into RequisitionKey would assert
+// a job-versus-job-post distinction the platform does not make, and would make
+// the view's `requisition_source = 'ats'` a fiction.
+func TestAshby_LeavesRequisitionKeyNil(t *testing.T) {
+	fixture := loadAdapterFixture(t, "ashby", "jobs_full.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(fixture)
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newAshbyWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "example")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	if len(postings) == 0 {
+		t.Fatal("got 0 postings, want at least 1")
+	}
+	for i, p := range postings {
+		if p.RequisitionKey != nil {
+			t.Errorf("posting %d: RequisitionKey: got pointer to %q, want nil", i, *p.RequisitionKey)
+		}
+	}
+}

@@ -575,3 +575,135 @@ func TestGreenhouseAdapter_OversizeResponse_ReturnsError(t *testing.T) {
 		t.Errorf("postings: got %v, want nil on error", postings)
 	}
 }
+
+// TestGreenhouseAdapter_RequisitionKeyFromInternalJobID pins the requisition
+// key to Greenhouse's `internal_job_id`, including the JSON-null row that makes
+// ghRequisitionKey's pointer decode load-bearing: read into a value type, null
+// would become 0 and format to "0", a fake key shared by every null row on the
+// board.
+//
+// jobs_null_internal_job_id.json is a recorded Amperity board — two jobs with a
+// numeric internal_job_id and one "Submit Your Application for Future
+// Consideration" catch-all that genuinely has no requisition behind it.
+func TestGreenhouseAdapter_RequisitionKeyFromInternalJobID(t *testing.T) {
+	fixture := loadAdapterFixture(t, "greenhouse", "jobs_null_internal_job_id.json")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(fixture)
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "amperity")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+
+	want := []struct {
+		sourceID       string
+		requisitionKey *string
+	}{
+		{"7955072", strPtr("3453845")},
+		{"7955043", strPtr("3453830")},
+		{"7345019", nil}, // "internal_job_id": null on the wire
+	}
+	if len(postings) != len(want) {
+		t.Fatalf("got %d postings, want %d", len(postings), len(want))
+	}
+	for i, tc := range want {
+		p := postings[i]
+		if p.SourceID != tc.sourceID {
+			t.Errorf("posting %d: SourceID: got %q, want %q", i, p.SourceID, tc.sourceID)
+		}
+		switch {
+		case tc.requisitionKey == nil && p.RequisitionKey != nil:
+			t.Errorf("posting %d (%s): RequisitionKey: got pointer to %q, want nil", i, tc.sourceID, *p.RequisitionKey)
+		case tc.requisitionKey != nil && p.RequisitionKey == nil:
+			t.Errorf("posting %d (%s): RequisitionKey: got nil, want pointer to %q", i, tc.sourceID, *tc.requisitionKey)
+		case tc.requisitionKey != nil && *p.RequisitionKey != *tc.requisitionKey:
+			t.Errorf("posting %d (%s): RequisitionKey: got %q, want %q", i, tc.sourceID, *p.RequisitionKey, *tc.requisitionKey)
+		}
+		if p.RequisitionKey != nil && *p.RequisitionKey == p.SourceID {
+			t.Errorf("posting %d: RequisitionKey equals SourceID (%q) — the key must be the requisition, not the posting", i, p.SourceID)
+		}
+	}
+}
+
+// TestGreenhouseAdapter_AbsentInternalJobID_LeavesRequisitionKeyNil covers the
+// third absence shape the fixtures don't carry: the key missing entirely rather
+// than present-but-null.
+func TestGreenhouseAdapter_AbsentInternalJobID_LeavesRequisitionKeyNil(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"jobs": [{"id": 42, "title": "Role"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	if len(postings) != 1 {
+		t.Fatalf("got %d postings, want 1", len(postings))
+	}
+	if postings[0].RequisitionKey != nil {
+		t.Errorf("RequisitionKey: got pointer to %q, want nil", *postings[0].RequisitionKey)
+	}
+}
+
+// TestGreenhouseAdapter_UnreadableInternalJobID_KeepsBoardIngesting covers the
+// spellings boards render internal_job_id in besides a plain JSON integer. The
+// field is optional, so one the adapter cannot read costs that posting its
+// requisition key and nothing more — a decode error here would abort the fetch,
+// and the read model then resolves openness against the last successful run, so
+// the company goes silently stale rather than reporting a wrong number.
+//
+// Each case ships a second job with a well-formed key. That sibling is the
+// board-level assertion: it can only be reached if the malformed row did not
+// abort the loop, and it pins that a normal integer still yields its key.
+func TestGreenhouseAdapter_UnreadableInternalJobID_KeepsBoardIngesting(t *testing.T) {
+	cases := []struct {
+		name  string
+		value string
+	}{
+		// The original hazard, held here as well as in the recorded fixture:
+		// decoded into a value type, null becomes 0 and formats to "0" — one
+		// fake key shared by every null row on the board.
+		{"json_null", `null`},
+		{"quoted_number", `"999"`},
+		{"non_numeric_string", `"See Opening ID"`},
+		{"exponent_form", `1.0e3`},
+		{"decimal", `12.5`},
+		{"object", `{"id":999}`},
+		{"array", `[999]`},
+		{"boolean", `true`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"jobs":[` +
+				`{"id":42,"title":"Malformed Key Role","internal_job_id":` + tc.value + `},` +
+				`{"id":43,"title":"Good Key Role","internal_job_id":777}` +
+				`]}`
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(body))
+			}))
+			t.Cleanup(srv.Close)
+
+			postings, err := newGreenhouseWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), "exampleco")
+			if err != nil {
+				t.Fatalf("FetchPostings: got error %v, want the board to ingest", err)
+			}
+			if len(postings) != 2 {
+				t.Fatalf("got %d postings, want 2 — the whole board must still ingest", len(postings))
+			}
+			if postings[0].SourceID != "42" {
+				t.Errorf("posting 0: SourceID: got %q, want %q", postings[0].SourceID, "42")
+			}
+			if postings[0].RequisitionKey != nil {
+				t.Errorf("posting 0: RequisitionKey: got pointer to %q, want nil", *postings[0].RequisitionKey)
+			}
+			if postings[1].RequisitionKey == nil || *postings[1].RequisitionKey != "777" {
+				t.Errorf("posting 1: RequisitionKey: got %v, want pointer to %q", postings[1].RequisitionKey, "777")
+			}
+		})
+	}
+}

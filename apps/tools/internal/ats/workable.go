@@ -58,8 +58,13 @@ type wkResponse struct {
 // no compensation — so those Posting fields stay nil. RawData preserves the
 // full payload for later re-interpretation.
 type wkJob struct {
-	Title          string `json:"title"`
-	Shortcode      string `json:"shortcode"`
+	Title     string `json:"title"`
+	Shortcode string `json:"shortcode"`
+	// Code is the account's own requisition code. Most boards leave it null
+	// or blank; where it is set, sibling postings for one requisition repeat
+	// it. JSON null decodes to "" here, which ptrIfNonEmpty maps to nil —
+	// the same result as an absent key or an explicit empty string.
+	Code           string `json:"code"`
 	URL            string `json:"url"`
 	ApplicationURL string `json:"application_url"`
 	Department     string `json:"department"`
@@ -141,6 +146,11 @@ func decodeWorkableJob(raw json.RawMessage, boardToken string, index int) (domai
 	}
 
 	posting.Title = ptrIfNonEmpty(job.Title)
+	// Trim before the non-empty check: ptrIfNonEmpty only folds "", so a
+	// whitespace-only code would otherwise survive as a key that falsely
+	// matches nothing else on the board. Store the trimmed value — stray
+	// whitespace would keep a key from matching its own siblings.
+	posting.RequisitionKey = ptrIfNonEmpty(strings.TrimSpace(job.Code))
 	posting.Department = ptrIfNonEmpty(job.Department)
 	posting.EmploymentType = normalizeWorkableEmploymentType(job.EmploymentType)
 

@@ -352,3 +352,109 @@ func TestWorkdayAdapter_MissingExternalPath(t *testing.T) {
 		t.Errorf("error %q does not identify offending job (expected substring %q)", err.Error(), "index 0")
 	}
 }
+
+// TestWorkdayAdapter_RequisitionKeyFromBulletFields pins the requisition key to
+// the first element of bulletFields — the tenant's requisition number. Workday
+// publishes one requisition as one posting per location, so this is the field
+// that lets the read model collapse those siblings.
+func TestWorkdayAdapter_RequisitionKeyFromBulletFields(t *testing.T) {
+	cases := []struct {
+		name    string
+		fixture string
+		want    *string
+	}{
+		// jobs_page1.json carries "bulletFields": ["JR12345"].
+		{"populated", "jobs_page1.json", strPtr("JR12345")},
+		// jobs_no_external_url.json carries "bulletFields": [] — an empty list
+		// is an absent key, not an empty-string key.
+		{"empty_bullet_fields", "jobs_no_external_url.json", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := loadAdapterFixture(t, "workday", tc.fixture)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = decodeWorkdayRequest(t, r)
+				_, _ = w.Write(fixture)
+			}))
+			t.Cleanup(srv.Close)
+
+			postings, err := newWorkdayWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), workdayBoardToken)
+			if err != nil {
+				t.Fatalf("FetchPostings: %v", err)
+			}
+			if len(postings) != 1 {
+				t.Fatalf("got %d postings, want 1", len(postings))
+			}
+			got := postings[0].RequisitionKey
+			switch {
+			case tc.want == nil && got != nil:
+				t.Errorf("RequisitionKey: got pointer to %q, want nil", *got)
+			case tc.want != nil && got == nil:
+				t.Errorf("RequisitionKey: got nil, want pointer to %q", *tc.want)
+			case tc.want != nil && *got != *tc.want:
+				t.Errorf("RequisitionKey: got %q, want %q", *got, *tc.want)
+			}
+		})
+	}
+}
+
+// TestWorkdayAdapter_RequisitionKeyIgnoresExtraBulletFields pins the
+// first-element-only rule: bulletFields can carry rendered chips after the
+// requisition number, and those are not identifiers.
+func TestWorkdayAdapter_RequisitionKeyIgnoresExtraBulletFields(t *testing.T) {
+	body := `{"total":1,"jobPostings":[{
+		"title":"Role",
+		"externalPath":"/job/loc/Role_JR999",
+		"bulletFields":["JR999","Full time","Santa Clara"]
+	}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newWorkdayWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), workdayBoardToken)
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+	if len(postings) != 1 {
+		t.Fatalf("got %d postings, want 1", len(postings))
+	}
+	if postings[0].RequisitionKey == nil || *postings[0].RequisitionKey != "JR999" {
+		t.Errorf("RequisitionKey: got %v, want pointer to %q", postings[0].RequisitionKey, "JR999")
+	}
+}
+
+// TestWorkdayAdapter_EmptyStringBulletField_LeavesRequisitionKeyNil keeps the
+// view's fallback branch distinguishable: a blank or whitespace-only first
+// element is an absent key, not a key whose value is "". A whitespace-only
+// element that survived would become a shared fake key across every posting
+// on the board.
+func TestWorkdayAdapter_EmptyStringBulletField_LeavesRequisitionKeyNil(t *testing.T) {
+	cases := []struct {
+		name         string
+		bulletFields string
+	}{
+		{"empty_string", `[""]`},
+		{"whitespace_only", `["   "]`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"total":1,"jobPostings":[{"title":"Role","externalPath":"/job/loc/Role","bulletFields":` + tc.bulletFields + `}]}`
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(body))
+			}))
+			t.Cleanup(srv.Close)
+
+			postings, err := newWorkdayWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), workdayBoardToken)
+			if err != nil {
+				t.Fatalf("FetchPostings: %v", err)
+			}
+			if len(postings) != 1 {
+				t.Fatalf("got %d postings, want 1", len(postings))
+			}
+			if postings[0].RequisitionKey != nil {
+				t.Errorf("RequisitionKey: got pointer to %q, want nil", *postings[0].RequisitionKey)
+			}
+		})
+	}
+}

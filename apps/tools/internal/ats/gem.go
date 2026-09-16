@@ -49,10 +49,23 @@ func newGemWithBaseURL(client *http.Client, baseURL string) *Gem {
 
 // gemJob is the subset of Gem's list-record shape normalized into Posting.
 // Per-job raw bytes remain in RawData so all unmodeled fields, including
-// created_at, internal_job_id, requisition_id, and full office metadata, are
-// available for later interpretation without another fetch.
+// created_at, requisition_id, and full office metadata, are available for
+// later interpretation without another fetch.
 type gemJob struct {
-	ID               string `json:"id"`
+	ID string `json:"id"`
+	// InternalJobID is Gem's job-level identifier, distinct from the job-post
+	// `id`: both are opaque base64 strings, but they decode to "job:…" and
+	// "jobpost:…" respectively, which is what establishes that Gem models a job
+	// apart from a job post. Whether a Gem board reuses the value across
+	// several posts is unobserved — the recorded fixture carries seven jobs
+	// with seven distinct ids, and no Gem board has been fetched — so the
+	// collapse this enables is inferred from the platform's model, not measured.
+	//
+	// A string, not a pointer: Gem sends it as a JSON string, so absent, null,
+	// and "" all decode to "" — one empty value the call site folds to nil.
+	// Greenhouse holds its own field as raw bytes because a JSON number has
+	// spellings a number type rejects outright; a string has none.
+	InternalJobID    string `json:"internal_job_id"`
 	AbsoluteURL      string `json:"absolute_url"`
 	Title            string `json:"title"`
 	Content          string `json:"content"`
@@ -157,6 +170,15 @@ func decodeGemJob(raw json.RawMessage, boardToken string, index int) (domain.Pos
 		RawData:   raw,
 	}
 	posting.Title = ptrIfNonEmpty(job.Title)
+
+	// internal_job_id, not requisition_id: the latter is the tenant's own
+	// free-text label (values like "R52" on the recorded board) with no
+	// guarantee it identifies anything. Trim before the non-empty check —
+	// ptrIfNonEmpty folds only "", so a whitespace-only value would otherwise
+	// survive as a key shared by every such post on the board, stamped as an
+	// ATS-supplied requisition rather than falling back to posting identity.
+	posting.RequisitionKey = ptrIfNonEmpty(strings.TrimSpace(job.InternalJobID))
+
 	if len(job.Departments) > 0 {
 		posting.Department = ptrIfNonEmpty(job.Departments[0].Name)
 	}

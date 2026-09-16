@@ -276,3 +276,88 @@ func TestGemAdapter_InvalidBoardTokenSkipsHTTP(t *testing.T) {
 		})
 	}
 }
+
+// TestGemAdapter_RequisitionKeyFromInternalJobID pins the requisition key to
+// Gem's `internal_job_id`. Gem draws the job-versus-job-post distinction: on
+// this recorded board every `id` base64-decodes to "jobpost:…" and every
+// `internal_job_id` to "job:…", so the two are different identifiers and the
+// key must never be a copy of SourceID.
+func TestGemAdapter_RequisitionKeyFromInternalJobID(t *testing.T) {
+	fixture := loadAdapterFixture(t, "gem", "jobs_full.json")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(fixture)
+	}))
+	t.Cleanup(srv.Close)
+
+	postings, err := newGemWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), gemSupioToken)
+	if err != nil {
+		t.Fatalf("FetchPostings: %v", err)
+	}
+
+	want := []struct {
+		sourceID       string
+		requisitionKey string
+	}{
+		{"am9icG9zdDqse7B07y815DKTEfT06Ipv", "am9iOmUBlETzb9qpRozEbBOuonc"},
+		{"am9icG9zdDoD_2EMxypZVF1uQCvSoMu5", "am9iOq5k6zDaEq3Gg4dMVgR-jyo"},
+		{"am9icG9zdDp_0pnMKN0lg55LNclgvKRe", "am9iOpch5t43aO1ixCdgDSmcq68"},
+		{"am9icG9zdDq7TcZ2MK-GVbcwAbMMPcsM", "am9iOpMR6ySBupEfKRPwDVZLa1k"},
+		{"am9icG9zdDpNipDbaZHs89GjmNb6F4IO", "am9iOqCwER_efx-JZBwMhi-5YtQ"},
+		{"am9icG9zdDqA6mT47ZS3M7f6TeG6qv36", "am9iOvrMPb6xviOENmCcAbJm5BM"},
+		{"am9icG9zdDpGbtVkYuwqKdDSBHx74oNl", "am9iOiQc5Cq5yyBGS0WB7QWlxFk"},
+	}
+	if len(postings) != len(want) {
+		t.Fatalf("got %d postings, want %d", len(postings), len(want))
+	}
+	for i, tc := range want {
+		p := postings[i]
+		if p.SourceID != tc.sourceID {
+			t.Errorf("posting %d: SourceID: got %q, want %q", i, p.SourceID, tc.sourceID)
+		}
+		switch {
+		case p.RequisitionKey == nil:
+			t.Errorf("posting %d (%s): RequisitionKey: got nil, want pointer to %q", i, tc.sourceID, tc.requisitionKey)
+		case *p.RequisitionKey != tc.requisitionKey:
+			t.Errorf("posting %d (%s): RequisitionKey: got %q, want %q", i, tc.sourceID, *p.RequisitionKey, tc.requisitionKey)
+		}
+		if p.RequisitionKey != nil && *p.RequisitionKey == p.SourceID {
+			t.Errorf("posting %d: RequisitionKey equals SourceID (%q) — the key must be the job, not the job post", i, p.SourceID)
+		}
+	}
+}
+
+// TestGemAdapter_BlankInternalJobID_LeavesRequisitionKeyNil covers the three
+// absence shapes no recorded board carries. All must land as nil: a
+// whitespace-only key would otherwise be shared by every such post and stamp
+// them as one ATS-supplied requisition.
+func TestGemAdapter_BlankInternalJobID_LeavesRequisitionKeyNil(t *testing.T) {
+	const base = `{"id":"am9icG9zdDpA","absolute_url":"https://jobs.gem.com/supio/am9icG9zdDpA","title":"Role"`
+	cases := []struct {
+		name string
+		job  string
+	}{
+		{"absent", base + `}`},
+		{"null", base + `,"internal_job_id":null}`},
+		{"empty_string", base + `,"internal_job_id":""}`},
+		{"whitespace_only", base + `,"internal_job_id":"   "}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`[` + tc.job + `]`))
+			}))
+			t.Cleanup(srv.Close)
+
+			postings, err := newGemWithBaseURL(srv.Client(), srv.URL).FetchPostings(t.Context(), gemSupioToken)
+			if err != nil {
+				t.Fatalf("FetchPostings: %v", err)
+			}
+			if len(postings) != 1 {
+				t.Fatalf("got %d postings, want 1", len(postings))
+			}
+			if postings[0].RequisitionKey != nil {
+				t.Errorf("RequisitionKey: got pointer to %q, want nil", *postings[0].RequisitionKey)
+			}
+		})
+	}
+}

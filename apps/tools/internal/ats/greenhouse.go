@@ -70,12 +70,25 @@ type ghResponse struct {
 // last-modified semantics (not posting age), and `first_published` is unreliable
 // across Greenhouse boards. The full job is preserved in RawData for re-interpretation.
 type ghJob struct {
-	ID             int64  `json:"id"`
-	Title          string `json:"title"`
-	AbsoluteURL    string `json:"absolute_url"`
-	FirstPublished string `json:"first_published"`
-	UpdatedAt      string `json:"updated_at"`
-	Content        string `json:"content"` // entity-encoded HTML (e.g. &lt;p&gt;…); htmlToPlainText handles it
+	ID int64 `json:"id"`
+	// InternalJobID is Greenhouse's job-level identifier, distinct from the
+	// job-post `id`: a board that splits one job into several posts repeats
+	// this value across them. Those siblings vary by more than location —
+	// live boards carry keys covering nine differently-titled Staff+
+	// engineering posts — so the key groups job posts, not one role title.
+	//
+	// Raw bytes, not a number type, because any declared number type turns a
+	// spelling it does not expect into a decode error, and a decode error
+	// aborts the whole board — an optional field would take a required fetch
+	// down with it. The corpus carries two spellings today, integer and JSON
+	// null; raw bytes cost nothing and mean a third does not have to be
+	// anticipated to be survived. ghRequisitionKey interprets them.
+	InternalJobID  json.RawMessage `json:"internal_job_id"`
+	Title          string          `json:"title"`
+	AbsoluteURL    string          `json:"absolute_url"`
+	FirstPublished string          `json:"first_published"`
+	UpdatedAt      string          `json:"updated_at"`
+	Content        string          `json:"content"` // entity-encoded HTML (e.g. &lt;p&gt;…); htmlToPlainText handles it
 	Location       struct {
 		Name string `json:"name"`
 	} `json:"location"`
@@ -127,6 +140,7 @@ func (g *Greenhouse) FetchPostings(ctx context.Context, boardToken string) ([]do
 
 		posting.Title = ptrIfNonEmpty(job.Title)
 		posting.JobURL = ptrIfNonEmpty(job.AbsoluteURL)
+		posting.RequisitionKey = ghRequisitionKey(job.InternalJobID)
 		posting.LocationText = ptrIfNonEmpty(job.Location.Name)
 		// why: LocationTexts is the multi-source array column; Greenhouse exposes
 		// a single location string. Wrap it in a slice so Greenhouse rows have
@@ -168,6 +182,25 @@ func (g *Greenhouse) FetchPostings(ctx context.Context, boardToken string) ([]do
 	}
 
 	return postings, nil
+}
+
+// ghRequisitionKey renders a raw internal_job_id as a requisition key, and nil
+// for anything that is not a JSON integer. Decoding through **int64 is what
+// separates the three outcomes in one pass: null clears the pointer without
+// error, absent bytes and every non-integer spelling fail, and only an integer
+// allocates. Both nil paths matter — null must never become the shared fake key
+// "0", and a board that quotes the number or writes 1.0e3 must still ingest.
+//
+// An integral-looking float is not rounded back into a key. The digits a board
+// meant are a guess, and a wrong key merges unrelated postings into one
+// requisition; nil only costs this posting its grouping.
+func ghRequisitionKey(raw json.RawMessage) *string {
+	var id *int64
+	if err := json.Unmarshal(raw, &id); err != nil || id == nil {
+		return nil
+	}
+	key := strconv.FormatInt(*id, 10)
+	return &key
 }
 
 func ptrIfNonEmpty(s string) *string {

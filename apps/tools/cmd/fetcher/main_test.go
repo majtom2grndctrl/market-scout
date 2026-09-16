@@ -492,3 +492,36 @@ func TestSummaryInvariant(t *testing.T) {
 		})
 	}
 }
+
+func TestSnapshotWrite_ForwardsRequisitionKeyToParams(t *testing.T) {
+	// RequisitionKey must flow through buildSnapshotParams into the nullable
+	// requisition_key column. A missing mapping here compiles clean and writes
+	// NULL on every row — adapters correct, column present, feature dead — so
+	// this test is the only thing that catches it.
+	t.Run("nil RequisitionKey becomes NULL", func(t *testing.T) {
+		p := domain.Posting{
+			SourceID:  "123",
+			SourceURL: "https://example.com/jobs/123",
+			RawData:   json.RawMessage(`{"id":123}`),
+		}
+		got := buildSnapshotParams(1, 7, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
+		if got.RequisitionKey.Valid {
+			t.Errorf("RequisitionKey: got %+v, want Valid=false for nil input", got.RequisitionKey)
+		}
+	})
+
+	t.Run("set RequisitionKey carries the value", func(t *testing.T) {
+		key := "JR12345"
+		p := domain.Posting{
+			SourceID:       "123",
+			SourceURL:      "https://example.com/jobs/123",
+			RawData:        json.RawMessage(`{"id":123}`),
+			RequisitionKey: &key,
+		}
+		got := buildSnapshotParams(1, 7, time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), p)
+		want := sql.NullString{String: key, Valid: true}
+		if got.RequisitionKey != want {
+			t.Errorf("RequisitionKey: got %+v, want %+v", got.RequisitionKey, want)
+		}
+	})
+}

@@ -35,8 +35,9 @@ INSERT INTO posting_snapshots (
     compensation_min,
     compensation_max,
     compensation_currency,
-    compensation_period
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);
+    compensation_period,
+    requisition_key
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21);
 
 -- name: ListLatestDescriptionsByCompany :many
 -- Latest snapshot's description_text per job_posting for a company.
@@ -55,3 +56,11 @@ FROM (
     ORDER BY ps.job_posting_id, ps.fetched_at DESC
 ) latest
 WHERE description_text IS NOT NULL;
+
+-- name: ListPostingCompaniesByIDs :many
+-- Returns the owning company for each existing posting id. The boilerplate
+-- preprocessor uses this only to reject a selected id from another company
+-- before loading any cleaned text for it.
+SELECT id AS posting_id, company_id
+FROM job_postings
+WHERE id = ANY($1::bigint[]);

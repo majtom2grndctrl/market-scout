@@ -211,6 +211,20 @@ func decodeWorkdayJob(raw json.RawMessage, boardToken, host, site string, index 
 
 	posting.Title = ptrIfNonEmpty(job.Title)
 
+	// bulletFields[0] is the tenant's requisition number (e.g. "JR12345"). When
+	// a tenant publishes one requisition as several per-location postings, the
+	// siblings share this number — though on the boards fetched so far that is
+	// rare: 588 distinct numbers across 594 keyed postings, and none shared
+	// among those currently open. Any later element is a rendered chip, not an
+	// identifier, so only the first is read. Trim before the non-empty
+	// check: ptrIfNonEmpty only folds "", so a whitespace-only chip would
+	// otherwise survive as a key that falsely matches nothing else on the
+	// board. Store the trimmed value — stray whitespace would keep a key
+	// from matching its own siblings.
+	if len(job.BulletFields) > 0 {
+		posting.RequisitionKey = ptrIfNonEmpty(strings.TrimSpace(job.BulletFields[0]))
+	}
+
 	// CXS list endpoint returns a single rendered string, not a structured
 	// array. Wrap verbatim for parity with other adapters' LocationTexts.
 	if job.LocationsText != "" {

@@ -35,8 +35,9 @@ INSERT INTO posting_snapshots (
     compensation_min,
     compensation_max,
     compensation_currency,
-    compensation_period
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+    compensation_period,
+    requisition_key
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 `
 
 type InsertPostingSnapshotParams struct {
@@ -60,6 +61,7 @@ type InsertPostingSnapshotParams struct {
 	CompensationMax        sql.NullInt64
 	CompensationCurrency   sql.NullString
 	CompensationPeriod     sql.NullString
+	RequisitionKey         sql.NullString
 }
 
 func (q *Queries) InsertPostingSnapshot(ctx context.Context, arg InsertPostingSnapshotParams) error {
@@ -84,6 +86,7 @@ func (q *Queries) InsertPostingSnapshot(ctx context.Context, arg InsertPostingSn
 		arg.CompensationMax,
 		arg.CompensationCurrency,
 		arg.CompensationPeriod,
+		arg.RequisitionKey,
 	)
 	return err
 }
@@ -166,6 +169,43 @@ func (q *Queries) ListLatestDescriptionsByCompany(ctx context.Context, companyID
 	for rows.Next() {
 		var i ListLatestDescriptionsByCompanyRow
 		if err := rows.Scan(&i.JobPostingID, &i.DescriptionText); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPostingCompaniesByIDs = `-- name: ListPostingCompaniesByIDs :many
+SELECT id AS posting_id, company_id
+FROM job_postings
+WHERE id = ANY($1::bigint[])
+`
+
+type ListPostingCompaniesByIDsRow struct {
+	PostingID int64
+	CompanyID int64
+}
+
+// Returns the owning company for each existing posting id. The boilerplate
+// preprocessor uses this only to reject a selected id from another company
+// before loading any cleaned text for it.
+func (q *Queries) ListPostingCompaniesByIDs(ctx context.Context, dollar_1 []int64) ([]ListPostingCompaniesByIDsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPostingCompaniesByIDs, pq.Array(dollar_1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPostingCompaniesByIDsRow
+	for rows.Next() {
+		var i ListPostingCompaniesByIDsRow
+		if err := rows.Scan(&i.PostingID, &i.CompanyID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
