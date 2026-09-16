@@ -17,6 +17,18 @@ export interface MeasureRow {
   // drawing through missing data. The flag carries the signal; value stays 0,
   // keeping "0 real" distinct from "0 unknown."
   readonly gap?: boolean;
+  // The ATS's own requisition count behind the same rows `value` counts: some
+  // boards collapse sibling job posts under one platform-level job, so posting
+  // count overstates distinct roles — on Greenhouse, siblings can differ in
+  // title, not just location, since the platform's own job/job-post model
+  // treats them as one job. Present only on a `count` over the open cohort:
+  // `posting_requisitions` resolves against the current snapshot and covers
+  // open postings only, so no other cohort and no historical week can answer
+  // it, and a grouping that separates one job's sibling posts into different
+  // rows — `market` — would report that job once per row. Every row that
+  // cannot answer leaves the key absent rather than reporting a 0 that would
+  // read as "no requisitions."
+  readonly requisitions?: number;
 }
 
 export interface MeasureResult {

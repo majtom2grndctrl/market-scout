@@ -1,11 +1,16 @@
 import type { Fragment } from "postgres";
 
+import type { Grouping } from "../composition";
+
 import type { MeasureContext, MeasureRow } from "./measure-engine";
 import { createMeasureScope } from "./measure-scope";
 
 interface AggregateSqlRow {
   readonly keys: Record<string, string>;
   readonly value: number;
+  // Present only when `selectAggregateRows` projected the column; see the
+  // suppression rule there.
+  readonly requisitions?: number;
 }
 
 interface RateSqlRow extends AggregateSqlRow {
@@ -208,6 +213,32 @@ function andFragments(sql: MeasureContext["sql"], fragments: readonly Fragment[]
   return rest.reduce((joined, fragment) => sql`${joined} AND ${fragment}`, first);
 }
 
+// Groupings that put one requisition's sibling postings in different rows.
+// Under `market` that separation is the mechanism rather than an accident:
+// listing a requisition once per location creates both the siblings and the
+// markets that divide them, so a consumer totalling the series reads one job
+// as several.
+//
+// A threshold, not a clean line — any grouping separates siblings when the
+// classifier disagrees across them. Totalling the series over the dev corpus
+// against its true distinct count puts `market` an order of magnitude past the
+// rest, which is what earns it the only entry here:
+//
+//   market      value +48.0%   requisitions +48.7%
+//   role        value  +3.3%   requisitions  +3.9%
+//   seniority   value   0.0%   requisitions  +0.9%
+//
+// Read a per-row `requisitions` as the distinct count within that row, never
+// as a term to total — it is no more additive than `value`. `seniority` is the
+// one grouping where the two part, one term per posting keeping `value` exact
+// while `requisitions` drifts; accepted at 0.9%.
+//
+// `company` cannot split a requisition at all: keys are board-scoped and the
+// distinct count is company-keyed, so siblings share a row. `week` never
+// reaches here — a week-grouped count walks `selectWeeklyAggregateRows`, which
+// projects no requisition column.
+const SIBLING_SPLITTING_GROUPINGS: readonly Grouping[] = ["market"];
+
 async function selectAggregateRows(
   context: MeasureContext,
   normalize: boolean,
@@ -226,19 +257,57 @@ async function selectAggregateRows(
   const order = orderClause(sql, composition.sort);
   const limit = composition.limit == null ? undefined : sql`LIMIT ${composition.limit}`;
 
+  // `posting_requisitions` answers "how many jobs, not listings" — but only for
+  // a `count` over the open cohort, grouped so no row holds part of a
+  // requisition. The view holds one row per *open* posting resolved against its
+  // current snapshot: under `closed`/`all` an inner join would silently shrink
+  // `value` itself, and a left join would report a fabricated 0. `share` is a
+  // proportion, so an absolute second count beside it would mean nothing. All
+  // three suppress in SQL rather than dropping the key from the mapped row, so
+  // no suppressed row ever carries the column.
+  //
+  // Counting distinct over (company_id, requisition_key) rather than the key
+  // alone is load-bearing: keys are board-scoped, so two companies can spell the
+  // same requisition and a bare distinct count would merge them.
+  const countsRequisitions =
+    composition.measure === "count" &&
+    composition.cohort === "open" &&
+    !(composition.groupBy ?? []).some((grouping) => SIBLING_SPLITTING_GROUPINGS.includes(grouping));
+  // Accepted cost, measured on the dev read-only DSN (EXPLAIN ANALYZE with
+  // TIMING OFF, warmed, 3 runs each, 4,734 open postings): the ungrouped open
+  // count goes 29.5 / 29.6 / 30.1 ms → 127.7 / 129.5 / 141.5 ms, and the
+  // company-grouped one 37.5 / 37.7 / 38.3 ms → 143.7 / 150.1 / 156.1 ms.
+  // `SELECT count(*) FROM posting_requisitions` alone is 81–92 ms, so the view
+  // itself is the whole increment. No route reads this yet; `count`/`open` is
+  // the default composition, so the cost arrives with the first one that does.
+  // Recorded, not optimized: the second denominator is the point of the
+  // feature, and ~100 ms buys it.
+  const requisitionJoin = countsRequisitions
+    ? sql`JOIN posting_requisitions AS requisition ON requisition.job_posting_id = cohort.job_posting_id`
+    : sql``;
+  // Counted over the same fanned rows as `value`: `scope.joins` expands a
+  // posting into one row per taxonomy term, and both numbers must share that
+  // denominator.
+  const requisitionAggregate = countsRequisitions
+    ? sql`, count(DISTINCT (requisition.company_id, requisition.requisition_key))::int AS requisitions`
+    : sql``;
+  const requisitionColumn = countsRequisitions ? sql`, requisitions` : sql``;
+
   const rows = await sql<AggregateSqlRow[]>`
     WITH grouped AS (
       SELECT
         ${scope.keys ?? sql`'{}'::jsonb`} AS keys,
         count(*)::int AS value
+        ${requisitionAggregate}
       FROM ${scope.cohort} AS cohort
       JOIN job_postings AS posting ON posting.id = cohort.job_posting_id
       ${scope.joins ?? sql``}
+      ${requisitionJoin}
       WHERE ${where}
       ${grouping ?? sql``}
     ),
     selected AS (
-      SELECT keys, value
+      SELECT keys, value ${requisitionColumn}
       FROM grouped
       ${order}
       ${limit ?? sql``}
@@ -246,11 +315,18 @@ async function selectAggregateRows(
     SELECT
       keys,
       ${normalize ? sql`value::double precision / NULLIF(sum(value) OVER (), 0)` : sql`value`} AS value
+      ${requisitionColumn}
     FROM selected
     ${order}
   `;
 
-  return rows.map((row) => ({ keys: row.keys, value: row.value }));
+  // Absent, never 0: a row that cannot supply the signal omits the key, so
+  // "0 real" stays distinct from "0 unknown."
+  return rows.map((row) => ({
+    keys: row.keys,
+    value: row.value,
+    ...(row.requisitions != null && { requisitions: row.requisitions }),
+  }));
 }
 
 // --- Shared weekly gap scaffold ---------------------------------------------
