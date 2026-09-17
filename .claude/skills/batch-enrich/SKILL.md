@@ -17,9 +17,19 @@ argument-hint: "<count> [focus description] [--force] [--recent]"
 > **Status:** previously deprecated in favor of `cmd/batch-enrich` — back in play as of 2026-07. `claude -p` is no longer covered by the Max subscription, so the Go binary bills API dollars per posting while this skill runs on session tokens. Path forward (skill revival, hook adaptation) is undecided; until then, keep this skill and the binary's classification contract in sync — `classification-pins` below is the shared anchor.
 
 ```classification-pins
-PROMPT_VERSION=batch-enrich-v4
+PROMPT_VERSION=batch-enrich-v5
 MODEL=claude-haiku-4-5-20251001
 ```
+
+**Bump `PROMPT_VERSION` in the same commit as any change to classification
+discipline, grounding rules, the agent contract, or selection semantics.**
+This pin sat at `batch-enrich-v4` from 2026-05-15 to 2026-09-17 while five
+materially different prompts shipped under it (2026-07-27, 2026-08-07 ×2,
+2026-09-17 ×3). Every `provenance.prompt_version` written in that window
+collapses onto one string: no cross-run query can separate the cohorts,
+and no backfill can tell which prompt classified which posting. A stale
+pin isn't a paperwork gap — it destroys the one thing that lets later work
+tell these runs apart.
 
 # Batch Enrich
 
@@ -29,10 +39,10 @@ Enrich job postings into canonical roles, specializations, skills, and a structu
 
 | Role | Owns |
 |---|---|
-| Orchestrator (this skill) | Arg parsing, **deduplicated work-unit selection**, wave/chunk dispatch, report |
+| Orchestrator (this skill) | Arg parsing, **deduplicated work-unit selection via `enrichment_preview`**, wave/chunk dispatch, report |
 | Agent (Haiku, per chunk) | Fetch the representative's description, load taxonomy + collision list, classify once, `save_enrichment` per sibling, retry on `ok:false` |
 
-- Orchestrator selects **which work units** — nothing else. It never loads taxonomy or collision data. Injecting that into every prompt double-pays: read once, then re-typed as input tokens per agent, and agents re-query it anyway.
+- Orchestrator selects **which work units** — nothing else, and it selects by calling `enrichment_preview`, not by writing SQL. It never loads taxonomy or collision data. Injecting that into every prompt double-pays: read once, then re-typed as input tokens per agent, and agents re-query it anyway.
 - Every agent reads taxonomy/collision state fresh, itself, every time.
 - `save_enrichment` commits per posting, so a killed run (e.g. hitting a usage limit mid-wave) leaves already-processed postings safely committed. Unreached postings re-select automatically on the next run.
 - Duplicate postings are collapsed **before** dispatch, not reconciled after. One job is read once, judged once, and written to each of its postings.
@@ -54,7 +64,7 @@ A wave's total work units = (agents per wave) × (chunk size). Postings touched 
 
 | Arg | Example | Effect |
 |---|---|---|
-| count | `25` | Window size on selection. Bounds **work units**; complete units are never split, so postings returned is ≥ `count`. Report both numbers. |
+| count | `25` | Window size on selection, passed to `enrichment_preview`'s `count` param. Bounds **work units**; complete units are never split, so postings returned is ≥ `count`. Report both numbers. Hard-bounded 1..500 by the tool (Step 3); a run wanting more must be split across multiple invocations. |
 | focus | `prioritize AI/ML engineering roles` | ILIKE prefilter on title + description; passed to each agent as guidance |
 | `--force` | `--force` | Re-classify postings that already have classifications. `save_enrichment` inserts a new classification row; history is never deleted. May appear anywhere in args. |
 | `--recent` | `--recent` | Flip selection order to newest-first (`first_seen_at DESC`). Default is oldest-first. May appear anywhere in args. |
@@ -77,122 +87,55 @@ Strip `--force` and `--recent` from `$ARGUMENTS` first using exact token matchin
 - `force` — boolean from the strip step
 - `recent` — boolean from the strip step
 
-### 3. Select posting IDs (deduplicated)
+### 3. Select the work-unit cohort via `enrichment_preview`
 
-Selection is the orchestrator's only DB read. Pull IDs, not descriptions — agents fetch their own text.
+Selection is a single MCP tool call, not SQL the orchestrator writes. Pull IDs, not descriptions — agents fetch their own text.
 
-Postgres runs in docker compose (service name `db`). Run psql inside the container:
+**Preflight — the tool must be reachable before a run starts.** Load `mcp__market-scout-postgres__enrichment_preview` via ToolSearch before dispatch. If ToolSearch can't resolve it, or the call returns a transport error, **stop the run and report the failure.** Do not fall back to hand-written selection SQL. A silent fallback is exactly the drift this section exists to close — see below.
 
-```bash
-docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1
-```
+**Why delegate instead of selecting locally.** Correct dedup is transitive connected components over two edges (identical description text; identical requisition key *and* identical normalized title), not a scalar key — an algorithm that doesn't belong hand-copied into a markdown file. It already drifted once: this skill's own prior version of this step implemented text-equality only, the Go core it was meant to mirror implemented the fuller two-edge closure, and the two disagreed on real data within a day of each other (Boulder Care: 41 postings under one requisition key and one normalized title, description revised three times — the Go core correctly resolves that to one work unit; the old text-only SQL here split it into three). One implementation, living in Go, is the only version of this rule that can't drift from itself.
 
-`POSTGRES_USER` and `POSTGRES_DB` are in `.env.local` (loaded by the compose file). Source `.env.local` in the orchestrator shell before invoking, or pass them inline. Do not use host-side psql — version skew with the container is a known footgun.
+**Call**, mapping the skill's parsed args (Step 2) onto the tool's parameters:
 
-**Selection deduplicates.** A board may list one job many times — once per location — so several postings can describe identical work. Classifying each independently is both wasted model time and a correctness problem: the 2026-09-16 run classified Harvey's five identical "GTM Technology Product Owner" postings in different chunks and got three different seniorities for one job. Select **work units**, not raw postings; one classification per work unit is then written to every posting in it (see Step 6).
+| Skill arg | Tool param | Mapping |
+|---|---|---|
+| `count` | `count` | Passed through. Hard-bounded **1..500** — see below. |
+| `focus` | `focus` | Passed through (empty string when no focus given). ILIKE prefilter on title or description. |
+| `force` | `force` | Passed through. `true` drops the already-classified filter. |
+| `recent` | `sort` | `recent=true` → `"newest_first"`; default (`recent=false`) → `"oldest_first"`. |
 
-**Dedup key**, per posting, from its latest snapshot:
+Dedup is always on inside the tool — there's no parameter to disable it; that's the coordinator's contract, not a per-run choice.
 
-    company_id | md5(description_text)
+**The 1..500 cap is hard.** A `count` outside that range gets no partial result: the tool returns `ok:false` with an `errors[]` entry (`path: "count", code: "invalid_count"`) and empty `sample`/`postings`. **A desired run over 500 work units cannot be requested in one call — split it across multiple `enrichment_preview` calls and dispatch passes, each ≤ 500.** Do not try to raise the cap or page around it another way.
 
-**Byte-identical description text, within one company. That is the whole key.**
+**Response fields the orchestrator needs:**
 
-⚠️ **Do not add the ATS requisition key as a merge signal.** An earlier version of
-this skill preferred it and that was a correctness bug — it shipped on
-2026-09-17 and mis-merged three groups in its first run. At Greenhouse and Ashby
-the requisition key is a **job-family / opening-group identifier, not a
-per-posting identity**: 159 of 271 multi-posting requisition-key groups in this
-database (59%, 481 postings) span more than one title, measured on
-latest-snapshot-per-posting so retitling cannot explain it. One Anthropic key
-carries nine distinct Staff+ engineering roles. One key at company 22 spans four
-titles at four different seniorities.
+| Field | Type | Use |
+|---|---|---|
+| `ok` | bool | `false` means the call was rejected (`errors[].code`: `invalid_count`, `invalid_sort`, or `db_error`). Stop and report — do not retry with local SQL. |
+| `selected_count` | int | Total postings selected, siblings included. ≥ `work_unit_count`. |
+| `work_unit_count` | int | Distinct work units selected — what `count` actually bounds. |
+| `already_classified_count` | int | Already-classified postings included (nonzero only under `force`). |
+| `postings[]` | array | The dispatch cohort — hand this whole list to agents. Distinct from `sample[]`, a lightweight count-capped preview without dedup fields; don't dispatch from `sample`. |
+| `postings[].posting_id` | int | Posting to fetch/classify/save. |
+| `postings[].company_id` | int | Drives chunk assignment (Step 5). |
+| `postings[].company_name` | string | For chunk descriptions and reporting. |
+| `postings[].title` | string | For reporting. |
+| `postings[].dedup_key` | string | Groups siblings into one work unit. |
+| `postings[].is_representative` | bool | The one posting per unit an agent actually reads and classifies; the rest are siblings written with the same result. |
 
-Merging on it wrote one classification across four different Stripe Staff SWE
-roles (Data Engineering Solutions, Business Data, Data Quality & Governance,
-Product Risk) and across three different PMM roles (Global Selling,
-Bridge/Stablecoins, Payments). That is a worse failure than the duplicate
-inconsistency dedup exists to prevent: the old bug gave one job three answers
-*visibly*; this gave three jobs one answer *silently*.
+Report both `work_unit_count` and `selected_count` per Step 8 — they differ whenever a unit has siblings, and collapsing them into one number is the failure this step exists to prevent. Log `already_classified_count`, and siblings riding along beyond `count` (`selected_count - work_unit_count`).
 
-Text equality is self-evidencing — if two descriptions are byte-identical, they
-are the same job posting, and no judgement is involved. It catches the shape that
-actually matters: **442 byte-identical text groups covering 1,253 postings, 149
-of them spanning multiple requisition keys** (the one-posting-per-location
-fan-out, e.g. six Snap! Raise territories under six requisition keys).
+**What the tool does — rationale for trusting its output, not a spec to re-derive here.** `enrichment_preview` calls the same shared selection core (`internal/enrich/selection`) that the `batch-enrich` Go binary uses, backed by `ListUnclassifiedPostings` / `ListUnclassifiedPostingsForced` in `apps/tools/internal/db/queries/enrich.sql` — that file is the implementation of record; read its header comment for the exact algorithm.
 
-Known cost, accepted deliberately: two postings for one requisition whose text
-was edited between fetches will not merge, and may get two independent
-classifications. That is the pre-existing behaviour and it is strictly less
-harmful than merging distinct jobs. The safe recovery of that case is a gated
-edge — merge on `same requisition key AND same normalized title` in *addition* to
-text equality, which requires connected components over two relations rather than
-a scalar key. That belongs in the shared Go selection core
-(`internal/enrich/selection`), not in hand-written SQL here.
+- **Selection contract**, unchanged from before: latest snapshot must have non-null `description_text`. `force=false` additionally requires no existing `classifications` row for the posting; `force=true` drops that filter and never deletes prior rows. An empty `focus` applies no filter; a non-empty one ILIKE-matches title or description. Ordering is by `first_seen_at`, ascending by default, descending when `sort` is `newest_first`.
+- **A work unit is never split across the `count` boundary.** `count` bounds work units, not raw posting rows; every sibling of a selected unit rides along even past `count`, so postings returned is ≥ `count` (fewer only if the remaining pool has fewer than `count` units left).
+- **Why duplicates must collapse before dispatch.** A board can list one job many times — once per location — so several postings describe identical work. Classifying each independently is wasted model time and a correctness problem: the 2026-09-16 run classified Harvey's five identical "GTM Technology Product Owner" postings in different chunks and got three different seniorities for one job.
+- **Why text equality is the strong signal.** Two byte-identical descriptions, within one company, are self-evidencing — no judgement required. That catches the shape that matters most: 442 byte-identical text groups covering 1,253 postings, 149 of them spanning multiple requisition keys (the one-posting-per-location fan-out).
+- **The requisition-key job-family problem, and why it's gated.** An earlier version of this skill treated a shared ATS requisition key alone as a merge signal — a correctness bug that shipped and mis-merged real jobs on 2026-09-17. At Greenhouse and Ashby the requisition key is a job-family / opening-group identifier, not a per-posting identity: 159 of 271 multi-posting requisition-key groups (59%, 481 postings) span more than one title. Merging on it blindly wrote one classification across four different Stripe Staff SWE roles and three different PMM roles — worse than the inconsistency dedup exists to prevent, because it's silent: three jobs get one answer instead of one job getting three visibly different ones. The Go core's fix is narrower than "ignore requisition key": it merges on requisition key *only when the normalized title also matches*, as an additional edge alongside text equality, closed transitively (if A and B share text, and B and C share a gated requisition key, A, B, and C are one unit).
+- **Title alone is never a signal.** Same title with different text is usually a genuinely different job — this holds in the Go core exactly as it held here before.
 
-Do not use title alone: same title with different text is usually a genuinely
-different job.
-
-Selection contract:
-- **Always:** latest snapshot has non-null `description_text`
-- **When `force=false`:** also require `NOT EXISTS (SELECT 1 FROM classifications c WHERE c.job_posting_id = job_postings.id)`
-- **When `force=true`:** drop the `NOT EXISTS` filter; `description_text IS NOT NULL` still applies. No DELETE of old rows.
-- If focus is non-empty: ILIKE prefilter on title or description_text
-- Order by `job_postings.first_seen_at` — `ASC` by default, `DESC` when `recent=true`
-- LIMIT by `count`, **then expand each selected key to all its sibling postings** so a work unit is never split across the window boundary. A split group would classify some siblings this run and the rest next run, independently — reintroducing exactly the inconsistency dedup exists to prevent.
-
-`count` therefore behaves as a floor on postings, not an exact number: it bounds the window, and complete groups are returned. Expect postings returned ≥ `count`, and classifications performed ≈ `count`. Report both.
-
-Pull `posting_id`, `company_id`, `dedup_key`, and `is_representative`. `company_id` drives chunk assignment (Step 5); `dedup_key` groups siblings; `is_representative` marks the one posting the agent actually reads and classifies.
-
-Log how many postings were skipped because their latest snapshot had NULL `description_text`, and how many sibling postings rode along beyond `count`.
-
-**Reference query** (`<order>` is `ASC` or `DESC`; drop the `NOT EXISTS` block when `force=true`):
-
-```sql
-WITH candidate AS (
-    SELECT jp.id AS posting_id, jp.company_id, jp.first_seen_at,
-           s.requisition_key, s.title,
-           md5(coalesce(s.description_text, '')) AS text_hash
-    FROM job_postings jp
-    JOIN LATERAL (
-        SELECT requisition_key, title, description_text
-        FROM posting_snapshots
-        WHERE job_posting_id = jp.id
-        ORDER BY fetched_at DESC
-        LIMIT 1
-    ) s ON true
-    WHERE s.description_text IS NOT NULL
-      AND NOT EXISTS (
-          SELECT 1 FROM classifications c WHERE c.job_posting_id = jp.id
-      )
-),
-keyed AS (
-    SELECT *,
-           company_id::text || '|' ||
-           CASE WHEN requisition_key IS NOT NULL
-                THEN 'ats:' || requisition_key
-                ELSE 'txt:' || title || '|' || text_hash
-           END AS dedup_key
-    FROM candidate
-),
-windowed AS (
-    SELECT dedup_key FROM keyed ORDER BY first_seen_at <order> LIMIT <count>
-)
-SELECT k.posting_id,
-       k.company_id,
-       k.dedup_key,
-       row_number() OVER (PARTITION BY k.dedup_key ORDER BY k.posting_id) = 1
-           AS is_representative
-FROM keyed k
-WHERE k.dedup_key IN (SELECT dedup_key FROM windowed)
-ORDER BY k.dedup_key, k.posting_id;
-```
-
-Use `LATERAL` (or `DISTINCT ON`) to keep one row per posting; a naive join against `posting_snapshots` produces duplicates.
-
-`requisition_key` arrives from migration `000027`; the `posting_requisitions` view (`000028`) exposes the same identity for open postings with a `posting:` fallback and a `requisition_source` marker. This query reads the column directly because selection spans closed postings too, which that view excludes by design.
-
-To preview a selection before committing to it, `enrichment_preview` takes a `sort` param: `"newest_first"` matches `--recent`, `"oldest_first"` (the default) matches a plain run.
+To preview a selection before committing to it, call `enrichment_preview` directly ahead of the run — it's the same tool the orchestrator uses for real, so there's no separate preview path to keep in sync.
 
 ### 4. Strip per-company boilerplate (on by default)
 
@@ -215,7 +158,9 @@ Run `mkdir -p agent-output/batch-enrich` once before the wave loop — failure-l
 
 **Chunk:** assign each agent a set of **work units** (Step 3), never a bare list of posting IDs. A work unit is atomic — its representative and siblings always travel together, because splitting one across chunks is precisely how the same job gets two different answers.
 
-The chunk amortizes an agent's fixed cost — tool loading plus the taxonomy fetch — across several work units instead of paying it once each. **Do not hardcode the taxonomy's size here.** It grows every run and any number written down goes stale: this section claimed "~700 rows" while the live count was near 2,800, which made small chunks look roughly four times cheaper than they were. Check it when sizing a run:
+The chunk amortizes an agent's fixed cost — tool loading — across several work units instead of paying it once each. **The taxonomy fetch is not part of that fixed cost, because it never reliably completed as written.** The MCP query tool caps every query at 1000 rows (`rowCap`, `apps/tools/cmd/mcp/main.go:34`) and sets `truncated: true` on any response it cuts off — a flag nothing in this skill ever told an agent to check. `skills` alone passed 1000 rows on 2026-09-13 and is now ~2,260: a plain `SELECT slug, name FROM skills` silently returns under half the table. **Never run that query wholesale.** Step 6 pages it and checks `truncated` on every page.
+
+Because the fetch was already incomplete, any framing that treats "amortize the taxonomy fetch" as the reason to prefer one chunk size over another rests on an operation that wasn't returning complete results in the first place. **Do not hardcode the taxonomy's size either.** It grows every run and any number written down goes stale: this section once claimed "~700 rows" while the live count was near 2,800, which made small chunks look roughly four times cheaper than they were. Check it when sizing a run via `mcp__market-scout-postgres__query` (loaded through ToolSearch same as any other run), which returns one row and isn't subject to the cap:
 
 ```sql
 SELECT (SELECT count(*) FROM canonical_roles)
@@ -224,8 +169,10 @@ SELECT (SELECT count(*) FROM canonical_roles)
 ```
 
 Trade-off, stated explicitly:
-- Larger chunks: cheaper per work unit, but risk (a) context drift/anchoring across many units from the same company, and (b) less wall-clock parallelism (fewer, bigger agents run slower for the same total work).
-- Smaller chunks: more parallelism, higher fixed-cost overhead — and that overhead scales with the taxonomy, so it rises over time even at a fixed chunk size.
+- Larger chunks: fewer, bigger agents — less wall-clock parallelism for the same total work — and more risk of context drift/anchoring across many units from the same company.
+- Smaller chunks: more parallelism, but each agent still pays the same per-agent taxonomy-load overhead (now paginated rather than silently incomplete), and that overhead scales with the taxonomy's size regardless of chunk size.
+
+**Chunk size does not drive taxonomy minting — measured, not assumed.** A controlled A/B ran chunk sizes that were near-identical in practice (mean 11.8 postings/agent vs. 12.2), while a separate, unrelated change dropped new-slug minting 18x between the two runs. Near-identical chunk sizes cannot produce an 18x swing if chunk size were the driver. Do not size chunks to control minting — that lever doesn't exist. Chunk size stays open on the question it actually bears on: context drift and wall-clock time.
 
 **Chunk size is not a fixed default — it's an open experiment.** The ceiling where per-agent context drift or task-quality degradation kicks in is unknown; it needs to be found empirically rather than asserted. Start experiments at **15** and be willing to push to **50**, watching for: classification quality drift late in a chunk (spot-check postings near the end of a large chunk against ones near the start), retry/error rates climbing, and whether an agent begins to anchor on a company's earlier postings when classifying later ones from a different company in the same chunk. Whatever the operator (a human or an orchestrating agent) picks per run, based on what a given run is optimizing for — reserve small chunks for when parallelism/wall-clock matters more, larger chunks for pure token-efficiency runs over the large and growing backlog.
 
@@ -252,7 +199,7 @@ Two consequences worth holding:
 - **Parallelism buys less than it looks like.** Reads and classification parallelize; writes do not. Wave size is still worth keeping at 10 for wall-clock on the read side, but do not expect write throughput to scale with it.
 - **Prompt rules are a weak lever here.** A 2026-09-16 run gave ten agents identical hardened instructions and identical chunk sizes; new-slug counts ranged from 0 to 49. Domain density drove minting far more than wording did. Prefer enforcement at the tool boundary over another paragraph of discipline — and when adding a rule, plan to measure whether it changed anything.
 
-A **midpoint taxonomy refresh** is the one mitigation that demonstrably works: have each agent re-run the taxonomy and collision queries once, halfway through its chunk, so the back half can see slugs minted by siblings earlier in the same wave. Agents confirmed observing sibling slugs appear in that refresh. It costs one extra taxonomy fetch per agent, which is real and rising — another reason not to over-shrink chunks.
+A **midpoint taxonomy refresh** is the one mitigation that demonstrably works: have each agent re-run the taxonomy and collision queries once, halfway through its chunk, so the back half can see slugs minted by siblings earlier in the same wave. Agents confirmed observing sibling slugs appear in that refresh. It costs one extra taxonomy load per agent (paginated, per Step 6), which is real and rising — another reason not to over-shrink chunks.
 
 ### 6. Agent contract
 
@@ -263,12 +210,14 @@ A **work unit** is one representative posting ID plus zero or more sibling posti
 **Setup (once per chunk):**
 
 1. Load `mcp__market-scout-postgres__query` and `mcp__market-scout-postgres__save_enrichment` via ToolSearch.
-2. Load the taxonomy:
+2. Load the taxonomy. **The MCP query tool caps every query at 1000 rows (`rowCap`, `apps/tools/cmd/mcp/main.go:34`) and sets `truncated: true` on any response it cuts off.** `skills` passed that cap on 2026-09-13 and is now ~2,260 rows — never run `SELECT slug, name FROM skills` wholesale; it silently returns under half the table. Page it, and check `truncated` on every response (`skills` included — the cap applies to any table that grows past it):
    ```sql
    SELECT slug, name FROM canonical_roles   ORDER BY slug;
    SELECT slug, name FROM specializations   ORDER BY slug;
-   SELECT slug, name FROM skills            ORDER BY slug;
    SELECT slug, name FROM role_dimensions   ORDER BY slug;
+   SELECT slug, name FROM skills ORDER BY slug LIMIT 1000;
+   SELECT slug, name FROM skills ORDER BY slug LIMIT 1000 OFFSET 1000;
+   -- step OFFSET by 1000 and keep going until a page comes back truncated: false
    ```
 3. Load the cross-table slug-collision list:
    ```sql
@@ -366,7 +315,22 @@ Summaries are **not** persisted (storage deferred per `project.md` non-goals), s
 - An empty or short list is a correct result, not a failure. A posting that says "designing and implementing a robust, scalable data platform" with no tools named gets no tool skills — not `aws, azure, gcp, snowflake, databricks, bigquery, kafka, spark, airflow, dbt, java, scala, python` inferred from what data-platform roles typically use.
 - Ground seniority in explicit signals, in this order. A level word *acting as a level* in the title — Intern, Junior, Senior, Staff, Principal, Lead, Director, Head, VP modifying the role — is the employer's own designation and is authoritative. It is the same word slug discipline strips from the role slug, and it has to land somewhere; `seniority` is where. When the title carries no level word, fall back to years-of-experience or level language in the description.
 - **Read the phrase, not the keyword.** The word only counts when it functions as a level. "Chief of Staff", "Staff Accountant", and "Member of Technical Staff" carry no staff level — a Staff Accountant is an entry-to-mid accounting role.
-- **A band needs a separator; adjacent level words do not form one.** With an explicit `/`, `+`, `or`, or `to` — "Senior/Staff Engineer", "Staff + Sr. Engineer", "Mid-Senior" — the employer means either level, so take the **lower** bound. Two level words sitting adjacent are a single compound level and resolve to the **more senior** component: "Senior Staff" is `staff` (a rung above Staff, not "senior or staff"), "Senior Director" is `director`, "Senior Principal" is `principal`. On 2026-09-17 an agent read "Senior Staff Software Engineer" as a band and filed it `senior` — the only posting in a 62-posting corrective pass that stayed wrong, and it stayed wrong because this distinction was missing here.
+- **A band needs a separator; adjacent level words do not form one.** With an explicit `/`, `+`, `or`, or `to` — "Senior/Staff Engineer", "Staff + Sr. Engineer", "Mid-Senior" — the employer means either level, so take the **lower** bound. Two level words sitting adjacent with no separator are a single compound level, coined by the employer as its own rung — not "senior or staff." Abstract rules for resolving compounds have failed twice in one day; resolve by this table instead:
+
+  | Compound title | Resolved level |
+  |---|---|
+  | senior staff | staff |
+  | senior principal | principal |
+  | senior director | director |
+  | senior manager | senior |
+  | staff principal | principal |
+  | lead staff | staff |
+  | principal architect | principal |
+  | senior lead | lead |
+  | associate director | director |
+  | deputy director | director |
+
+  Match on the words regardless of casing, spacing, or hyphenation — "Senior Staff", "Sr. Staff", and "senior-staff" are the same form. A compound not on this table is genuinely ambiguous: use judgment and record the call in `notes` rather than silently picking a side. On 2026-09-17 an agent read "Senior Staff Software Engineer" as a *band* and filed it `senior` — the only posting in a 62-posting corrective pass that stayed wrong. A follow-up pass applying this table fixed 59 of 60 genuine candidates with zero regressions: enumeration works, description does not.
 - Never read seniority off the subject matter. A posting requiring "1-3 years of building with LLMs in a production environment" reads `junior`, not `senior` — production LLM work sounds advanced, but the stated YOE says otherwise.
 - **These are one rule, not two.** "Not the title" means not the title's subject matter or how senior it *sounds* — it never means discard an explicit level word. An agent on 2026-09-16 read it the strict way, dropped the only unambiguous signal its posting had, and filed a Staff Engineer as `mid`.
 
@@ -432,7 +396,7 @@ For each posting an agent reports as failed, append one line to `agent-output/ba
 
 - **You coordinate, you don't classify.** Never read descriptions in the orchestrator.
 - **Agents are self-contained.** They fetch data, load taxonomy/collision state fresh, classify, and write via `save_enrichment` themselves. No orchestrator-mediated JSON handoff.
-- **Selection only.** The orchestrator's DB reach is work-unit selection — never taxonomy or collision data.
+- **Selection only, via `enrichment_preview`.** The orchestrator never loads taxonomy or collision data, and never writes its own selection SQL — that algorithm lives once, in the Go core, and the orchestrator stops rather than falls back to local SQL if the tool is unreachable.
 - **Dedup before dispatch.** One job is read once, judged once, written to each of its postings. Consistency comes from not asking twice, not from asking more carefully.
 - **Wave size is 10, dispatched in one message.** Serial `Agent` calls defeat the purpose.
 - **Provenance is explicit.** Every `save_enrichment` call passes the pinned `MODEL` / `PROMPT_VERSION`, or cohort tracking is silently lost.
