@@ -377,6 +377,74 @@ Note in the report that failed postings are not written and will be re-selected 
 
 After writing, print a one-line summary to the user: counts + report path.
 
+#### Vocabulary health
+
+The taxonomy went 18x on mint rate in one week with no alarm, because nothing measured it. These three measures close that gap. Compute all three from the database via `mcp__market-scout-postgres__query`, not from agent self-reports — the same bias the "New taxonomy minted this run" bullet above already names (agents claim a slug as new that they in fact reused) applies here too.
+
+**1. Mint rate** — new taxonomy rows created during the run, divided by postings classified during the run. Single-row aggregate; not subject to the 1000-row cap (Step 5), because it returns exactly one row. Bind `<run start>` to the same invocation-start timestamp `failures.jsonl` uses:
+
+```sql
+SELECT
+  (SELECT count(*) FROM canonical_roles WHERE created_at >= '<run start>')
+  + (SELECT count(*) FROM specializations WHERE created_at >= '<run start>')
+  + (SELECT count(*) FROM skills WHERE created_at >= '<run start>') AS new_taxonomy_rows,
+  (SELECT count(*) FROM classifications WHERE classified_at >= '<run start>') AS postings_classified,
+  round(
+    ( (SELECT count(*) FROM canonical_roles WHERE created_at >= '<run start>')
+    + (SELECT count(*) FROM specializations WHERE created_at >= '<run start>')
+    + (SELECT count(*) FROM skills WHERE created_at >= '<run start>') )::numeric
+    / nullif((SELECT count(*) FROM classifications WHERE classified_at >= '<run start>'), 0)
+  , 3) AS mint_rate;
+```
+
+Report the result against a **0.30 reporting line**. Above it: the run is growing vocabulary about as fast as it is classifying against it — a taxonomy that cannot see itself. Below it: most postings are landing on vocabulary the run already knows. 0.30 sits in a band with nothing observed inside it — steady-state runs measured 0.00–0.22, the current regime measures 0.37–1.38 — so a value on either side of the line places the run in one regime or the other, not on a boundary.
+
+**2. Single-use rate of this run's mints** — of the slugs *this run* created, the share attached to exactly one posting. Also a single-row aggregate:
+
+```sql
+WITH new_slugs AS (
+  SELECT 'canonical_roles' AS tbl, id, slug FROM canonical_roles WHERE created_at >= '<run start>'
+  UNION ALL
+  SELECT 'specializations', id, slug FROM specializations WHERE created_at >= '<run start>'
+  UNION ALL
+  SELECT 'skills', id, slug FROM skills WHERE created_at >= '<run start>'
+),
+usage AS (
+  SELECT ns.tbl, ns.slug, count(DISTINCT c.job_posting_id) AS posting_count
+  FROM new_slugs ns
+  LEFT JOIN job_posting_roles jpr ON ns.tbl = 'canonical_roles' AND jpr.role_id = ns.id
+  LEFT JOIN job_posting_specializations jps ON ns.tbl = 'specializations' AND jps.specialization_id = ns.id
+  LEFT JOIN job_posting_skills jsk ON ns.tbl = 'skills' AND jsk.skill_id = ns.id
+  LEFT JOIN classifications c ON c.id = coalesce(jpr.classification_id, jps.classification_id, jsk.classification_id)
+  GROUP BY ns.tbl, ns.slug
+)
+SELECT
+  count(*) AS mints_this_run,
+  count(*) FILTER (WHERE posting_count = 1) AS single_use_mints,
+  round(count(*) FILTER (WHERE posting_count = 1)::numeric / nullif(count(*), 0), 3) AS single_use_rate
+FROM usage;
+```
+
+This is only meaningful once the run has finished — a slug minted late in the run hasn't had the same chance to be reused as one minted early, so mid-run it reads more single-use than it will end up being. A high value means the run invented vocabulary nobody else will ever match: 43% of all skills are used exactly once, and among skills minted on 2026-09-16/17 it's roughly 68%. A skill used once is not vocabulary.
+
+**3. Advisory-ignored count** — how many mints happened despite `save_enrichment` returning a `similarity_candidates` entry for that slug: the agent minted anyway, after the tool told it a near match already existed. Migration `000034` computes `similarity_candidates`; the writeback envelope (Step 6) returns it per call, per payload. **It is returned but not persisted — there is no audit table for it**, so this count cannot be queried and must be aggregated from agent reports this run instead (an agent that minted a slug also named in its own `similarity_candidates` response for that call reports the collision in its chunk summary). It needs no threshold: an ignored advisory is either justified — the near match really is a different concept — or it isn't, and a human can read forty of them. Persisting `similarity_candidates` to a table is a follow-up, not this skill's job.
+
+**Report only.** All three measures report; none of them gate, fail, or reject a run, and this skill adds no threshold that does. Do not "improve" this into an enforcement mechanism — a rejected run has no rollback path once written, for reasons load-bearing enough to state plainly:
+- `save_enrichment` writes per payload, but mint rate is a run-level aggregate. By the time the rate is computable, the rows it's counting already exist committed — there is nothing left to roll back.
+- At payload grain the numerator is 0–5 new rows. That's noise, not a metric; a threshold needs the run-level aggregate to mean anything.
+- The 2026-05-15 cold-start run (first run into an empty table) measured 1.08 — it would have failed any fixed threshold that also passes steady-state runs. A gate would need a second knob sized to corpus emptiness just to let that run through, and a second knob is how a gate meant to close one problem breeds another.
+
+**Baseline, pre-fix** (2026-09-17, before any mint-rate fix has shipped — this instrumentation only measures, it doesn't fix) — for judging whether a future run's numbers are improving:
+
+| Run hour | Classifications | New skills | Mint rate | Skills/posting |
+|---|---|---|---|---|
+| 17:00 | 161 | 120 | 0.745 | 5.39 |
+| 18:00 | 102 | 8 | 0.078 | 7.13 |
+
+(Skills-only counts, matching the incident record; the mint-rate query above sums all three taxonomy tables per the existing `<run start>` convention, so a live run's number will differ slightly from this table's — 0.789 and 0.088 summing all three tables over the same two hours, confirmed against the live database.)
+
+Minting fell between these two hours while tagging (skills/posting) rose — the signature of reuse (pulling existing skills onto more postings) rather than restraint (tagging fewer skills overall). Flag it, don't conclude from it: it's one hour of data, and cohort homogeneity — a run that happens to land on a narrow, already-well-covered slice of postings — produces the same shape with no change in behavior at all.
+
 #### Failure logging
 
 For each posting an agent reports as failed, append one line to `agent-output/batch-enrich/failures.jsonl`. Append-only — never truncated. Ensure the directory exists before the first append (`mkdir -p agent-output/batch-enrich`); do not assume Step 8's report run has happened.
