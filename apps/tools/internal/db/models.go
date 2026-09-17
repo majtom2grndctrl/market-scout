@@ -205,6 +205,15 @@ type PostingTaxonomy struct {
 	Name         string
 }
 
+type RetiredSlug struct {
+	ID                 int64
+	Slug               string
+	TableName          sql.NullString
+	RetiredAt          time.Time
+	RetiredByMigration string
+	Reason             string
+}
+
 type RoleDimension struct {
 	ID   int64
 	Slug string

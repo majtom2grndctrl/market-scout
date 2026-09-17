@@ -281,3 +281,149 @@ func TestRunSaveEnrichment_UnexpectedDBErrorIsDBError(t *testing.T) {
 		t.Fatalf("errors = %+v, want db_error", env.Errors)
 	}
 }
+
+// TestRunSaveEnrichment_GateFeedbackSurfaced proves the near-duplicate gate's
+// (migration 000033, slug axis narrowed by 000034) three advisory keys
+// (substitutions, dropped, similarity_candidates) thread all the way from the
+// function result into the tool envelope, path and all fields intact — the
+// whole point of the gate being advisory rather than a silent hard rejection.
+func TestRunSaveEnrichment_GateFeedbackSurfaced(t *testing.T) {
+	fr := functionResult{
+		Ok:               true,
+		ClassificationID: int64Ptr(100),
+		PostingID:        int64Ptr(42),
+		NewTaxonomy:      newTaxonomy{},
+		Substitutions: []substitution{
+			{
+				Path:            "specializations[0].slug",
+				Table:           "specializations",
+				ProposedSlug:    "security-infrastructure",
+				ProposedName:    "Security Infrastructure",
+				SubstitutedSlug: "infrastructure-security",
+				SubstitutedName: "Infrastructure Security",
+				Match:           "slug_similarity",
+				Similarity:      0.958,
+			},
+		},
+		Dropped: []droppedEntry{
+			{
+				Path:        "skills[2].slug",
+				Table:       "skills",
+				DroppedSlug: "cloud-platform-architecture",
+				DroppedName: "Cloud Platform Architecture",
+				KeptSlug:    "platform-architecture",
+				Similarity:  0.9,
+				Reason:      "near_duplicate_in_payload",
+			},
+		},
+		SimilarityCandidates: []similarityCandidateGroup{
+			{
+				Path:       "specializations[1].slug",
+				Table:      "specializations",
+				MintedSlug: "data-orchestration",
+				MintedName: "Data Pipeline Architecture",
+				Candidates: []similarityMatch{
+					{
+						Slug:           "data-pipeline-architecture",
+						Name:           "Data Pipeline Architecture",
+						Match:          "exact_name",
+						SlugSimilarity: 0.150,
+						Similarity:     1,
+					},
+				},
+			},
+		},
+	}
+	raw, err := json.Marshal(fr)
+	if err != nil {
+		t.Fatalf("marshaling function result: %v", err)
+	}
+
+	tax := &fakeTaxonomySource{tax: testTaxonomy(), exists: true}
+	saver := &fakeSaver{result: raw}
+
+	env := runSaveEnrichment(context.Background(), validSaveRequest(), tax, saver)
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
+	}
+
+	if len(env.Substitutions) != 1 || env.Substitutions[0] != fr.Substitutions[0] {
+		t.Fatalf("substitutions = %+v, want %+v", env.Substitutions, fr.Substitutions)
+	}
+	if len(env.Dropped) != 1 || env.Dropped[0] != fr.Dropped[0] {
+		t.Fatalf("dropped = %+v, want %+v", env.Dropped, fr.Dropped)
+	}
+	if len(env.SimilarityCandidates) != 1 {
+		t.Fatalf("similarity_candidates = %+v, want 1 entry", env.SimilarityCandidates)
+	}
+	got := env.SimilarityCandidates[0]
+	want := fr.SimilarityCandidates[0]
+	if got.Path != want.Path || got.Table != want.Table || got.MintedSlug != want.MintedSlug ||
+		got.MintedName != want.MintedName || len(got.Candidates) != len(want.Candidates) ||
+		got.Candidates[0] != want.Candidates[0] {
+		t.Fatalf("similarity_candidates[0] = %+v, want %+v", got, want)
+	}
+
+	// The envelope actually serializes the three keys, not just holds them in
+	// memory — that is what makes them visible to the calling agent.
+	payload := string(mustMarshalEnvelope(t, env))
+	for _, key := range []string{`"substitutions"`, `"dropped"`, `"similarity_candidates"`} {
+		if !strings.Contains(payload, key) {
+			t.Fatalf("envelope JSON missing %s: %s", key, payload)
+		}
+	}
+}
+
+// TestRunSaveEnrichment_NoGateFeedback_EnvelopeUnchanged is the regression
+// guard: a function result that carries none of the three 000033 gate keys
+// (the shape every save returned before that migration, and what an untouched
+// payload still returns today) must produce an envelope with those three keys
+// entirely absent from the JSON — not present as `null` or `[]`. omitempty on
+// a nil slice is what gets this; asserting it here is what keeps it that way.
+func TestRunSaveEnrichment_NoGateFeedback_EnvelopeUnchanged(t *testing.T) {
+	tax := &fakeTaxonomySource{tax: testTaxonomy(), exists: true}
+	saver := &fakeSaver{result: okEnvelope(t, 100, 42, newTaxonomy{})}
+
+	env := runSaveEnrichment(context.Background(), validSaveRequest(), tax, saver)
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
+	}
+	if env.Substitutions != nil || env.Dropped != nil || env.SimilarityCandidates != nil {
+		t.Fatalf("gate fields should be nil when untouched: substitutions=%+v dropped=%+v similarity_candidates=%+v",
+			env.Substitutions, env.Dropped, env.SimilarityCandidates)
+	}
+
+	payload := string(mustMarshalEnvelope(t, env))
+	for _, key := range []string{`"substitutions"`, `"dropped"`, `"similarity_candidates"`} {
+		if strings.Contains(payload, key) {
+			t.Fatalf("untouched envelope must omit %s entirely, got: %s", key, payload)
+		}
+	}
+
+	// Same assertion the pre-000033 envelope shape would have satisfied: the
+	// full JSON round-trips to exactly the fields the envelope carried before
+	// this gate's feedback existed.
+	want := saveEnrichmentEnvelope{
+		Ok:               true,
+		ClassificationID: env.ClassificationID,
+		PostingID:        42,
+		Summary:          "a summary",
+		NewTaxonomy:      newTaxonomy{CanonicalRoles: []newTaxonomyEntry{}, Specializations: []newTaxonomyEntry{}, Skills: []newTaxonomyEntry{}},
+		Errors:           []actionError{},
+	}
+	wantPayload := string(mustMarshalEnvelope(t, want))
+	if payload != wantPayload {
+		t.Fatalf("untouched envelope JSON changed:\n got:  %s\n want: %s", payload, wantPayload)
+	}
+}
+
+func int64Ptr(v int64) *int64 { return &v }
+
+func mustMarshalEnvelope(t *testing.T, env saveEnrichmentEnvelope) []byte {
+	t.Helper()
+	b, err := json.Marshal(env)
+	if err != nil {
+		t.Fatalf("marshaling envelope: %v", err)
+	}
+	return b
+}

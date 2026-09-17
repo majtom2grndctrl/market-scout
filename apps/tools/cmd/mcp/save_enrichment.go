@@ -82,20 +82,97 @@ type newTaxonomy struct {
 	Skills          []newTaxonomyEntry `json:"skills"`
 }
 
+// substitution mirrors one entry in the function's substitutions[]: a proposal
+// the near-duplicate gate (migration 000033, narrowed to the slug axis by
+// 000034) silently remapped onto an existing taxonomy row because its slug
+// cleared the substitution threshold against that row. Since 000034, Match is
+// always "<axis>_similarity" (currently "slug_similarity" — 000034 pins the
+// axis to slug and demoted the old exact-name trigger to an advisory-only
+// signal inside similarity_candidates); the field stays a string here rather
+// than a constant because the axis is a migration-owned knob, not a Go one.
+//
+// path indexes the payload AS SUBMITTED by the agent, not the gate's reshaped
+// working copy — do not renumber it. That is what lets the agent correlate
+// this report with the array element it sent.
+type substitution struct {
+	Path            string  `json:"path"`
+	Table           string  `json:"table"`
+	ProposedSlug    string  `json:"proposed_slug"`
+	ProposedName    string  `json:"proposed_name"`
+	SubstitutedSlug string  `json:"substituted_slug"`
+	SubstitutedName string  `json:"substituted_name"`
+	Match           string  `json:"match"`
+	Similarity      float64 `json:"similarity"`
+}
+
+// droppedEntry mirrors one entry in the function's dropped[]: a near-duplicate
+// entry the gate removed from the payload because another entry in the same
+// array (post-substitution) already covered the same concept.
+//
+// path indexes the payload AS SUBMITTED, same caveat as substitution.
+type droppedEntry struct {
+	Path        string  `json:"path"`
+	Table       string  `json:"table"`
+	DroppedSlug string  `json:"dropped_slug"`
+	DroppedName string  `json:"dropped_name"`
+	KeptSlug    string  `json:"kept_slug"`
+	Similarity  float64 `json:"similarity"`
+	Reason      string  `json:"reason"`
+}
+
+// similarityMatch is one near-match reported for a minted slug inside
+// similarityCandidateGroup.Candidates. Match is "exact_name" or "similarity" —
+// since migration 000034 an exact normalized-name match no longer substitutes
+// on its own, so it surfaces here instead, alongside SlugSimilarity (the axis
+// that decides substitution) and Similarity (greatest(slug, name), the
+// combined advisory score).
+type similarityMatch struct {
+	Slug           string  `json:"slug"`
+	Name           string  `json:"name"`
+	Match          string  `json:"match"`
+	SlugSimilarity float64 `json:"slug_similarity"`
+	Similarity     float64 `json:"similarity"`
+}
+
+// similarityCandidateGroup mirrors one entry in the function's
+// similarity_candidates[]: a proposal that still minted a new taxonomy row, but
+// whose near matches are reported advisory-only — nothing was blocked or
+// changed.
+//
+// path indexes the payload AS SUBMITTED, same caveat as substitution.
+type similarityCandidateGroup struct {
+	Path       string            `json:"path"`
+	Table      string            `json:"table"`
+	MintedSlug string            `json:"minted_slug"`
+	MintedName string            `json:"minted_name"`
+	Candidates []similarityMatch `json:"candidates"`
+}
+
 // saveEnrichmentEnvelope is the JSON the tool returns. Validation and DB failures
 // set Ok=false here — they are not MCP transport errors. Summary is echoed from
 // the request, never persisted. NewTaxonomy carries only entries this call minted.
+//
+// Substitutions, Dropped, and SimilarityCandidates are the migration 000033
+// near-duplicate gate's feedback. Each is omitted entirely (not an empty array)
+// when the gate did not touch the payload, mirroring the function's own
+// omit-when-empty contract — so an untouched save's envelope is byte-identical
+// to what it was before this gate existed.
 type saveEnrichmentEnvelope struct {
-	Ok               bool          `json:"ok"`
-	ClassificationID *int64        `json:"classification_id"`
-	PostingID        int64         `json:"posting_id"`
-	Summary          string        `json:"summary"`
-	NewTaxonomy      newTaxonomy   `json:"new_taxonomy"`
-	Errors           []actionError `json:"errors"`
+	Ok                   bool                       `json:"ok"`
+	ClassificationID     *int64                     `json:"classification_id"`
+	PostingID            int64                      `json:"posting_id"`
+	Summary              string                     `json:"summary"`
+	NewTaxonomy          newTaxonomy                `json:"new_taxonomy"`
+	Errors               []actionError              `json:"errors"`
+	Substitutions        []substitution             `json:"substitutions,omitempty"`
+	Dropped              []droppedEntry             `json:"dropped,omitempty"`
+	SimilarityCandidates []similarityCandidateGroup `json:"similarity_candidates,omitempty"`
 }
 
 // functionResult is the JSON envelope mcp.save_enrichment returns. ok=false
-// carries structured errors[]; ok=true carries the ids and new_taxonomy.
+// carries structured errors[]; ok=true carries the ids, new_taxonomy, and the
+// 000033 gate's feedback (substitutions/dropped/similarity_candidates), each
+// present only when non-empty.
 type functionResult struct {
 	Ok               bool        `json:"ok"`
 	ClassificationID *int64      `json:"classification_id"`
@@ -106,6 +183,9 @@ type functionResult struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	} `json:"errors"`
+	Substitutions        []substitution             `json:"substitutions"`
+	Dropped              []droppedEntry             `json:"dropped"`
+	SimilarityCandidates []similarityCandidateGroup `json:"similarity_candidates"`
 }
 
 // enrichmentSaver runs the approved mcp.save_enrichment function and returns the
@@ -274,12 +354,15 @@ func runSaveEnrichment(ctx context.Context, req saveEnrichmentRequest, tax taxon
 	}
 
 	return saveEnrichmentEnvelope{
-		Ok:               true,
-		ClassificationID: fr.ClassificationID,
-		PostingID:        req.PostingID,
-		Summary:          req.Summary,
-		NewTaxonomy:      normalizeNewTaxonomy(fr.NewTaxonomy),
-		Errors:           []actionError{},
+		Ok:                   true,
+		ClassificationID:     fr.ClassificationID,
+		PostingID:            req.PostingID,
+		Summary:              req.Summary,
+		NewTaxonomy:          normalizeNewTaxonomy(fr.NewTaxonomy),
+		Errors:               []actionError{},
+		Substitutions:        fr.Substitutions,
+		Dropped:              fr.Dropped,
+		SimilarityCandidates: fr.SimilarityCandidates,
 	}
 }
 
