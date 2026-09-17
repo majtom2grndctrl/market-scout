@@ -8,16 +8,30 @@ import (
 	"testing"
 )
 
-// taxonomySearchDuplicatePair is a real duplicate that exists in the live skills
-// table: two rows carrying the identical name "Data Pipeline Architecture" under
-// different slugs. It is exactly the failure this tool exists to catch — an agent
-// stemming `%orchestr%` or `%pipeline%` finds one and mints the other. Their
-// slugs share only 0.15 trigram similarity, so nothing that ranks on slug alone
-// can group them; scoring against the name is what makes them one concept.
+// taxonomySearchClusterPair is a real pair in the live skills table that
+// clusters correctly on slug similarity alone: cloud-platform-architecture and
+// platform-architecture describe the same concept under different names, and
+// score 0.786 on slug similarity — above taxonomySearchClusterThreshold. It
+// proves clustering still functions once name is out of the neighbours query.
 const (
-	taxonomySearchDuplicateTerm  = "data pipeline architecture"
-	taxonomySearchDuplicateSlugA = "data-pipeline-architecture"
-	taxonomySearchDuplicateSlugB = "data-orchestration"
+	taxonomySearchClusterTerm  = "cloud platform architecture"
+	taxonomySearchClusterSlugA = "cloud-platform-architecture"
+	taxonomySearchClusterSlugB = "platform-architecture"
+)
+
+// taxonomySearchNameOnlyDuplicatePair is a real duplicate in the live skills
+// table: two rows carrying the identical name "Data Pipeline Architecture"
+// under different slugs. It used to be the failure this tool caught by
+// scoring name in cluster neighbours — but the name column is corrupted
+// elsewhere in this database (see the package comment), so as of this change
+// clustering rests on slug alone and this pair, at only 0.15 slug similarity,
+// must NOT cluster. They remain two independently useful search results; an
+// agent asking for either concept still finds it, just not nested under the
+// other.
+const (
+	taxonomySearchNameOnlyDuplicateTerm  = "data pipeline architecture"
+	taxonomySearchNameOnlyDuplicateSlugA = "data-pipeline-architecture"
+	taxonomySearchNameOnlyDuplicateSlugB = "data-orchestration"
 )
 
 // requireLiveSkillSlugs skips when the live taxonomy no longer holds the rows the
@@ -37,12 +51,16 @@ func requireLiveSkillSlugs(t *testing.T, pool *sql.DB, slugs ...string) {
 	}
 }
 
-func TestTaxonomySearch_LiveDuplicatePairLandsInOneCluster(t *testing.T) {
+// TestTaxonomySearch_LiveSlugSimilarPairLandsInOneCluster proves clustering
+// still functions against real data once name is out of the neighbours query:
+// two rows that are genuinely the same concept, expressed under different
+// names, still nest together because their slugs are similar.
+func TestTaxonomySearch_LiveSlugSimilarPairLandsInOneCluster(t *testing.T) {
 	pool := openReadOnlyTestDB(t)
-	requireLiveSkillSlugs(t, pool, taxonomySearchDuplicateSlugA, taxonomySearchDuplicateSlugB)
+	requireLiveSkillSlugs(t, pool, taxonomySearchClusterSlugA, taxonomySearchClusterSlugB)
 
 	env := runTaxonomySearch(t.Context(), taxonomySearchRequest{
-		Terms:  []string{taxonomySearchDuplicateTerm},
+		Terms:  []string{taxonomySearchClusterTerm},
 		Tables: []string{"skills"},
 	}, poolTaxonomySearchSource{pool: pool})
 
@@ -51,7 +69,7 @@ func TestTaxonomySearch_LiveDuplicatePairLandsInOneCluster(t *testing.T) {
 	}
 	skills := env.Results[0].Tables[0]
 	if skills.ClusterCount == 0 {
-		t.Fatalf("no clusters for %q", taxonomySearchDuplicateTerm)
+		t.Fatalf("no clusters for %q", taxonomySearchClusterTerm)
 	}
 
 	// Both slugs must appear, and in the same cluster: one as the representative,
@@ -68,24 +86,62 @@ func TestTaxonomySearch_LiveDuplicatePairLandsInOneCluster(t *testing.T) {
 		}
 	}
 
-	idxA, okA := clusterOf[taxonomySearchDuplicateSlugA]
-	idxB, okB := clusterOf[taxonomySearchDuplicateSlugB]
+	idxA, okA := clusterOf[taxonomySearchClusterSlugA]
+	idxB, okB := clusterOf[taxonomySearchClusterSlugB]
 	if !okA || !okB {
-		t.Fatalf("clusters = %+v; want both %q and %q present", skills.Clusters, taxonomySearchDuplicateSlugA, taxonomySearchDuplicateSlugB)
+		t.Fatalf("clusters = %+v; want both %q and %q present", skills.Clusters, taxonomySearchClusterSlugA, taxonomySearchClusterSlugB)
 	}
 	if idxA != idxB {
-		t.Fatalf("%q is in cluster %d and %q in cluster %d; the duplicate pair must share one cluster",
-			taxonomySearchDuplicateSlugA, idxA, taxonomySearchDuplicateSlugB, idxB)
+		t.Fatalf("%q is in cluster %d and %q in cluster %d; the slug-similar pair must share one cluster",
+			taxonomySearchClusterSlugA, idxA, taxonomySearchClusterSlugB, idxB)
 	}
-	if roleOf[taxonomySearchDuplicateSlugA] == roleOf[taxonomySearchDuplicateSlugB] {
+	if roleOf[taxonomySearchClusterSlugA] == roleOf[taxonomySearchClusterSlugB] {
 		t.Fatalf("both slugs came back as %q; one must represent the other",
-			roleOf[taxonomySearchDuplicateSlugA])
+			roleOf[taxonomySearchClusterSlugA])
 	}
 
 	// The whole point is that this returns rather than truncating: the generic
 	// query tool caps at rowCap and the skills table is past it.
 	if env.EntryCount >= rowCap {
 		t.Fatalf("entry count = %d, want well under rowCap %d", env.EntryCount, rowCap)
+	}
+}
+
+// TestTaxonomySearch_LiveNameOnlyDuplicatePairDoesNotCluster is the change
+// this file exists to verify: data-pipeline-architecture and data-orchestration
+// share an exact name but only 0.15 slug similarity, so they must now come back
+// as two independent peer clusters rather than one representative-plus-variant
+// cluster. Both remain findable — the point is that neither hides the other.
+func TestTaxonomySearch_LiveNameOnlyDuplicatePairDoesNotCluster(t *testing.T) {
+	pool := openReadOnlyTestDB(t)
+	requireLiveSkillSlugs(t, pool, taxonomySearchNameOnlyDuplicateSlugA, taxonomySearchNameOnlyDuplicateSlugB)
+
+	env := runTaxonomySearch(t.Context(), taxonomySearchRequest{
+		Terms:  []string{taxonomySearchNameOnlyDuplicateTerm},
+		Tables: []string{"skills"},
+	}, poolTaxonomySearchSource{pool: pool})
+
+	if !env.Ok {
+		t.Fatalf("env.Ok = false, errors = %+v", env.Errors)
+	}
+	skills := env.Results[0].Tables[0]
+
+	clusterOf := map[string]int{}
+	for i, cluster := range skills.Clusters {
+		clusterOf[cluster.Representative.Slug] = i
+		for _, variant := range cluster.Variants {
+			clusterOf[variant.Slug] = i
+		}
+	}
+
+	idxA, okA := clusterOf[taxonomySearchNameOnlyDuplicateSlugA]
+	idxB, okB := clusterOf[taxonomySearchNameOnlyDuplicateSlugB]
+	if !okA || !okB {
+		t.Fatalf("clusters = %+v; want both %q and %q present", skills.Clusters, taxonomySearchNameOnlyDuplicateSlugA, taxonomySearchNameOnlyDuplicateSlugB)
+	}
+	if idxA == idxB {
+		t.Fatalf("%q and %q share cluster %d; a name-only match must not cluster distinct slugs",
+			taxonomySearchNameOnlyDuplicateSlugA, taxonomySearchNameOnlyDuplicateSlugB, idxA)
 	}
 }
 

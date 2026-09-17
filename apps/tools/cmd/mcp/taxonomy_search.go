@@ -16,6 +16,34 @@
 //     platform-architecture. Variants are therefore nested under a representative
 //     so the response can only be read as "one concept, several spellings".
 //
+// Find broadly, group conservatively — term scoring and cluster membership use
+// different columns on purpose. name earns its place in TERM SCORING because
+// roughly 111 rows carry a genuine gloss the slug cannot express: `abm` names
+// "Account-Based Marketing (ABM)", `dbt` names "dbt (Data Build Tool)", and
+// `asc-718`, `cpq`, `ebpf` are the same shape. Those are exactly the rows a
+// caller needs to find by concept, so name stays in the similarity score.
+//
+// But name is not trustworthy as an identity signal in this database. 126 row
+// pairs across the three taxonomy tables share an exact normalized name, and 47
+// of the skills pairs score below 0.3 on slug similarity — different concepts
+// carrying the same name string. `llm` and `embeddings` are both named "Large
+// Language Models"; `pytorch` and `tensorflow` are both "PyTorch or TensorFlow";
+// `problem-solving` and `critical-thinking` are both "Problem Solving". Any two
+// rows sharing a corrupted name score name/name = 1.000, so under a rule that
+// let name feed clustering they would ALWAYS be clustered together — a search
+// for "embeddings" could return `llm` as its cluster representative, actively
+// teaching the agent that a distinct concept is the canonical spelling of its
+// concept. CLUSTER NEIGHBOURS therefore scores slug similarity alone (see
+// taxonomySearchSQL's neighbors subquery): grouping two rows as the same
+// concept is a stronger claim than surfacing one, and it should rest on the
+// column that isn't corrupted.
+//
+// Known side effect: `azure` and `microsoft-azure` (slug similarity 0.375, both
+// named "Microsoft Azure") no longer cluster and come back as two peer results.
+// That is correct behaviour reporting an uncorrected fact — they really are two
+// rows — not a regression, even though it will look like one to a reader who
+// does not know the above.
+//
 // It binds the read-only pool and never writes.
 // See: agent-context/lib/developer-guide.md §5.7 (database access)
 package main
@@ -49,16 +77,21 @@ const (
 	// taxonomySearchClusterThreshold is the pairwise similarity at which two
 	// entries are treated as spellings of one concept rather than as peers.
 	//
-	// Chosen at 0.7 rather than 0.6 by measuring real pairs in the live tables.
-	// Both values group the cases this tool exists for — data-pipeline-architecture
-	// with data-orchestration (1.000, identical names) and
-	// cloud-platform-architecture with platform-architecture (0.786). But 0.6 also
-	// merges genuinely distinct concepts that merely share a suffix:
-	// data-architecture with data-pipeline-architecture (0.667),
-	// data-architecture with data-warehouse-architecture (0.643), and kubernetes
-	// with kubernetes-docker (0.611). Burying a distinct slug as someone else's
+	// Chosen at 0.7 rather than 0.6 by measuring real slug pairs in the live
+	// tables. Both values group the case this tool exists for —
+	// cloud-platform-architecture with platform-architecture (0.786, same
+	// concept, different names). But 0.6 also merges genuinely distinct concepts
+	// that merely share a suffix: data-architecture with
+	// data-pipeline-architecture (0.667), data-architecture with
+	// data-warehouse-architecture (0.643), and kubernetes with
+	// kubernetes-docker (0.611). Burying a distinct slug as someone else's
 	// variant is the more expensive error here, because the agent reaches for the
 	// representative.
+	//
+	// This bound is slug similarity only (see the package comment's "find
+	// broadly, group conservatively" note): data-pipeline-architecture and
+	// data-orchestration are identically named but score 0.15 on slug, so they
+	// correctly stay separate rather than clustering on the shared name.
 	taxonomySearchClusterThreshold = 0.7
 
 	// taxonomySearchCandidatesPerTable bounds the rows clustered for one term in
@@ -240,15 +273,16 @@ WITH search_terms AS (
 )
 SELECT c.term_index, c.table_name, c.id, c.slug, c.name, c.usage_count, c.score,
        COALESCE((
+           -- Slug only, deliberately: see the package comment's "find broadly,
+           -- group conservatively" note. name is not a trustworthy identity
+           -- signal in this database, so it scores term matches but never
+           -- decides cluster membership.
            SELECT jsonb_agg(jsonb_build_object('table', g.table_name, 'id', g.id) ORDER BY g.id)
            FROM candidates g
            WHERE g.term_index = c.term_index
              AND g.table_name = c.table_name
              AND g.id <> c.id
-             AND greatest(
-                   similarity(c.slug, g.slug), similarity(c.slug, g.name),
-                   similarity(c.name, g.slug), similarity(c.name, g.name)
-                 ) >= $5::float8
+             AND similarity(c.slug, g.slug) >= $5::float8
        ), '[]'::jsonb) AS neighbors
 FROM candidates c
 ORDER BY c.term_index, c.table_name, c.score DESC, c.usage_count DESC, c.id

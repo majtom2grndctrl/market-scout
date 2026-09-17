@@ -270,28 +270,57 @@ func TestClusterTaxonomyCandidates_DoesNotChainThroughAHub(t *testing.T) {
 }
 
 func TestBuildTaxonomyCluster_RepresentativePrefersHigherUsageCount(t *testing.T) {
-	// Two spellings of one concept, equally good matches. The established one —
-	// 40 classification links against 1 — must front the cluster.
+	// Two slug-similar spellings of one concept, equally good matches. The
+	// established one — 40 classification links against 1 — must front the
+	// cluster. (Neighbours model slug similarity only; see the package comment's
+	// "find broadly, group conservatively" note.)
 	source := &fakeTaxonomySearchSource{candidates: []taxonomyCandidate{
-		skillCandidate(20, "data-pipeline-architecture", "Data Pipeline Architecture", 1, 1.0, 21),
-		skillCandidate(21, "data-orchestration", "Data Pipeline Architecture", 40, 1.0, 20),
+		skillCandidate(20, "cloud-platform-architecture", "Cloud Platform Architecture", 1, 1.0, 21),
+		skillCandidate(21, "cloud-platform-arch", "Cloud Platform Arch", 40, 1.0, 20),
 	}}
 
-	env := runTaxonomySearch(t.Context(), taxonomySearchRequest{Terms: []string{"data pipeline architecture"}}, source)
+	env := runTaxonomySearch(t.Context(), taxonomySearchRequest{Terms: []string{"cloud platform architecture"}}, source)
 	skills := skillsResult(t, env, 0)
 
 	if skills.ClusterCount != 1 {
 		t.Fatalf("cluster count = %d, want 1", skills.ClusterCount)
 	}
 	cluster := skills.Clusters[0]
-	if cluster.Representative.Slug != "data-orchestration" {
-		t.Fatalf("representative = %q, want the most-used slug data-orchestration", cluster.Representative.Slug)
+	if cluster.Representative.Slug != "cloud-platform-arch" {
+		t.Fatalf("representative = %q, want the most-used slug cloud-platform-arch", cluster.Representative.Slug)
 	}
 	if cluster.Representative.UsageCount != 40 {
 		t.Fatalf("representative usage = %d, want 40", cluster.Representative.UsageCount)
 	}
-	if len(cluster.Variants) != 1 || cluster.Variants[0].Slug != "data-pipeline-architecture" {
+	if len(cluster.Variants) != 1 || cluster.Variants[0].Slug != "cloud-platform-architecture" {
 		t.Fatalf("variants = %+v, want the less-used spelling nested underneath", cluster.Variants)
+	}
+}
+
+// The whole point of this change: two rows can carry the identical name yet
+// describe different concepts, so clustering must rest on slug similarity
+// alone. llm and embeddings are a real pair in the live skills table — both
+// named "Large Language Models" but unrelated by slug (0.000 similarity). The
+// production query now computes no slug-similarity link between them, so the
+// fake source here supplies none; without a shared name shortcut in the
+// clustering algorithm, they must land in separate clusters.
+func TestClusterTaxonomyCandidates_IdenticalNameDoesNotClusterDissimilarSlugs(t *testing.T) {
+	source := &fakeTaxonomySearchSource{candidates: []taxonomyCandidate{
+		skillCandidate(40, "llm", "Large Language Models", 410, 1.0),
+		skillCandidate(41, "embeddings", "Large Language Models", 2, 0.42),
+	}}
+
+	env := runTaxonomySearch(t.Context(), taxonomySearchRequest{Terms: []string{"large language models"}}, source)
+	skills := skillsResult(t, env, 0)
+
+	if skills.ClusterCount != 2 {
+		t.Fatalf("cluster count = %d, want 2 separate concepts; clusters = %+v", skills.ClusterCount, skills.Clusters)
+	}
+	for _, cluster := range skills.Clusters {
+		if cluster.VariantCount != 0 {
+			t.Fatalf("cluster for %q has variants %+v, want none — identical name must not merge distinct slugs",
+				cluster.Representative.Slug, cluster.Variants)
+		}
 	}
 }
 
