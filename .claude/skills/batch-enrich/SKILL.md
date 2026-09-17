@@ -93,10 +93,44 @@ docker compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR
 
 **Dedup key**, per posting, from its latest snapshot:
 
-- ATS requisition key when the board supplies one → `company_id | 'ats:' || requisition_key`
-- otherwise → `company_id | 'txt:' || title || '|' || md5(description_text)`
+    company_id | md5(description_text)
 
-Requisition key alone is not enough: it is NULL on roughly a third of postings, and NULL on exactly the boards that fan out duplicates, so the text fallback is what does most of the collapsing. Title alone is too aggressive — same title with different text is usually a genuinely different job, so the hash must be part of the key.
+**Byte-identical description text, within one company. That is the whole key.**
+
+⚠️ **Do not add the ATS requisition key as a merge signal.** An earlier version of
+this skill preferred it and that was a correctness bug — it shipped on
+2026-09-17 and mis-merged three groups in its first run. At Greenhouse and Ashby
+the requisition key is a **job-family / opening-group identifier, not a
+per-posting identity**: 159 of 271 multi-posting requisition-key groups in this
+database (59%, 481 postings) span more than one title, measured on
+latest-snapshot-per-posting so retitling cannot explain it. One Anthropic key
+carries nine distinct Staff+ engineering roles. One key at company 22 spans four
+titles at four different seniorities.
+
+Merging on it wrote one classification across four different Stripe Staff SWE
+roles (Data Engineering Solutions, Business Data, Data Quality & Governance,
+Product Risk) and across three different PMM roles (Global Selling,
+Bridge/Stablecoins, Payments). That is a worse failure than the duplicate
+inconsistency dedup exists to prevent: the old bug gave one job three answers
+*visibly*; this gave three jobs one answer *silently*.
+
+Text equality is self-evidencing — if two descriptions are byte-identical, they
+are the same job posting, and no judgement is involved. It catches the shape that
+actually matters: **442 byte-identical text groups covering 1,253 postings, 149
+of them spanning multiple requisition keys** (the one-posting-per-location
+fan-out, e.g. six Snap! Raise territories under six requisition keys).
+
+Known cost, accepted deliberately: two postings for one requisition whose text
+was edited between fetches will not merge, and may get two independent
+classifications. That is the pre-existing behaviour and it is strictly less
+harmful than merging distinct jobs. The safe recovery of that case is a gated
+edge — merge on `same requisition key AND same normalized title` in *addition* to
+text equality, which requires connected components over two relations rather than
+a scalar key. That belongs in the shared Go selection core
+(`internal/enrich/selection`), not in hand-written SQL here.
+
+Do not use title alone: same title with different text is usually a genuinely
+different job.
 
 Selection contract:
 - **Always:** latest snapshot has non-null `description_text`
