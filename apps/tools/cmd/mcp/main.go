@@ -185,16 +185,47 @@ func newMCPServer(pools dbPools) *server.MCPServer {
 
 	// enrichment_preview is read-only: it reports what batch-enrich would select
 	// without spawning agents, so it binds the read-only pool. The RO role
-	// already has the table reads the shared selection core needs.
+	// already has the table reads the shared selection core needs. Its sort and
+	// max_per_company defaults are the shared core's, not this tool's — both
+	// paths have to select the same cohort or the skill and the binary drift.
 	enrichmentPreviewTool := mcp.NewTool(
 		"enrichment_preview",
 		mcp.WithDescription("Preview which job postings batch-enrich would select for classification, without spawning agents or writing anything."),
-		mcp.WithNumber("count", mcp.Description("Max postings to select (1-100). Defaults to 10.")),
+		mcp.WithNumber("count", mcp.Description("Max postings to select (1-500). Defaults to 10.")),
 		mcp.WithString("focus", mcp.Description("ILIKE prefilter on title and description; `%` and `_` are SQL wildcards. Empty means no filter.")),
 		mcp.WithBoolean("force", mcp.Description("Include already-classified postings (drops the unclassified filter). Defaults to false.")),
-		mcp.WithString("sort", mcp.Description("Selection order by first_seen_at: \"oldest_first\" (default; processes the backlog in stable priority order) or \"newest_first\" (previews a recency-biased selection). Use newest_first when the batch-enrich run you're previewing will select newest postings first.")),
+		mcp.WithString("sort", mcp.Description("Selection order by first_seen_at: \"newest_first\" (default; enriches the current market before the backlog) or \"oldest_first\" (drains the backlog in arrival order). Leave unset unless you are deliberately working the backlog.")),
+		mcp.WithNumber("max_per_company", mcp.Description("Max work units one company may contribute to this wave (1-500). Defaults to 5. The wave also cycles across companies before recency, so it spreads over the watchlist instead of being consumed by the largest boards. Counts work units, not postings: a selected unit's siblings ride along.")),
 	)
 	s.AddTool(enrichmentPreviewTool, enrichmentPreviewHandler(pools.readOnly))
+
+	stripBoilerplateTool := mcp.NewTool(
+		"strip_boilerplate",
+		mcp.WithDescription("Remove repeated company boilerplate using every latest description for one company, returning cleaned text only for the selected posting ids. Read-only."),
+		mcp.WithNumber("company_id", mcp.Required(), mcp.Description("Company id that owns every selected posting.")),
+		mcp.WithArray("selected_ids", mcp.Required(), mcp.MinItems(stripBoilerplateMinSelected), mcp.MaxItems(stripBoilerplateMaxSelected), mcp.WithIntegerItems(), mcp.Description("One to 100 unique job posting ids, all owned by company_id. Output preserves this order.")),
+	)
+	s.AddTool(stripBoilerplateTool, stripBoilerplateHandler(pools.readOnly))
+
+	// taxonomy_search is read-only: it scores and clusters existing taxonomy rows
+	// so a classifier can find an established slug instead of loading a whole
+	// table (skills alone now exceeds rowCap) or guessing an ILIKE stem.
+	taxonomySearchTool := mcp.NewTool(
+		"taxonomy_search",
+		mcp.WithDescription("Find existing taxonomy slugs for candidate concepts. Scores every canonical role, specialization, and skill by trigram similarity against both slug and name, then groups near-identical entries into one cluster per concept: a representative slug with its alternate spellings nested underneath. Attach the representative, never the variants alongside it — variants are the same concept already in the table, not additional ones. Scores run 0-1: at or near 1.0 the entry already names your concept and you should reuse it; below about 0.5 treat a cluster as related vocabulary rather than a match. Read-only."),
+		mcp.WithArray("terms",
+			mcp.Required(),
+			mcp.MinItems(1),
+			mcp.MaxItems(taxonomySearchMaxTerms),
+			mcp.WithStringItems(),
+			mcp.Description("One to 10 candidate concepts, each at most 120 characters. Pass the concept as you would name it (\"data pipeline architecture\"), not a substring to match."),
+		),
+		mcp.WithArray("tables",
+			mcp.WithStringItems(),
+			mcp.Description("Taxonomy tables to search: canonical_roles, specializations, skills. Omit to search all three."),
+		),
+	)
+	s.AddTool(taxonomySearchTool, taxonomySearchHandler(pools.readOnly))
 
 	dedupCandidatesTool := mcp.NewTool(
 		"dedup_candidates",
@@ -260,7 +291,7 @@ func newMCPServer(pools dbPools) *server.MCPServer {
 		"save_enrichment",
 		mcp.WithDescription("Persist a classifier-shaped enrichment for a job posting through the approved mcp.save_enrichment action function. Append-only: every call inserts a new classification row and never edits prior history."),
 		mcp.WithNumber("posting_id", mcp.Required(), mcp.Description("Target job posting id; must already exist.")),
-		mcp.WithObject("provenance", mcp.Description("Optional. model defaults to \"mcp-agent\", prompt_version to \"mcp-save-enrichment-v1\". Both must match ^[A-Za-z0-9._-]+$ after defaults.")),
+		mcp.WithObject("provenance", mcp.Required(), mcp.Description("Required: {model, prompt_version}. model is the model that produced the classification; prompt_version names the classifier contract, not the model. Both must be non-empty and match ^[A-Za-z0-9._-]+$. Neither is defaulted \u2014 a call omitting either is rejected with invalid_provenance.")),
 		mcp.WithObject("classification", mcp.Required(), mcp.Description("seniority (required closed set) and optional notes.")),
 		mcp.WithArray("canonical_roles", mcp.Description("Canonical roles: each {slug, name, dimensions[]}. Dimensions are a closed seeded set.")),
 		mcp.WithArray("specializations", mcp.Description("Specializations: each {slug, name}.")),

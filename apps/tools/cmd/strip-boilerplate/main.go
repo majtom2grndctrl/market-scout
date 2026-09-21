@@ -84,55 +84,22 @@ func run() error {
 		return fmt.Errorf("pinging database: %w", err)
 	}
 
-	queries := db.New(pool)
-	rows, err := queries.ListLatestDescriptionsByCompany(ctx, in.CompanyID)
+	cleaned, err := boilerplate.CleanSelected(ctx, boilerplate.NewDBLoader(db.New(pool)), in.CompanyID, in.SelectedIDs)
 	if err != nil {
-		return fmt.Errorf("loading descriptions for company %d: %w", in.CompanyID, err)
+		return fmt.Errorf("cleaning descriptions for company %d: %w", in.CompanyID, err)
 	}
 
-	slog.Info("[strip-boilerplate] loaded corpus",
+	slog.Info("[strip-boilerplate] cleaned selected postings",
 		"company_id", in.CompanyID,
-		"corpus_size", len(rows),
-		"selected", len(in.SelectedIDs),
+		"selected", len(cleaned),
 	)
 
-	// Build the corpus in a deterministic order, then strip. Strip preserves
-	// input ordering, so the index of each posting maps cleanly back to its id.
-	descriptions := make([]string, len(rows))
-	idByIndex := make([]int64, len(rows))
-	for i, r := range rows {
-		descriptions[i] = r.DescriptionText
-		idByIndex[i] = r.JobPostingID
-	}
-
-	cleaned := boilerplate.Strip(descriptions)
-	if len(cleaned) != len(descriptions) {
-		return fmt.Errorf("boilerplate.Strip returned %d entries for %d inputs", len(cleaned), len(descriptions))
-	}
-
-	cleanedByID := make(map[int64]string, len(cleaned))
-	for i, id := range idByIndex {
-		cleanedByID[id] = cleaned[i]
-	}
-
-	out := output{Postings: make([]outputPosting, 0, len(in.SelectedIDs))}
-	missing := 0
-	for _, id := range in.SelectedIDs {
-		text, ok := cleanedByID[id]
-		if !ok {
-			missing++
-		}
+	out := output{Postings: make([]outputPosting, 0, len(cleaned))}
+	for _, posting := range cleaned {
 		out.Postings = append(out.Postings, outputPosting{
-			PostingID:   id,
-			CleanedText: text, // empty string when not found in corpus
+			PostingID:   posting.PostingID,
+			CleanedText: posting.DescriptionText,
 		})
-	}
-
-	if missing > 0 {
-		slog.Warn("[strip-boilerplate] selected postings not in corpus",
-			"company_id", in.CompanyID,
-			"missing", missing,
-		)
 	}
 
 	enc := json.NewEncoder(os.Stdout)

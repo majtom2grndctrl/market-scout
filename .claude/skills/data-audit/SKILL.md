@@ -47,7 +47,7 @@ Each verdict carries one sentence of evidence quoting the description. No praise
 
 - `agent-output/batch-enrich/failures.jsonl`: failure count and dominant mode per recent run. A rising rate or a new mode is a flag.
 - Taxonomy growth: emergent entries in the window; near-duplicate slugs across `canonical_roles` and `specializations`.
-- `prompt_version` mix: when the window spans a contract change, split verdict quality by version. `prompt_version` is the primary audit key (§6.2).
+- `prompt_version` mix: when the window spans a contract change, split verdict quality by version. `prompt_version` is the primary audit key (§6.2). Each writer pins its own value — never infer a version from a model, and never assume one version means one contract. Four pre-2026-09-21 cohorts are ambiguous or unattributed; §6.2 names them. Report them as unresolved rather than folding them into a neighbouring version.
 
 ### 4. Report
 

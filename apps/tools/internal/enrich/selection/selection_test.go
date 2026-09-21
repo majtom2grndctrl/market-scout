@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
@@ -138,16 +139,76 @@ func TestSelectWith_ForcedEmptySkipsClassifiedCheck(t *testing.T) {
 	}
 }
 
-func TestSelectRows_SortZeroValueMapsToOldestFirst(t *testing.T) {
-	// Criteria{} (zero value, no Sort set) is the shape cmd/batch-enrich builds
-	// today. It must resolve to NewestFirst=false so existing callers keep the
-	// pre-existing oldest-first behavior without opting in.
+// The zero value carries the package's policy, so a caller that never mentions
+// Sort still gets recency-first. Draining oldest-first is what kept the
+// classified set months behind the market; a caller has to ask for it now.
+func TestSelectRows_SortZeroValueMapsToNewestFirst(t *testing.T) {
 	q := &fakeQuerier{}
 	if _, err := selectRows(t.Context(), q, Criteria{Count: 10}); err != nil {
 		t.Fatalf("selectRows: %v", err)
 	}
+	if !q.gotUnclassifiedArg.NewestFirst {
+		t.Fatalf("NewestFirst = false, want true for zero-value Sort")
+	}
+}
+
+func TestSelectRows_SortOldestFirstIsStillReachable(t *testing.T) {
+	q := &fakeQuerier{}
+	if _, err := selectRows(t.Context(), q, Criteria{Count: 10, Sort: SortOldestFirst}); err != nil {
+		t.Fatalf("selectRows: %v", err)
+	}
 	if q.gotUnclassifiedArg.NewestFirst {
-		t.Fatalf("NewestFirst = true, want false for zero-value Sort")
+		t.Fatalf("NewestFirst = true, want false for SortOldestFirst")
+	}
+}
+
+// The cap's whole purpose is that nobody has to remember to ask for it, so the
+// zero value has to resolve to the default rather than to "no cap". Both query
+// variants get it: a --force re-enrichment run is exactly when one company's
+// backlog would otherwise swallow the wave.
+func TestSelectRows_MaxPerCompanyZeroTakesDefault(t *testing.T) {
+	t.Run("unclassified", func(t *testing.T) {
+		q := &fakeQuerier{}
+		if _, err := selectRows(t.Context(), q, Criteria{Count: 10}); err != nil {
+			t.Fatalf("selectRows: %v", err)
+		}
+		if q.gotUnclassifiedArg.MaxPerCompany != DefaultMaxPerCompany {
+			t.Fatalf("MaxPerCompany = %d, want DefaultMaxPerCompany (%d)", q.gotUnclassifiedArg.MaxPerCompany, DefaultMaxPerCompany)
+		}
+	})
+
+	t.Run("forced", func(t *testing.T) {
+		q := &fakeQuerier{}
+		if _, err := selectRows(t.Context(), q, Criteria{Count: 10, Force: true}); err != nil {
+			t.Fatalf("selectRows: %v", err)
+		}
+		if q.gotForcedArg.MaxPerCompany != DefaultMaxPerCompany {
+			t.Fatalf("MaxPerCompany = %d, want DefaultMaxPerCompany (%d)", q.gotForcedArg.MaxPerCompany, DefaultMaxPerCompany)
+		}
+	})
+}
+
+func TestSelectRows_MaxPerCompanyExplicitAndDisabled(t *testing.T) {
+	cases := []struct {
+		name string
+		give int
+		want int32
+	}{
+		{name: "explicit value passes through", give: 3, want: 3},
+		{name: "NoCompanyCap disables the cap", give: NoCompanyCap, want: 0},
+		{name: "any negative disables the cap", give: -17, want: 0},
+		{name: "oversized value clamps instead of wrapping", give: math.MaxInt32 + 1, want: math.MaxInt32},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			q := &fakeQuerier{}
+			if _, err := selectRows(t.Context(), q, Criteria{Count: 10, MaxPerCompany: tc.give}); err != nil {
+				t.Fatalf("selectRows: %v", err)
+			}
+			if q.gotUnclassifiedArg.MaxPerCompany != tc.want {
+				t.Fatalf("MaxPerCompany = %d, want %d", q.gotUnclassifiedArg.MaxPerCompany, tc.want)
+			}
+		})
 	}
 }
 
@@ -179,5 +240,54 @@ func TestSelectWith_QueryErrorWraps(t *testing.T) {
 	}
 	if !errors.Is(err, q.unclassifiedErr) {
 		t.Fatalf("error %v does not wrap underlying query error", err)
+	}
+}
+
+// Dedup has to reach both query variants. Forgetting the forced path would make
+// --force runs silently ungrouped — the one mode where duplicate postings are
+// guaranteed to already exist.
+func TestSelectWith_ForwardsDedupToBothVariants(t *testing.T) {
+	t.Run("unclassified", func(t *testing.T) {
+		q := &fakeQuerier{}
+		if _, _, err := SelectWith(t.Context(), q, Criteria{Count: 5, Dedup: true}); err != nil {
+			t.Fatalf("SelectWith: %v", err)
+		}
+		if !q.gotUnclassifiedArg.Dedup {
+			t.Fatalf("Dedup = false in params, want true")
+		}
+	})
+
+	t.Run("forced", func(t *testing.T) {
+		q := &fakeQuerier{}
+		if _, _, err := SelectWith(t.Context(), q, Criteria{Count: 5, Force: true, Dedup: true}); err != nil {
+			t.Fatalf("SelectWith: %v", err)
+		}
+		if !q.gotForcedArg.Dedup {
+			t.Fatalf("Dedup = false in forced params, want true")
+		}
+	})
+}
+
+// The grouping columns are the whole point of the query change; dropping them
+// in the row mapping would leave callers unable to tell a representative from a
+// sibling while everything still compiled.
+func TestSelectWith_CarriesDedupColumnsThrough(t *testing.T) {
+	q := &fakeQuerier{unclassified: []db.ListUnclassifiedPostingsRow{
+		{PostingID: 11, CompanyID: 3, CompanyName: "Acme", DedupKey: "3|unit:11", IsRepresentative: true},
+		{PostingID: 12, CompanyID: 3, CompanyName: "Acme", DedupKey: "3|unit:11", IsRepresentative: false},
+	}}
+
+	got, _, err := SelectWith(t.Context(), q, Criteria{Count: 1, Dedup: true})
+	if err != nil {
+		t.Fatalf("SelectWith: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len(postings) = %d, want 2", len(got))
+	}
+	if got[0].DedupKey != "3|unit:11" || !got[0].IsRepresentative {
+		t.Errorf("postings[0] = %+v, want dedup key 3|unit:11 and representative", got[0])
+	}
+	if got[1].DedupKey != got[0].DedupKey || got[1].IsRepresentative {
+		t.Errorf("postings[1] = %+v, want same key as its representative and is_representative=false", got[1])
 	}
 }

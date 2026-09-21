@@ -143,14 +143,18 @@ The connection string lives in `.env.local` as `DATABASE_URL`. The fetcher and m
 
 The MCP server uses `DATABASE_URL_RO`. It must be a read-only DSN and never falls back to `DATABASE_URL`.
 
-Provision the role once per Postgres cluster, after migrations:
+Provision after migrations, with the same owner role used for migrations. The script enforces this: it aborts, naming the role, unless the running role owns the migrated tables and views in `public`. The role itself is cluster-level and created once; its grants are per-database, so re-run the script against every database in the cluster the agent reads:
 
 ```bash
-psql "$DATABASE_URL" -f internal/db/setup/readonly_role.sql
+psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f internal/db/setup/readonly_role.sql
 psql "$DATABASE_URL" -c '\password market_scout_readonly'
 ```
 
-Run the script with the same owner role used for migrations, so future table grants attach to that owner.
+`ON_ERROR_STOP` is not optional: the script's guards abort on a role that owns objects, inherits another role, or is not the migration owner, and without the flag `psql` reports the abort and keeps applying grants anyway.
+
+Future table grants attach to the owner that ran the script, and so does its rule that functions created later are not executable by `PUBLIC`. Postgres stores that rule per owner, so it covers only functions the script's owner creates — which is how `migrate up` creates them. A function created by any other role, an extension installed as superuser being the usual case, still arrives with the EXECUTE grant Postgres hands `PUBLIC` on every new function, and every role belongs to `PUBLIC`.
+
+Re-run the script after any migration or `CREATE EXTENSION` that adds a routine — function, procedure, or aggregate — to `public`. For owner-created routines the re-run reconfirms a boundary that already holds; for the rest it is the only thing that revokes the `PUBLIC` grant. The routine itself does not say which case you are in, so re-run either way.
 
 Choose the password out of band. Then add the matching DSN to root `.env.local`, next to `DATABASE_URL`:
 
@@ -159,6 +163,10 @@ DATABASE_URL_RO=postgres://market_scout_readonly:<password>@localhost:5432/marke
 ```
 
 `DATABASE_URL` is the admin/read-write DSN for migrations, setup, and writer binaries. `DATABASE_URL_RO` is the agent-safe DSN for MCP verification. Human operators may keep both in `.env.local`; the MCP server reads only `DATABASE_URL_RO`.
+
+The role's function access is deny-by-default: the explicit `GRANT EXECUTE` statements at the end of the script are its entire surface. Anything new on the read-only path needs a grant of that same shape — when vector search lands, that means the functions backing whichever distance operators the queries use.
+
+pg_trgm's `%` similarity shorthand is not part of that surface: `a % b` resolves to `similarity_op`, ungranted, so it fails with a permission-denied error naming a function no caller typed. The MCP `query` tool hands agents arbitrary SQL over `DATABASE_URL_RO` — write `similarity()` there, never `%`.
 
 `internal/db/setup/readonly_role.sql` is operational SQL, not a numbered migration and not sqlc output. Roles are cluster-level, and credentials do not belong in source. This setup file may be hand-edited; sqlc input stays in `internal/db/queries/` and numbered migrations.
 
@@ -169,7 +177,7 @@ The MCP server's write tools use `DATABASE_URL_ACTIONS`. Its role, `market_scout
 Provision after migrations, with the same owner role used for migrations:
 
 ```bash
-psql "$DATABASE_URL" -f internal/db/setup/action_role.sql
+psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f internal/db/setup/action_role.sql
 psql "$DATABASE_URL" -c '\password market_scout_actions'
 ```
 
@@ -187,9 +195,63 @@ Primary debugging surfaces:
 - **`psql`** — `docker exec -it market-scout-db psql` drops into a shell using the container's credentials. Port 5432 is also exposed to localhost, so a host-side `psql $DATABASE_URL` works if `psql` is installed.
 - **Ad-hoc Go scripts** — write a `.go` file to `apps/tools/` (the Go module root), run with `go run <script>.go`, then delete it. Scripts must live alongside `go.mod`: Go modules require `go.mod` to resolve imports (`github.com/jackc/pgx/v5/stdlib`, `github.com/joho/godotenv`, etc.). Running from `/tmp` or any directory without `go.mod` fails with "no required module provides package."
 
+### Test database
+
+The `.db.test.ts` suites in `apps/web/` write fixtures to a dedicated database, `market_scout_test`, never to `market_scout`. The status and postings suites date their fixtures from `now()`, so in the development database they land inside the live `now() - interval` windows the read model queries, and they survive any teardown failure. The boundary is the separate database, not teardown hygiene.
+
+Both DSNs resolve through `apps/web/lib/db/test-dsn.ts`, which enforces that boundary instead of trusting it. A DSN naming a database whose name does not end in `_test` throws before any connection opens, naming the database it found; unset stays a skip. The suffix is the contract, so a per-worktree or CI test database needs no code change — and a `DATABASE_URL_TEST` copied from `DATABASE_URL` fails every DSN-dependent test rather than writing fixtures into the development database.
+
+Add both DSNs to root `.env.local` first — the provisioning commands below read them:
+
+```bash
+DATABASE_URL_TEST=postgres://market_scout:<password>@localhost:5432/market_scout_test?sslmode=disable
+DATABASE_URL_TEST_RO=postgres://market_scout_readonly:<password>@localhost:5432/market_scout_test?sslmode=disable
+```
+
+Both name `market_scout_test`. `market_scout_readonly` already exists cluster-wide, so reuse the password `DATABASE_URL_RO` already carries; there is no `\password` step here.
+
+`.env.local` is the only file the suites read. `apps/web/vitest.setup.ts` forces `NODE_ENV` to a non-`test` value before calling `loadEnvConfig(process.cwd())`: `.env.local` is in every file set except the test-mode one, so forcing a non-`test` mode is what keeps it loaded. `.env.test` is in no other set and is never read.
+
+One Postgres cluster serves both databases. Source root `.env.local` into the shell (`set -a; source .env.local; set +a`), then create the database as the migration owner, apply migrations, and run the read-only grants against it:
+
+```bash
+psql "$DATABASE_URL" -c 'CREATE DATABASE market_scout_test'
+DATABASE_URL="$DATABASE_URL_TEST" go run ./cmd/migrate up
+psql -v ON_ERROR_STOP=1 "$DATABASE_URL_TEST" -f internal/db/setup/readonly_role.sql
+```
+
+The middle line hands the test DSN to the migration runner under the name the runner reads; written the other way round it migrates the development database instead. Sourcing first is load-bearing for it: `godotenv.Load` never overwrites a key already present in the environment, so an unsourced `DATABASE_URL="$DATABASE_URL_TEST"` expands to empty, still counts as set, and suppresses the `.env.local` fallback — the migration then finds no DSN.
+
+`action_role.sql` is not needed here. No `.db.test.ts` suite calls an `mcp.` function, and `readonly_role.sql` now revokes `PUBLIC` EXECUTE itself — on the routines already in the schema, and by default privilege on the ones its owner creates later — so the function boundary no longer depends on `action_role.sql` to survive later migrations.
+
+Parity between the two databases is an action you repeat, not a property you assert. `migrate up` and `readonly_role.sql` each target one database; run each against both after any migration, and re-run `readonly_role.sql` after any `CREATE EXTENSION` as well. Two checks read the result. `migrate version` must report the same version with the dirty flag clear in each. And this must return the same rows in each — one line per function, so two databases granting different functions read as different instead of as equal counts:
+
+```sql
+SELECT p.oid::regprocedure::text AS executable_by_readonly
+FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+WHERE n.nspname = 'public'
+  AND has_function_privilege('market_scout_readonly', p.oid, 'EXECUTE')
+ORDER BY 1;
+```
+
+The expected list is the per-function `GRANT EXECUTE` statements at the end of `readonly_role.sql`; read it rather than memorizing a count, and a commit that grants another function updates both sides at once. Signatures print in full, so a `timestamptz` argument in the script reads as `timestamp with time zone` here.
+
+The count only exposes an ownership mismatch once a later migration adds a function and the count drifts; the script's own guard, not this check, catches the mismatch at provisioning time.
+
+Vitest fixture rows that leaked into `market_scout` before the suites moved are removed by two operational scripts, run counts → purge → counts against a quiet database: `internal/db/setup/purge_test_fixtures_counts.sql`, then `internal/db/setup/purge_test_fixtures.sql`, then the counts script again. Their headers own the procedure — the dump that has to precede it, the reconciliation, and what the purge deliberately leaves behind.
+
 ### Schema Migrations
 
 Migrations live in `apps/tools/internal/db/migrations/` as numbered SQL files. Apply with `go run ./cmd/migrate up` (from `apps/tools/`). Never edit a migration after it has run against any environment; add a new one.
+
+`migrate` reads `DATABASE_URL` only, so one run lands in `market_scout` and leaves `market_scout_test` behind. Nothing gates on the gap — `pnpm test:db` never compares versions. Apply every migration to both:
+
+```bash
+go run ./cmd/migrate up
+DATABASE_URL="$DATABASE_URL_TEST" go run ./cmd/migrate up
+```
+
+When the migration adds a routine to `public`, re-run `readonly_role.sql` against both afterward. See §2 Test database.
 
 `migrate` supports four verbs: `up`, `down`, `force <version>`, `version`. `version` prints the current version and the dirty flag (or reports no migrations on a fresh DB). `force <version>` pins the recorded version and clears the dirty flag.
 
@@ -231,8 +293,8 @@ Builds and tests are free — run them liberally. Live-surface commands spend mo
 | `go build`, `go vet`, `go test ./...` | Free | The primary verification loop. Run freely. |
 | `go test -tags=integration ./...` | Cheap; needs Postgres | Run when touching queries or migrations. |
 | `go run ./cmd/fetcher` | Live ATS traffic | One manual run to verify a change is fine. Never in a loop — rate limits and politeness are real. |
-| `go run ./cmd/batch-enrich` | API dollars per posting — `claude -p` left the Max plan 2026-07 | Never run as a test. Exercise the pipeline with unit tests and fakes; a live run is an operator decision. |
-| `/batch-enrich` skill | Session tokens, subscription-covered | The economical bulk path while the binary bills API. Still an operator decision, never a test. |
+| `go run ./cmd/batch-enrich` | Legacy/automation runner; may consume model/API budget | Never run as a test. Exercise the pipeline with unit tests and fakes; a live run is an operator decision. |
+| `/batch-enrich` skill | Session tokens; worker usage is model-dependent | Primary human-operated bulk path. It reads through the project MCP server and writes only through `mcp.save_enrichment`; still an operator decision, never a test. |
 | `batch-enrich --force` (either path) | Paid re-classification, provenance churn | Operator-only, after a contract fix. Never to "re-verify." |
 | `go run ./cmd/migrate down` | Full teardown; blocks on enrichment history | See §2 Teardown and Recovery. Never a casual reset. |
 
@@ -298,7 +360,7 @@ market-scout/
 │           └── db/
 │               ├── migrations/      # Numbered migration files (source of truth for schema)
 │               ├── queries/         # Hand-written SQL for sqlc
-│               ├── setup/           # Operational role SQL (readonly_role.sql, action_role.sql; not migrations, not sqlc input)
+│               ├── setup/           # Hand-run operational SQL: role grants and one-time data repair (not migrations, not sqlc input)
 │               ├── *.sql.go         # sqlc-generated query functions
 │               └── models.go        # sqlc-generated row types
 ├── agent-context/
@@ -450,9 +512,46 @@ Key invariants:
 
 - `created_at` on `canonical_roles`, `specializations`, and `skills` distinguishes emergent (agent-minted at runtime) from seeded (migration-installed) taxonomy entries.
 - Slug collisions across `specializations` and `skills` are expected — the taxonomy deduplicates by slug at load time, first-owner wins. Logged as warnings at run start, not errors.
-- `prompt_version` on each `classifications` row identifies which agent contract produced it — the primary audit key across contract changes.
-- `failures.jsonl` at `agent-output/batch-enrich/failures.jsonl` is append-only history for operator review. The binary never reads it; it does not drive post-failure behavior.
-- `--force` re-classifies postings that already have a `classifications` row. Without it, the binary skips them. Useful for re-running a corrected contract against already-processed postings.
+- `prompt_version` on each `classifications` row identifies which classifier contract produced it — the primary audit key across contract changes. See *Prompt version lineages* below.
+- `failures.jsonl` at `agent-output/batch-enrich/failures.jsonl` is append-only history for operator review. The enrichment coordinator records terminal worker failures there after reconciling them with persisted classifications; it does not drive post-failure behavior.
+- `--force` re-classifies postings that already have a `classifications` row. Without it, the enrichment workflow skips them. Use it only for a corrected contract.
+
+**Prompt version lineages.** `prompt_version` answers one question: which
+classifier contract produced this row. It never encodes the model — `model` is
+its own column — and it never encodes the harness.
+
+One writer, one pin. Each pin is the only place its value is written; nothing
+else restates it as a literal.
+
+| Writer | Pin lives in | Lineage |
+|---|---|---|
+| Codex skill (live path) | `classification-pins` block, `.agents/skills/batch-enrich/SKILL.md` | `batch-enrich-v<n>` |
+| Claude skill | `classification-pins` block, `.claude/skills/batch-enrich/SKILL.md` | `batch-enrich-v<n>` |
+| Go runner (legacy/automation) | `PromptVersion` constant, `apps/tools/cmd/batch-enrich/config.go` | `batch-enrich-go-v<n>` |
+
+The two skills share one lineage and bump together: they run the same
+classification contract under different harnesses and models. The Go runner
+does not — different contract, different transport, and it can run the same
+Haiku model as the Claude skill, so a shared lineage would make its rows
+indistinguishable.
+
+`mcp.save_enrichment` requires `provenance.model` and
+`provenance.prompt_version` and rejects a call omitting either. It does not
+check the value against a list of known versions: an allowlist in the server
+would force a rebuild and restart before a bumped pin could be written, which
+is the surest way to stop pins being bumped.
+
+**Historical rows are not relabelled.** Storage is append-only and these rows
+are the only evidence the drift happened. Four cohorts written before 2026-09-21
+cannot be attributed to a single writer, and queries that split by
+`prompt_version` must treat them as unresolved:
+
+| `prompt_version` | Model | Rows | Ambiguity |
+|---|---|---:|---|
+| `batch-enrich-v4` | `claude-haiku-4-5-20251001` | 4,474 | Claude skill or Go runner `--runner claude` — same pin, same model, overlapping window. |
+| `batch-enrich-v5` | `claude-haiku-4-5-20251001` | 561 | v5 was specified for the Codex path; these Haiku rows carry it too. Same label, different contract from the rows below. |
+| `batch-enrich-v6` | `claude-sonnet-5` | 66 | No pin in any writer names this model. Origin unidentified. |
+| `mcp-save-enrichment-v1` | `mcp-agent` | 231 | The removed `save_enrichment` default. Records only that provenance was omitted; the real contract and model are unrecoverable. |
 
 ### 6.3 Where logs come from
 

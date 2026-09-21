@@ -111,10 +111,11 @@ GRANT USAGE ON SCHEMA mcp TO market_scout_actions;
 --
 -- The global FOR ROLE form applies to every schema, but the only functions this
 -- owner creates are the mcp.* approved functions (each then gets its explicit
--- GRANT below) plus the pgvector extension's functions in public — which already
--- exist with their PUBLIC grants intact, since default privileges affect only
--- functions created AFTER this runs, never existing ones. ALTER DEFAULT
--- PRIVILEGES is idempotent.
+-- GRANT below) plus the extension functions in public — which already existed
+-- when this rule was written, and default privileges affect only functions
+-- created AFTER this runs, never existing ones. So this rule left them alone;
+-- `readonly_role.sql` is what revoked their PUBLIC grants, and both databases
+-- now hold none. ALTER DEFAULT PRIVILEGES is idempotent.
 ALTER DEFAULT PRIVILEGES FOR ROLE market_scout
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 
@@ -136,10 +137,20 @@ ALTER DEFAULT PRIVILEGES FOR ROLE market_scout
 REVOKE ALL ON FUNCTION mcp.add_company(text, text, text, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION mcp.add_company(text, text, text, text, text) TO market_scout_actions;
 
--- mcp.save_enrichment (migration 000011): full classifier writeback (get-or-create
--- taxonomy, insert one classification row, attach join rows) behind the SECURITY
--- DEFINER boundary. Append-only: it never updates or deletes classification history.
--- REVOKE-from-PUBLIC is also in the migration; repeated here for self-sufficiency.
+-- mcp.save_enrichment (migrations 000011 and 000026): full classifier writeback
+-- (get-or-create taxonomy, insert one classification row, attach join rows)
+-- behind the SECURITY DEFINER boundary. 000026 leaves the hardened implementation
+-- under an internal name and grants only its transaction-locking wrapper. Append-
+-- only: it never updates or deletes classification history. REVOKE-from-PUBLIC is
+-- also in the migration; repeated here for self-sufficiency.
+DO $$
+BEGIN
+    IF to_regprocedure('mcp.save_enrichment_unlocked(jsonb,text,text)') IS NOT NULL THEN
+        REVOKE ALL ON FUNCTION mcp.save_enrichment_unlocked(jsonb, text, text) FROM PUBLIC;
+        REVOKE ALL ON FUNCTION mcp.save_enrichment_unlocked(jsonb, text, text) FROM market_scout_actions;
+    END IF;
+END
+$$;
 REVOKE ALL ON FUNCTION mcp.save_enrichment(jsonb, text, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION mcp.save_enrichment(jsonb, text, text) TO market_scout_actions;
 

@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
+import { testDsns } from "./test-dsn";
+
 describe("read-model views", () => {
   it("keeps the prior successful snapshot open after a later failed run, displays content only from the run that established openness, excludes null-run snapshots, and prefers the newest ID when timestamps tie", async (context) => {
-    const ownerDsn = process.env.DATABASE_URL;
-    const readOnlyDsn = process.env.DATABASE_URL_RO;
+    const { ownerDsn, readOnlyDsn } = testDsns();
     if (!ownerDsn || !readOnlyDsn) {
       context.skip();
       return;
@@ -286,8 +287,7 @@ describe("read-model views", () => {
   });
 
   it("derives workplace type with provenance from ATS, raw data, and normalized location text", async (context) => {
-    const ownerDsn = process.env.DATABASE_URL;
-    const readOnlyDsn = process.env.DATABASE_URL_RO;
+    const { ownerDsn, readOnlyDsn } = testDsns();
     if (!ownerDsn || !readOnlyDsn) {
       context.skip();
       return;

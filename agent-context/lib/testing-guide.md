@@ -21,6 +21,8 @@ Go tests use the standard `testing` package and live next to the code they exerc
 
 Default `go test ./...` runs unit + adapter HTTP tests. Integration and E2E tests require their build tags (`go test -tags=integration ./...`) and a running Postgres.
 
+The `//go:build integration` tests still connect through `DATABASE_URL` and its companion role DSNs — the development database. The `apps/web/` DB suites now use a dedicated `market_scout_test` database; pointing the Go tests at it is a follow-up.
+
 Fixtures (recorded ATS JSON responses) live in `apps/tools/internal/ats/testdata/<adapter>/`. The `testdata/` directory name is recognized by the Go toolchain and excluded from build.
 
 ## 2. What to Test

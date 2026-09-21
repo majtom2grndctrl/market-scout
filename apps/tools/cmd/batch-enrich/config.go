@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/selection"
 )
 
 // PromptVersion and per-runner models are pinned constants. The --runner flag
@@ -15,15 +17,38 @@ import (
 // constants, runtime format validation is unnecessary — the literals enforce
 // the constraint.
 //
-// batch-enrich-v4 makes the {"results": [...]} envelope unconditional — the
-// agent must wrap every response in it, including single-posting retries.
-// v3 left the envelope conditional on multiple postings, which caused
-// well-formed single-posting retries to be rejected by the parser.
+// PromptVersion carries its own batch-enrich-go-v<n> lineage, separate from the
+// batch-enrich-v<n> pinned by the two batch-enrich SKILL.md files. It is a
+// different classifier contract on a different transport — the agent returns a
+// {"results": [...]} envelope this binary parses and writes through sqlc, while
+// the skills classify one posting at a time and write through
+// mcp.save_enrichment. The lineages had to split because they can also share a
+// model: --runner claude pins claude-haiku-4-5-20251001, the same model the
+// Claude skill uses, so (prompt_version, model) was not enough to tell the two
+// writers apart. The 4,474 rows already stamped batch-enrich-v4 with that model
+// are permanently ambiguous between them; see developer-guide §6.2. Those rows
+// are history and are not relabelled.
+//
+// The -v4 generation is unchanged: it makes the {"results": [...]} envelope
+// unconditional — the agent must wrap every response in it, including
+// single-posting retries. v3 left the envelope conditional on multiple
+// postings, which caused well-formed single-posting retries to be rejected by
+// the parser. Bump to batch-enrich-go-v5 when this binary's contract changes;
+// do not track the skills' numbering.
+//
+// This binary is slated for rewrite, so the pin is the whole of the change
+// here — nothing else in the runner was reworked for provenance.
 const (
 	RunnerCodexExec = "codex-exec"
 	RunnerClaude    = "claude"
 
-	PromptVersion  = "batch-enrich-v4"
+	// SortNewest and SortOldest are the accepted --sort values. Newest-first
+	// is the default: draining oldest-first keeps the classified set months
+	// behind the market, which defeats emerging-title analysis.
+	SortNewest = "newest"
+	SortOldest = "oldest"
+
+	PromptVersion  = "batch-enrich-go-v4"
 	CodexExecModel = "gpt-5.4-mini"
 	ClaudeModel    = "claude-haiku-4-5-20251001"
 )
@@ -60,6 +85,13 @@ type Config struct {
 	Count int
 	Focus string
 	Force bool
+
+	// Sort is the validated --sort value: SortNewest or SortOldest.
+	Sort string
+	// MaxPerCompany caps how many work units one company contributes to a
+	// selection wave. Zero takes the shared selection core's default;
+	// negative removes the cap.
+	MaxPerCompany int
 }
 
 // ParseFlags parses argv into a Config using the provided FlagSet. The
@@ -78,6 +110,11 @@ func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 			"Empty string means no filter.")
 	fs.BoolVar(&cfg.Force, "force", false,
 		"Drop the unclassified filter and re-process matching postings.")
+	fs.StringVar(&cfg.Sort, "sort", SortNewest,
+		"Selection order by first_seen_at: newest|oldest.")
+	fs.IntVar(&cfg.MaxPerCompany, "max-per-company", selection.DefaultMaxPerCompany,
+		"Max work units one company may contribute to a selection wave. "+
+			"Negative disables the cap.")
 	fs.StringVar(&cfg.Runner, "runner", RunnerCodexExec,
 		"Classification runner: codex-exec|claude.")
 	fs.StringVar(&cfg.ReportFormat, "report-format", "json",
@@ -157,5 +194,28 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("invalid --report-format %q: must be json or markdown", c.ReportFormat)
 	}
+	if _, err := sortForFlag(c.Sort); err != nil {
+		return err
+	}
+	if c.MaxPerCompany > math.MaxInt32 {
+		return fmt.Errorf("invalid --max-per-company %d: must be <= %d", c.MaxPerCompany, math.MaxInt32)
+	}
 	return nil
+}
+
+// sortForFlag maps the --sort flag onto the shared selection core's Sort. An
+// empty string — a Config built in code rather than from a FlagSet — maps to
+// selection.SortDefault and lets the shared core supply the policy, so the
+// default lives in exactly one place.
+func sortForFlag(sort string) (selection.Sort, error) {
+	switch sort {
+	case "":
+		return selection.SortDefault, nil
+	case SortNewest:
+		return selection.SortNewestFirst, nil
+	case SortOldest:
+		return selection.SortOldestFirst, nil
+	default:
+		return selection.SortDefault, fmt.Errorf("invalid --sort %q: must be %s or %s", sort, SortNewest, SortOldest)
+	}
 }

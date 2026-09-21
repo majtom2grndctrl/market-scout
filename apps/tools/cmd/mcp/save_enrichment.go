@@ -27,19 +27,15 @@ import (
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/classify"
 )
 
-// Provenance defaults applied before validation. Both fields must match
-// provenancePattern after defaulting.
-const (
-	defaultModel         = "mcp-agent"
-	defaultPromptVersion = "mcp-save-enrichment-v1"
-)
-
 // Save-enrichment action error codes beyond the validation codes the shared
 // classifier rules emit. invalid_provenance and posting_not_found are checked
 // here; codeDBError (add_company.go) covers unexpected DB faults.
+// codeNameCollision is raised by the function, not here — it is named so the
+// mapping below can attach that error's structured detail.
 const (
 	codeInvalidProvenance = "invalid_provenance"
 	codePostingNotFound   = "posting_not_found"
+	codeNameCollision     = "name_collision"
 )
 
 // provenancePattern constrains model and prompt_version to a stable identifier
@@ -61,8 +57,8 @@ type saveEnrichmentRequest struct {
 	Summary         string                         `json:"summary"`
 }
 
-// provenanceInput carries the MCP-only model/prompt_version. Both default when
-// omitted; the defaults are applied before pattern validation.
+// provenanceInput carries the MCP-only model/prompt_version. Both are required
+// and neither is defaulted; see the provenance comment above.
 type provenanceInput struct {
 	Model         string `json:"model"`
 	PromptVersion string `json:"prompt_version"`
@@ -157,13 +153,59 @@ type similarityCandidateGroup struct {
 // when the gate did not touch the payload, mirroring the function's own
 // omit-when-empty contract — so an untouched save's envelope is byte-identical
 // to what it was before this gate existed.
+// nameCollisionDetail is the machine-readable half of a name_collision error
+// (migration 000038): the existing row a mint would have duplicated, and both
+// similarity axes scored against it. The message states the same thing in
+// prose; this is what a worker branches on. slug_similarity is the number that
+// distinguishes the two correct responses — a low score means the vocabulary
+// already spells the concept under a different slug, which is a reuse, not a
+// licence to mint.
+type nameCollisionDetail struct {
+	Table          string  `json:"table"`
+	ProposedSlug   string  `json:"proposed_slug"`
+	ProposedName   string  `json:"proposed_name"`
+	ExistingSlug   string  `json:"existing_slug"`
+	ExistingName   string  `json:"existing_name"`
+	SlugSimilarity float64 `json:"slug_similarity"`
+	NameSimilarity float64 `json:"name_similarity"`
+}
+
+// saveEnrichmentError is an envelope error that may carry a structured detail.
+// The embedded actionError keeps path/code/message identical to every other
+// action's error shape; the detail rides the error rather than a parallel
+// array because a worker acts on it at the path the error already names.
+type saveEnrichmentError struct {
+	actionError
+	Collision *nameCollisionDetail `json:"collision,omitempty"`
+}
+
+// saveErr lifts a plain action error into the save envelope's error type.
+func saveErr(e actionError) saveEnrichmentError {
+	return saveEnrichmentError{actionError: e}
+}
+
+// functionError is one entry in mcp.save_enrichment's errors[]. The collision
+// fields are populated only for code "name_collision" and are zero otherwise.
+type functionError struct {
+	Path           string  `json:"path"`
+	Code           string  `json:"code"`
+	Message        string  `json:"message"`
+	Table          string  `json:"table"`
+	ProposedSlug   string  `json:"proposed_slug"`
+	ProposedName   string  `json:"proposed_name"`
+	ExistingSlug   string  `json:"existing_slug"`
+	ExistingName   string  `json:"existing_name"`
+	SlugSimilarity float64 `json:"slug_similarity"`
+	NameSimilarity float64 `json:"name_similarity"`
+}
+
 type saveEnrichmentEnvelope struct {
 	Ok                   bool                       `json:"ok"`
 	ClassificationID     *int64                     `json:"classification_id"`
 	PostingID            int64                      `json:"posting_id"`
 	Summary              string                     `json:"summary"`
 	NewTaxonomy          newTaxonomy                `json:"new_taxonomy"`
-	Errors               []actionError              `json:"errors"`
+	Errors               []saveEnrichmentError      `json:"errors"`
 	Substitutions        []substitution             `json:"substitutions,omitempty"`
 	Dropped              []droppedEntry             `json:"dropped,omitempty"`
 	SimilarityCandidates []similarityCandidateGroup `json:"similarity_candidates,omitempty"`
@@ -174,15 +216,11 @@ type saveEnrichmentEnvelope struct {
 // 000033 gate's feedback (substitutions/dropped/similarity_candidates), each
 // present only when non-empty.
 type functionResult struct {
-	Ok               bool        `json:"ok"`
-	ClassificationID *int64      `json:"classification_id"`
-	PostingID        *int64      `json:"posting_id"`
-	NewTaxonomy      newTaxonomy `json:"new_taxonomy"`
-	Errors           []struct {
-		Path    string `json:"path"`
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"errors"`
+	Ok                   bool                       `json:"ok"`
+	ClassificationID     *int64                     `json:"classification_id"`
+	PostingID            *int64                     `json:"posting_id"`
+	NewTaxonomy          newTaxonomy                `json:"new_taxonomy"`
+	Errors               []functionError            `json:"errors"`
 	Substitutions        []substitution             `json:"substitutions"`
 	Dropped              []droppedEntry             `json:"dropped"`
 	SimilarityCandidates []similarityCandidateGroup `json:"similarity_candidates"`
@@ -274,29 +312,59 @@ func saveEnrichmentHandlerWithDeps(tax taxonomySource, saver enrichmentSaver) se
 	}
 }
 
-// runSaveEnrichment applies provenance defaults, validates provenance and the
-// classifier payload (loading taxonomy and confirming the posting via the
-// read-only source), then calls the approved function through the saver. Every
-// failure mode returns an ok=false envelope; it never returns a transport error.
-func runSaveEnrichment(ctx context.Context, req saveEnrichmentRequest, tax taxonomySource, saver enrichmentSaver) saveEnrichmentEnvelope {
-	model := defaultIfBlank(req.Provenance.Model, defaultModel)
-	promptVersion := defaultIfBlank(req.Provenance.PromptVersion, defaultPromptVersion)
+// validateProvenance requires both provenance fields and checks their shape.
+//
+// Provenance is required, not defaulted. The server used to substitute
+// "mcp-agent" / "mcp-save-enrichment-v1" for an omitted provenance, which
+// manufactured an agent-asserted signal the agent never asserted: 231 rows
+// carry that pair and no query can recover which caller or contract wrote
+// them. Under the trust tiers (project.md §Evidence trust tiers) an absent
+// signal is recoverable and a fabricated one is not, so a caller that will not
+// name its contract is refused rather than labelled for it.
+//
+// It deliberately does not check membership in a set of known prompt versions.
+// The recognized versions live in each writer's own pin — the
+// `classification-pins` block of a batch-enrich SKILL.md, or the PromptVersion
+// constant in cmd/batch-enrich/config.go — and a pin is bumped in the same
+// commit as the prompt change it describes. An allowlist compiled into this
+// server would make that cheap, frequent edit require a rebuild and a restart
+// of a long-lived MCP process before the new version could be written at all.
+// The predictable response is not to bump the pin, which is the exact drift
+// this validation would be trying to prevent. So the boundary enforces that a
+// contract is named and well-formed; whether the name is the right one is the
+// pin's job, and auditing the cohorts is developer-guide §6.2's.
+func validateProvenance(model, promptVersion string) []saveEnrichmentError {
+	var errs []saveEnrichmentError
+	for _, f := range []struct{ path, value, missing string }{
+		{"provenance.model", model, "provenance.model is required: name the model that produced this classification"},
+		{"provenance.prompt_version", promptVersion, "provenance.prompt_version is required: name the classifier contract that produced this classification, from your pinned PROMPT_VERSION"},
+	} {
+		switch {
+		case f.value == "":
+			errs = append(errs, saveErr(actionError{Path: f.path, Code: codeInvalidProvenance, Message: f.missing}))
+		case !provenancePattern.MatchString(f.value):
+			errs = append(errs, saveErr(actionError{Path: f.path, Code: codeInvalidProvenance,
+				Message: f.path + " must match ^[A-Za-z0-9._-]+$"}))
+		}
+	}
+	return errs
+}
 
-	var errs []actionError
-	if !provenancePattern.MatchString(model) {
-		errs = append(errs, actionError{Path: "provenance.model", Code: codeInvalidProvenance,
-			Message: "provenance.model must match ^[A-Za-z0-9._-]+$"})
-	}
-	if !provenancePattern.MatchString(promptVersion) {
-		errs = append(errs, actionError{Path: "provenance.prompt_version", Code: codeInvalidProvenance,
-			Message: "provenance.prompt_version must match ^[A-Za-z0-9._-]+$"})
-	}
+// runSaveEnrichment validates provenance and the classifier payload (loading
+// taxonomy and confirming the posting via the read-only source), then calls the
+// approved function through the saver. Every failure mode returns an ok=false
+// envelope; it never returns a transport error.
+func runSaveEnrichment(ctx context.Context, req saveEnrichmentRequest, tax taxonomySource, saver enrichmentSaver) saveEnrichmentEnvelope {
+	model := strings.TrimSpace(req.Provenance.Model)
+	promptVersion := strings.TrimSpace(req.Provenance.PromptVersion)
+
+	errs := validateProvenance(model, promptVersion)
 
 	// Load taxonomy for the shared validation. A load failure is a DB fault, not
 	// a validation rejection — surface it as db_error.
 	taxonomy, err := tax.load(ctx)
 	if err != nil {
-		return failureSaveEnvelope(req, append(errs, actionError{Path: "db", Code: codeDBError, Message: err.Error()}))
+		return failureSaveEnvelope(req, append(errs, saveErr(actionError{Path: "db", Code: codeDBError, Message: err.Error()})))
 	}
 
 	resp := classify.AgentResponse{
@@ -308,17 +376,17 @@ func runSaveEnrichment(ctx context.Context, req saveEnrichmentRequest, tax taxon
 		Summary:         req.Summary,
 	}
 	for _, f := range classify.Validate(resp, taxonomy) {
-		errs = append(errs, actionError{Path: f.Path, Code: string(f.Code), Message: f.Message})
+		errs = append(errs, saveErr(actionError{Path: f.Path, Code: string(f.Code), Message: f.Message}))
 	}
 
 	// Posting existence is a DB-backed validation: confirm it before the write.
 	exists, err := tax.postingExists(ctx, req.PostingID)
 	if err != nil {
-		return failureSaveEnvelope(req, append(errs, actionError{Path: "db", Code: codeDBError, Message: err.Error()}))
+		return failureSaveEnvelope(req, append(errs, saveErr(actionError{Path: "db", Code: codeDBError, Message: err.Error()})))
 	}
 	if !exists {
-		errs = append(errs, actionError{Path: "posting_id", Code: codePostingNotFound,
-			Message: fmt.Sprintf("job posting %d does not exist", req.PostingID)})
+		errs = append(errs, saveErr(actionError{Path: "posting_id", Code: codePostingNotFound,
+			Message: fmt.Sprintf("job posting %d does not exist", req.PostingID)}))
 	}
 
 	if len(errs) > 0 {
@@ -329,26 +397,41 @@ func runSaveEnrichment(ctx context.Context, req saveEnrichmentRequest, tax taxon
 	// separate function arguments; skills[].requirement is stripped here.
 	payload, err := buildPayload(req)
 	if err != nil {
-		return failureSaveEnvelope(req, []actionError{{Path: "payload", Code: codeDBError, Message: err.Error()}})
+		return failureSaveEnvelope(req, []saveEnrichmentError{saveErr(actionError{Path: "payload", Code: codeDBError, Message: err.Error()})})
 	}
 
 	raw, err := saver.save(ctx, payload, model, promptVersion)
 	if err != nil {
-		return failureSaveEnvelope(req, []actionError{{Path: "db", Code: codeDBError, Message: err.Error()}})
+		return failureSaveEnvelope(req, []saveEnrichmentError{saveErr(actionError{Path: "db", Code: codeDBError, Message: err.Error()})})
 	}
 
 	var fr functionResult
 	if err := json.Unmarshal(raw, &fr); err != nil {
-		return failureSaveEnvelope(req, []actionError{{Path: "db", Code: codeDBError,
-			Message: fmt.Sprintf("decoding save_enrichment result: %v", err)}})
+		return failureSaveEnvelope(req, []saveEnrichmentError{saveErr(actionError{Path: "db", Code: codeDBError,
+			Message: fmt.Sprintf("decoding save_enrichment result: %v", err)})})
 	}
 
 	if !fr.Ok {
 		// SQL-level invariant violations come back as structured errors, not as a
 		// raised exception, so they map straight into the envelope.
-		mapped := make([]actionError, 0, len(fr.Errors))
+		mapped := make([]saveEnrichmentError, 0, len(fr.Errors))
 		for _, e := range fr.Errors {
-			mapped = append(mapped, actionError{Path: e.Path, Code: e.Code, Message: e.Message})
+			m := saveErr(actionError{Path: e.Path, Code: e.Code, Message: e.Message})
+			// name_collision (migration 000038) carries the collider and both
+			// axis scores. Forwarded as a typed detail so a worker reads it
+			// rather than parsing the message prose.
+			if e.Code == codeNameCollision {
+				m.Collision = &nameCollisionDetail{
+					Table:          e.Table,
+					ProposedSlug:   e.ProposedSlug,
+					ProposedName:   e.ProposedName,
+					ExistingSlug:   e.ExistingSlug,
+					ExistingName:   e.ExistingName,
+					SlugSimilarity: e.SlugSimilarity,
+					NameSimilarity: e.NameSimilarity,
+				}
+			}
+			mapped = append(mapped, m)
 		}
 		return failureSaveEnvelope(req, mapped)
 	}
@@ -359,7 +442,7 @@ func runSaveEnrichment(ctx context.Context, req saveEnrichmentRequest, tax taxon
 		PostingID:            req.PostingID,
 		Summary:              req.Summary,
 		NewTaxonomy:          normalizeNewTaxonomy(fr.NewTaxonomy),
-		Errors:               []actionError{},
+		Errors:               []saveEnrichmentError{},
 		Substitutions:        fr.Substitutions,
 		Dropped:              fr.Dropped,
 		SimilarityCandidates: fr.SimilarityCandidates,
@@ -441,9 +524,9 @@ func normalizeNewTaxonomy(nt newTaxonomy) newTaxonomy {
 
 // failureSaveEnvelope builds the ok=false envelope. Summary is still echoed so the
 // agent can correlate the rejected call; new_taxonomy is empty.
-func failureSaveEnvelope(req saveEnrichmentRequest, errs []actionError) saveEnrichmentEnvelope {
+func failureSaveEnvelope(req saveEnrichmentRequest, errs []saveEnrichmentError) saveEnrichmentEnvelope {
 	if errs == nil {
-		errs = []actionError{}
+		errs = []saveEnrichmentError{}
 	}
 	return saveEnrichmentEnvelope{
 		Ok:               false,
@@ -453,13 +536,4 @@ func failureSaveEnvelope(req saveEnrichmentRequest, errs []actionError) saveEnri
 		NewTaxonomy:      normalizeNewTaxonomy(newTaxonomy{}),
 		Errors:           errs,
 	}
-}
-
-// defaultIfBlank returns fallback when s is empty or whitespace-only, else s
-// trimmed. Provenance is trimmed so a stray space does not defeat the pattern.
-func defaultIfBlank(s, fallback string) string {
-	if strings.TrimSpace(s) == "" {
-		return fallback
-	}
-	return strings.TrimSpace(s)
 }

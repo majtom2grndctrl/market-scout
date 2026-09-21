@@ -11,15 +11,27 @@ description: >
   and dispatches in waves of 10 agents, each processing a small sequential chunk.
   Use to enrich job postings in bulk during active data collection.
 allowed-tools: Read, Bash, Agent, Write
-argument-hint: "<count> [focus description] [--force] [--recent]"
+argument-hint: "<count> [focus description] [--force] [--backlog] [--per-company N]"
 ---
 
 > **Status:** previously deprecated in favor of `cmd/batch-enrich` — back in play as of 2026-07. `claude -p` is no longer covered by the Max subscription, so the Go binary bills API dollars per posting while this skill runs on session tokens. Path forward (skill revival, hook adaptation) is undecided; until then, keep this skill and the binary's classification contract in sync — `classification-pins` below is the shared anchor.
 
 ```classification-pins
-PROMPT_VERSION=batch-enrich-v5
+PROMPT_VERSION=batch-enrich-v8
 MODEL=claude-haiku-4-5-20251001
 ```
+
+This block is the only place these values are written. Read it once at
+invocation start and substitute it wherever this file shows `<PROMPT_VERSION>`
+or `<MODEL>`. Never restate a version string as a literal — the Codex skill did,
+and its workers wrote `batch-enrich-v6` for weeks under a `batch-enrich-v7` pin.
+
+`PROMPT_VERSION` names the **classifier contract**, not the model and not the
+harness. Model is its own column, and one contract runs under Haiku here and
+under GPT-5.6 Luna/Terra in `.agents/skills/batch-enrich/SKILL.md` — so the two
+skills share one pin value and bump together. `apps/tools/cmd/batch-enrich` is a
+different contract on a different transport and carries its own `batch-enrich-go-v<n>`
+lineage; do not reuse this one there.
 
 **Bump `PROMPT_VERSION` in the same commit as any change to classification
 discipline, grounding rules, the agent contract, or selection semantics.**
@@ -67,9 +79,14 @@ A wave's total work units = (agents per wave) × (chunk size). Postings touched 
 | count | `25` | Window size on selection, passed to `enrichment_preview`'s `count` param. Bounds **work units**; complete units are never split, so postings returned is ≥ `count`. Report both numbers. Hard-bounded 1..500 by the tool (Step 3); a run wanting more must be split across multiple invocations. |
 | focus | `prioritize AI/ML engineering roles` | ILIKE prefilter on title + description; passed to each agent as guidance |
 | `--force` | `--force` | Re-classify postings that already have classifications. `save_enrichment` inserts a new classification row; history is never deleted. May appear anywhere in args. |
-| `--recent` | `--recent` | Flip selection order to newest-first (`first_seen_at DESC`). Default is oldest-first. May appear anywhere in args. |
+| `--backlog` | `--backlog` | Flip selection order to oldest-first (`first_seen_at ASC`). **Default is newest-first.** Use only for a deliberate backlog drain. May appear anywhere in args. |
+| `--per-company` | `--per-company 3` | Max work units one company may contribute to this wave. Defaults to 5. Takes the next token as its integer value; may appear anywhere in args. |
 
-If focus is empty: select oldest unenriched, no agent guidance beyond the schema.
+If focus is empty: select the newest unenriched work, no agent guidance beyond the schema.
+
+**Why newest-first is the default.** Oldest-first drained the queue in arrival order, which structurally guaranteed the classified set lagged the market: on 2026-09-21 only 4 of 1,946 classified postings had been first seen in the preceding three weeks, against 1,108 of 2,712 unclassified ones. The project's question is which job titles are *emerging*; a classified set months behind the market cannot answer it.
+
+**Why the per-company cap.** The corpus is ~43% OpenAI/Stripe/Anthropic. Before the cap, a 50-unit wave drew 58 postings from OpenAI alone. The tool also cycles across companies before recency, so a wave takes every company's newest unit, then every company's second-newest. This is deliberate under-sampling of the giants, not proportional sampling: title analysis has to reflect more than three companies' naming conventions.
 
 ## Process
 
@@ -80,12 +97,13 @@ If focus is empty: select oldest unenriched, no agent guidance beyond the schema
 
 ### 2. Parse args
 
-Strip `--force` and `--recent` from `$ARGUMENTS` first using exact token matching (whitespace-delimited — a token like `forceful` that merely contains `force` as a substring is unaffected); record whether each was present. Then:
+Strip `--force`, `--backlog`, and `--per-company <N>` from `$ARGUMENTS` first using exact token matching (whitespace-delimited — a token like `forceful` that merely contains `force` as a substring is unaffected); record whether each was present, and for `--per-company` take the following token as its value. Then:
 
 - `count` — first remaining token; integer; default 10 if absent, non-numeric, zero, or negative
 - `focus` — remaining text, may be empty
 - `force` — boolean from the strip step
-- `recent` — boolean from the strip step
+- `backlog` — boolean from the strip step
+- `per_company` — integer from the strip step; omit the param entirely when the flag was absent, non-numeric, or out of 1..500
 
 ### 3. Select the work-unit cohort via `enrichment_preview`
 
@@ -102,7 +120,8 @@ Selection is a single MCP tool call, not SQL the orchestrator writes. Pull IDs, 
 | `count` | `count` | Passed through. Hard-bounded **1..500** — see below. |
 | `focus` | `focus` | Passed through (empty string when no focus given). ILIKE prefilter on title or description. |
 | `force` | `force` | Passed through. `true` drops the already-classified filter. |
-| `recent` | `sort` | `recent=true` → `"newest_first"`; default (`recent=false`) → `"oldest_first"`. |
+| `backlog` | `sort` | `backlog=true` → `"oldest_first"`; otherwise omit the param, which the tool resolves to `"newest_first"`. |
+| `per_company` | `max_per_company` | Passed through when given; omit it otherwise and the tool applies its default of 5. Bounded **1..500**; `0` and negatives are rejected with `invalid_max_per_company`, not read as "no cap". |
 
 Dedup is always on inside the tool — there's no parameter to disable it; that's the coordinator's contract, not a per-run choice.
 
@@ -112,7 +131,7 @@ Dedup is always on inside the tool — there's no parameter to disable it; that'
 
 | Field | Type | Use |
 |---|---|---|
-| `ok` | bool | `false` means the call was rejected (`errors[].code`: `invalid_count`, `invalid_sort`, or `db_error`). Stop and report — do not retry with local SQL. |
+| `ok` | bool | `false` means the call was rejected (`errors[].code`: `invalid_count`, `invalid_sort`, `invalid_max_per_company`, or `db_error`). Stop and report — do not retry with local SQL. |
 | `selected_count` | int | Total postings selected, siblings included. ≥ `work_unit_count`. |
 | `work_unit_count` | int | Distinct work units selected — what `count` actually bounds. |
 | `already_classified_count` | int | Already-classified postings included (nonzero only under `force`). |
@@ -128,7 +147,9 @@ Report both `work_unit_count` and `selected_count` per Step 8 — they differ wh
 
 **What the tool does — rationale for trusting its output, not a spec to re-derive here.** `enrichment_preview` calls the same shared selection core (`internal/enrich/selection`) that the `batch-enrich` Go binary uses, backed by `ListUnclassifiedPostings` / `ListUnclassifiedPostingsForced` in `apps/tools/internal/db/queries/enrich.sql` — that file is the implementation of record; read its header comment for the exact algorithm.
 
-- **Selection contract**, unchanged from before: latest snapshot must have non-null `description_text`. `force=false` additionally requires no existing `classifications` row for the posting; `force=true` drops that filter and never deletes prior rows. An empty `focus` applies no filter; a non-empty one ILIKE-matches title or description. Ordering is by `first_seen_at`, ascending by default, descending when `sort` is `newest_first`.
+- **Selection contract**, unchanged from before: latest snapshot must have non-null `description_text`. `force=false` additionally requires no existing `classifications` row for the posting; `force=true` drops that filter and never deletes prior rows. An empty `focus` applies no filter; a non-empty one ILIKE-matches title or description. Ordering is by `first_seen_at`, descending by default, ascending when `sort` is `oldest_first`, and the wave cycles across companies before recency under the `max_per_company` cap.
+
+- **Postings with no description are invisible to selection**, not skipped by it: the shared core filters `description_text IS NOT NULL` before any edge is built. Workday (~120 postings) and Workable (~30) currently store none. That is a fetcher gap, out of this skill's scope — don't report it as a classification failure.
 - **A work unit is never split across the `count` boundary.** `count` bounds work units, not raw posting rows; every sibling of a selected unit rides along even past `count`, so postings returned is ≥ `count` (fewer only if the remaining pool has fewer than `count` units left).
 - **Why duplicates must collapse before dispatch.** A board can list one job many times — once per location — so several postings describe identical work. Classifying each independently is wasted model time and a correctness problem: the 2026-09-16 run classified Harvey's five identical "GTM Technology Product Owner" postings in different chunks and got three different seniorities for one job.
 - **Why text equality is the strong signal.** Two byte-identical descriptions, within one company, are self-evidencing — no judgement required. That catches the shape that matters most: 442 byte-identical text groups covering 1,253 postings, 149 of them spanning multiple requisition keys (the one-posting-per-location fan-out).
@@ -268,11 +289,28 @@ Call with:
 | `summary` | the structured summary string |
 | `provenance` | `{model: <MODEL>, prompt_version: <PROMPT_VERSION>}` — **required, pass explicitly** |
 
-**Provenance is not optional in practice.** `save_enrichment` silently defaults to `model: "mcp-agent"` / `prompt_version: "mcp-save-enrichment-v1"` when provenance is omitted — losing the cohort tracking the `classification-pins` block exists for. Always pass the pinned `MODEL` and `PROMPT_VERSION`.
+**Provenance is required.** `save_enrichment` rejects a call that omits `provenance.model` or `provenance.prompt_version` with `invalid_provenance`. It used to substitute `model: "mcp-agent"` / `prompt_version: "mcp-save-enrichment-v1"` instead, which quietly fabricated the cohort key the `classification-pins` block exists to carry — 231 rows still hold that pair and nothing can recover what actually wrote them. Pass the pinned `MODEL` and `PROMPT_VERSION` on every call.
 
 `summary` and `skills[].requirement` are echoed but not persisted (pgvector storage and requirement columns are deferred per `project.md` non-goals). Keep emitting them so the signal lands when storage arrives; report `summary` back for the markdown report.
 
 **On `ok:false` (e.g. `slug_collision`):** read the error and pick a real fix — a distinct non-colliding slug, or drop the field if the concept is already covered elsewhere. Never blindly rename without checking the axis rule (Step 7). Retry the same posting. **Cap: 2 additional attempts (3 total).** If still unresolved, report that posting as failed in the chunk summary rather than looping.
+
+**`name_collision` — a mint whose name is already taken.** Migration `000038` blocks minting a **new** `specializations` or `skills` slug whose name, normalized for case and whitespace, already belongs to a row in that table. Reusing an existing slug is never blocked, and `canonical_roles` is not checked at all. The error names the collider so you can act without searching:
+
+```json
+{"path": "skills[0].name", "code": "name_collision", "table": "skills",
+ "proposed_slug": "llm-zzz-novel", "proposed_name": "Large Language Models",
+ "existing_slug": "llm", "existing_name": "Large Language Models",
+ "slug_similarity": 0.286, "name_similarity": 1.000}
+```
+
+Exactly two responses are correct. Pick on the concept, not on the scores:
+
+1. **Reuse `existing_slug`** when it is the same concept. Replace your proposed slug and name with the existing pair and re-save. This is the common case — a low `slug_similarity` means the vocabulary already spells the concept differently, not that it is a different concept.
+2. **Rename** when it is genuinely a different concept. Give the new term a name that states the distinction in the name itself, and keep your slug. A name that only differs by punctuation or a trailing word you added to get past the gate is not a distinction — it recreates the duplicate the check exists to stop.
+
+Never mint under a near-miss name to slip the check. The gate blocks rather than substitutes precisely so nothing is guessed: if neither response is defensible, report the posting as failed and say which collider you hit.
+
 
 If a fix changes the payload, **re-save the whole work unit with the corrected payload**, including siblings already written. A work unit whose siblings disagree is the defect this design exists to prevent; an extra append-only row per sibling is the cheap price of avoiding it.
 
@@ -313,7 +351,9 @@ Summaries are **not** persisted (storage deferred per `project.md` non-goals), s
 **Grounding discipline (skills, specializations, and seniority):**
 - Tag only what the description names or clearly implies — not what the role typically needs. Before adding an item, find the phrase that supports it. No phrase, no tag.
 - An empty or short list is a correct result, not a failure. A posting that says "designing and implementing a robust, scalable data platform" with no tools named gets no tool skills — not `aws, azure, gcp, snowflake, databricks, bigquery, kafka, spark, airflow, dbt, java, scala, python` inferred from what data-platform roles typically use.
-- Ground seniority in explicit signals, in this order. A level word *acting as a level* in the title — Intern, Junior, Senior, Staff, Principal, Lead, Director, Head, VP modifying the role — is the employer's own designation and is authoritative. It is the same word slug discipline strips from the role slug, and it has to land somewhere; `seniority` is where. When the title carries no level word, fall back to years-of-experience or level language in the description.
+- **Ground seniority in scope of influence, not in years.** Work the ladder below in order and stop at the first step that resolves. Years of experience is **corroboration, never a basis** — see the years rule below.
+
+  **Step 1 — a level word acting as a level in the title.** Authoritative. Intern, Junior, Senior, Staff, Principal, Lead, Director, Head, VP modifying the role is the employer's own designation. It is the same word slug discipline strips from the role slug, and it has to land somewhere; `seniority` is where.
 - **Read the phrase, not the keyword.** The word only counts when it functions as a level. "Chief of Staff", "Staff Accountant", and "Member of Technical Staff" carry no staff level — a Staff Accountant is an entry-to-mid accounting role.
 - **A band needs a separator; adjacent level words do not form one.** With an explicit `/`, `+`, `or`, or `to` — "Senior/Staff Engineer", "Staff + Sr. Engineer", "Mid-Senior" — the employer means either level, so take the **lower** bound. Two level words sitting adjacent with no separator are a single compound level, coined by the employer as its own rung — not "senior or staff." Abstract rules for resolving compounds have failed twice in one day; resolve by this table instead:
 
@@ -329,10 +369,47 @@ Summaries are **not** persisted (storage deferred per `project.md` non-goals), s
   | senior lead | lead |
   | associate director | director |
   | deputy director | director |
+  | head of \<function\> | director |
+  | vp of \<function\> | director |
+  | general manager | director |
 
   Match on the words regardless of casing, spacing, or hyphenation — "Senior Staff", "Sr. Staff", and "senior-staff" are the same form. A compound not on this table is genuinely ambiguous: use judgment and record the call in `notes` rather than silently picking a side. On 2026-09-17 an agent read "Senior Staff Software Engineer" as a *band* and filed it `senior` — the only posting in a 62-posting corrective pass that stayed wrong. A follow-up pass applying this table fixed 59 of 60 genuine candidates with zero regressions: enumeration works, description does not.
-- Never read seniority off the subject matter. A posting requiring "1-3 years of building with LLMs in a production environment" reads `junior`, not `senior` — production LLM work sounds advanced, but the stated YOE says otherwise.
-- **These are one rule, not two.** "Not the title" means not the title's subject matter or how senior it *sounds* — it never means discard an explicit level word. An agent on 2026-09-16 read it the strict way, dropped the only unambiguous signal its posting had, and filed a Staff Engineer as `mid`.
+
+  **Step 2 — the scope the description asks the person to hold.** When the title carries no level word, read what the job is accountable for. This is the axis that actually separates rungs: junior and mid postings are written about *craft* — doing the work well, to a defined bar, inside a scope someone else set. Senior and above are written about *alignment* — setting the direction, and bringing other people to it.
+
+  | What the description asks the person to do | Rung |
+  |---|---|
+  | Learn the craft; work is assigned, scoped, and reviewed by others | `junior` |
+  | Own well-scoped features or accounts end to end, where **someone else set the scope**; execute a roadmap handed to you; craft quality is the stated bar | `mid` |
+  | **Define the scope yourself** — an ambiguous area, a function, a territory, a 0-to-1 build — and **align other teams or functions** to it; set direction others follow; mentor or set standards | `senior` |
+
+  **"End-to-end ownership" appears on both rows and therefore decides nothing.** Almost every posting above `junior` claims it. Two questions separate the rungs, and both must be asked:
+  1. **Who set the scope?** Handed a defined problem → `mid`. Expected to define the problem → `senior`.
+  2. **Who must be aligned?** Delivery inside one team → `mid`. **Named other functions or teams *at the employer*** that must be brought along — Finance, Legal, Product, leadership, another engineering org — → `senior`. **Customer, partner, and other external contact is neutral: it describes the role, not the rung.** A solutions engineer, forward-deployed engineer, account executive, or implementation consultant talks to customer engineers and executives at every level including the most junior, so "collaborate daily with our customer's engineers and executives" answers nothing. Two agents in the 2026-09-21 correction pass read external-facing language in opposite directions — one counted it as cross-org alignment and filed `senior`, one counted it as no answer and filed `mid` — because this line did not say which. It says now.
+
+  **If neither question can be answered from a verbatim phrase, fall through to Step 3 and write `unknown`.** Do not default to `mid` because it sits in the middle. A rung asserted from weak evidence is worse than an honest gap: the gap is visible to every later query and recoverable by a re-run, while a wrong rung is indistinguishable from a right one and silently corrupts any distribution built on it. `mid` is an answer, not a shrug.
+
+  On 2026-09-21 two agents in the same correction pass read near-identical "own X end to end" phrasing and split — one filed `mid`, one filed `senior` — because the earlier version of this table let that phrase match both rows. Ask the two questions; do not resolve on the phrase.
+  | Set technical direction across several teams or the org, as an IC | `staff` / `principal` — only when the title or description names that rung |
+  | Own a function, an org, or a P&L; "Head of X"; reports to an exec | `director` |
+
+  **Step 3 — nothing in Step 1 or Step 2 resolves → `unknown`.** This is a correct, common answer, not a cop-out. Most postings that carry no level word and no scope language genuinely do not state a level.
+
+- **People management is a second axis, not a row on the first.** Read it alongside Step 2, not instead of it. Managing individual contributors puts the floor at `senior`. Managing managers, or owning a whole function or geography — "Head of X", "VP of X", General Manager — is `director` regardless of what the IC ladder would say. A posting with moderate scope language *and* people management takes the management answer: the gap that produced contradictory calls on two General Manager postings in the 2026-09-21 run was exactly this case going unstated.
+
+- **"Head of X" is `director`.** Not `senior`. Four postings in the 2026-09-21 run — Head of Growth Marketing, Head of Field & Executive Marketing, Head of Developer Growth Marketing, General Manager (Italy) — were each filed `senior` because the agent read the function as mid-scope and ignored the title. Head of a function is the function's owner.
+
+- **The years rule.** A years figure may *confirm* a rung Step 1 or Step 2 already produced. It may never *produce* one. "5+ years of enterprise sales experience" on a title with no level word is `unknown`, not `senior` — plenty of employers ask five years for a mid role, and the number varies by function, geography, and company stage. Six postings in the 2026-09-21 run were filed `senior` or `mid` on a years figure alone (Growth Marketer CEE, Growth Marketer DACH, Deal Desk and Pricing Expert, ML Framework Engineer, SWE Observability, SWE Collective Communication); every one should have been `unknown`. If your grounding phrase contains the words "without explicit years requirement", or any other statement that the posting *lacks* a signal, you have just written down that you have no basis — the answer is `unknown`.
+
+- **Never read seniority off the subject matter, the company, or the team.** Not how advanced the domain sounds — "1-3 years of building with LLMs in a production environment" is `junior`, production LLM work notwithstanding. Not the company's stage or size. Not team adjectives: "a small, gritty team" is not a level signal, and neither is "you'll wear many hats". Not compensation: a band is set by market and geography, and reading a rung off a salary number is inventing a signal the posting did not give.
+
+- **Do not read a level out of an inclusive-sourcing blurb.** "Experience can come from student clubs or side projects", "we encourage applicants who don't meet every qualification", and similar phrasing are hiring-funnel language, not statements about the rung. This exact ElevenLabs phrase produced two wrong `junior` calls in the 2026-09-21 run.
+
+- **These are one rule, not two.** "Not the subject matter" never means discard an explicit level word. An agent on 2026-09-16 read it the strict way, dropped the only unambiguous signal its posting had, and filed a Staff Engineer as `mid`.
+
+- **Write the grounding phrase into `classification.notes`,** prefixed `seniority: `, so the evidence is persisted next to the value rather than living only in a chunk report that may never be saved. Eight of 72 agents in the 2026-09-21 run dropped their reports entirely; the reasoning behind those calls is unrecoverable.
+
+- **Every non-`unknown` seniority needs a `grounding_phrase`: text copied verbatim from the title or the description.** Not your paraphrase of it, not your inference from it. "Senior Staff Product Designer" is a grounding phrase; "small, gritty team indicates mid-level responsibility" is not — that is your gloss, and a gloss cannot be checked. If you cannot find a phrase in the posting that carries the level, the level is `unknown`.
 
 **Summary contract:**
 - 100–200 tokens.
@@ -364,7 +441,7 @@ Write `agent-output/batch-enrich/<YYYY-MM-DD-HHMM>.md`. Create the directory if 
 
 Aggregate from agent reports (the orchestrator holds no classification data of its own):
 
-- Run params (count, focus, force, recent)
+- Run params (count, focus, force, backlog, per_company)
 - Counts: work units selected, postings selected (incl. siblings), siblings riding along beyond `count`, dispatched, enriched, failed, skipped-no-description, re-enriched (when force)
 - New-slug counts taken from `created_at >= <run start>` on the three taxonomy tables, not from agent reports
 - Failure breakdown by reason (from agent reports — e.g. `slug_collision unresolved after retries`)

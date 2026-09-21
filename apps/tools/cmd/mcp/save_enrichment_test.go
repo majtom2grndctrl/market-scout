@@ -71,6 +71,7 @@ func testTaxonomy() classify.Taxonomy {
 func validSaveRequest() saveEnrichmentRequest {
 	return saveEnrichmentRequest{
 		PostingID:      42,
+		Provenance:     provenanceInput{Model: "claude-haiku-4-5-20251001", PromptVersion: "batch-enrich-v7"},
 		Classification: classify.AgentClassification{Seniority: "senior", Notes: "hybrid"},
 		CanonicalRoles: []classify.AgentCanonicalRole{
 			{Slug: "software-engineer", Name: "Software Engineer", Dimensions: []string{"ic", "engineering"}},
@@ -96,19 +97,51 @@ func okEnvelope(t *testing.T, classID int64, postingID int64, nt newTaxonomy) js
 	return b
 }
 
-func TestRunSaveEnrichment_ProvenanceDefaultsApplied(t *testing.T) {
+// Omitted provenance is refused rather than defaulted: the server must not
+// invent the contract name that later audits key on.
+func TestRunSaveEnrichment_ProvenanceRequired(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		prov provenanceInput
+		want []string
+	}{
+		{"both omitted", provenanceInput{}, []string{"provenance.model", "provenance.prompt_version"}},
+		{"model omitted", provenanceInput{PromptVersion: "batch-enrich-v7"}, []string{"provenance.model"}},
+		{"prompt version omitted", provenanceInput{Model: "claude-haiku-4-5-20251001"}, []string{"provenance.prompt_version"}},
+		{"whitespace only", provenanceInput{Model: " ", PromptVersion: "  "}, []string{"provenance.model", "provenance.prompt_version"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tax := &fakeTaxonomySource{tax: testTaxonomy(), exists: true}
+			req := validSaveRequest()
+			req.Provenance = tc.prov
+
+			env := runSaveEnrichment(context.Background(), req, tax, neverSaver{t})
+			if env.Ok {
+				t.Fatalf("env.Ok = true, want false for missing provenance")
+			}
+			for _, path := range tc.want {
+				if !hasSaveError(env.Errors, path, codeInvalidProvenance) {
+					t.Fatalf("errors = %+v, want invalid_provenance on %s", env.Errors, path)
+				}
+			}
+		})
+	}
+}
+
+// A surrounding space is trimmed, not rejected — the pattern guards the value,
+// not the caller's whitespace.
+func TestRunSaveEnrichment_ProvenanceTrimmed(t *testing.T) {
 	tax := &fakeTaxonomySource{tax: testTaxonomy(), exists: true}
 	saver := &fakeSaver{result: okEnvelope(t, 100, 42, newTaxonomy{})}
+	req := validSaveRequest()
+	req.Provenance = provenanceInput{Model: " claude-test ", PromptVersion: " batch-enrich-v7 "}
 
-	env := runSaveEnrichment(context.Background(), validSaveRequest(), tax, saver)
+	env := runSaveEnrichment(context.Background(), req, tax, saver)
 	if !env.Ok {
 		t.Fatalf("env.Ok = false, want true; errors=%+v", env.Errors)
 	}
-	if saver.gotModel != defaultModel {
-		t.Fatalf("model = %q, want default %q", saver.gotModel, defaultModel)
-	}
-	if saver.gotPromptVersion != defaultPromptVersion {
-		t.Fatalf("prompt_version = %q, want default %q", saver.gotPromptVersion, defaultPromptVersion)
+	if saver.gotModel != "claude-test" || saver.gotPromptVersion != "batch-enrich-v7" {
+		t.Fatalf("provenance not trimmed: model=%q pv=%q", saver.gotModel, saver.gotPromptVersion)
 	}
 }
 
@@ -192,7 +225,7 @@ func TestRunSaveEnrichment_InvalidProvenance(t *testing.T) {
 	if env.Ok {
 		t.Fatalf("env.Ok = true, want false for invalid provenance")
 	}
-	if !hasError(env.Errors, "provenance.model", codeInvalidProvenance) {
+	if !hasSaveError(env.Errors, "provenance.model", codeInvalidProvenance) {
 		t.Fatalf("errors = %+v, want invalid_provenance on provenance.model", env.Errors)
 	}
 }
@@ -204,7 +237,7 @@ func TestRunSaveEnrichment_PostingNotFound(t *testing.T) {
 	if env.Ok {
 		t.Fatalf("env.Ok = true, want false for nonexistent posting")
 	}
-	if !hasError(env.Errors, "posting_id", codePostingNotFound) {
+	if !hasSaveError(env.Errors, "posting_id", codePostingNotFound) {
 		t.Fatalf("errors = %+v, want posting_not_found on posting_id", env.Errors)
 	}
 }
@@ -235,7 +268,7 @@ func TestRunSaveEnrichment_ValidationCodesFromSharedRules(t *testing.T) {
 			if env.Ok {
 				t.Fatalf("env.Ok = true, want false")
 			}
-			if !hasError(env.Errors, tc.wantPath, tc.wantCode) {
+			if !hasSaveError(env.Errors, tc.wantPath, tc.wantCode) {
 				t.Fatalf("errors = %+v, want path=%q code=%q", env.Errors, tc.wantPath, tc.wantCode)
 			}
 		})
@@ -247,11 +280,9 @@ func TestRunSaveEnrichment_SQLViolationsMappedFromFunction(t *testing.T) {
 	// (e.g. a race deleted a dimension). The function returns ok=false with
 	// structured errors; the tool maps them straight into the envelope.
 	fr := functionResult{Ok: false}
-	fr.Errors = append(fr.Errors, struct {
-		Path    string `json:"path"`
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	}{Path: "canonical_roles[0].dimensions", Code: "unknown_dimension", Message: "x is not a known role dimension"})
+	fr.Errors = append(fr.Errors, functionError{
+		Path: "canonical_roles[0].dimensions", Code: "unknown_dimension",
+		Message: "x is not a known role dimension"})
 	raw, _ := json.Marshal(fr)
 
 	tax := &fakeTaxonomySource{tax: testTaxonomy(), exists: true}
@@ -264,7 +295,7 @@ func TestRunSaveEnrichment_SQLViolationsMappedFromFunction(t *testing.T) {
 	if env.Ok {
 		t.Fatalf("env.Ok = true, want false on SQL-level violation")
 	}
-	if !hasError(env.Errors, "canonical_roles[0].dimensions", "unknown_dimension") {
+	if !hasSaveError(env.Errors, "canonical_roles[0].dimensions", "unknown_dimension") {
 		t.Fatalf("errors = %+v, want mapped SQL violation", env.Errors)
 	}
 }
@@ -277,7 +308,7 @@ func TestRunSaveEnrichment_UnexpectedDBErrorIsDBError(t *testing.T) {
 	if env.Ok {
 		t.Fatalf("env.Ok = true, want false on db error")
 	}
-	if !hasError(env.Errors, "db", codeDBError) {
+	if !hasSaveError(env.Errors, "db", codeDBError) {
 		t.Fatalf("errors = %+v, want db_error", env.Errors)
 	}
 }
@@ -409,7 +440,7 @@ func TestRunSaveEnrichment_NoGateFeedback_EnvelopeUnchanged(t *testing.T) {
 		PostingID:        42,
 		Summary:          "a summary",
 		NewTaxonomy:      newTaxonomy{CanonicalRoles: []newTaxonomyEntry{}, Specializations: []newTaxonomyEntry{}, Skills: []newTaxonomyEntry{}},
-		Errors:           []actionError{},
+		Errors:           []saveEnrichmentError{},
 	}
 	wantPayload := string(mustMarshalEnvelope(t, want))
 	if payload != wantPayload {
@@ -426,4 +457,71 @@ func mustMarshalEnvelope(t *testing.T, env saveEnrichmentEnvelope) []byte {
 		t.Fatalf("marshaling envelope: %v", err)
 	}
 	return b
+}
+
+// hasSaveError is hasError for the save envelope's wider error type.
+func hasSaveError(errs []saveEnrichmentError, path, code string) bool {
+	for _, e := range errs {
+		if e.Path == path && e.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+// A name_collision error is only actionable if the collider and both axis
+// scores survive the hop from the function envelope into the tool envelope.
+// Forwarding the message alone would leave a worker parsing prose.
+func TestRunSaveEnrichment_NameCollisionDetailIsForwarded(t *testing.T) {
+	fr := functionResult{Ok: false}
+	fr.Errors = append(fr.Errors, functionError{
+		Path: "skills[0].name", Code: "name_collision",
+		Message:      "skills already has 'llm' named 'Large Language Models'",
+		Table:        "skills",
+		ProposedSlug: "large-language-models-2", ProposedName: "Large Language Models",
+		ExistingSlug: "llm", ExistingName: "Large Language Models",
+		SlugSimilarity: 0.286, NameSimilarity: 1.0,
+	})
+	raw, _ := json.Marshal(fr)
+
+	env := runSaveEnrichment(context.Background(), validSaveRequest(),
+		&fakeTaxonomySource{tax: testTaxonomy(), exists: true}, &fakeSaver{result: raw})
+
+	if env.Ok {
+		t.Fatalf("env.Ok = true, want false on name_collision")
+	}
+	if len(env.Errors) != 1 {
+		t.Fatalf("errors = %+v, want exactly one", env.Errors)
+	}
+	got := env.Errors[0]
+	if got.Code != codeNameCollision {
+		t.Fatalf("code = %q, want %q", got.Code, codeNameCollision)
+	}
+	if got.Collision == nil {
+		t.Fatalf("collision detail = nil; the worker cannot act without the collider")
+	}
+	if got.Collision.ExistingSlug != "llm" {
+		t.Fatalf("existing_slug = %q, want llm", got.Collision.ExistingSlug)
+	}
+	if got.Collision.SlugSimilarity != 0.286 || got.Collision.NameSimilarity != 1.0 {
+		t.Fatalf("axis scores = %v/%v, want 0.286/1", got.Collision.SlugSimilarity, got.Collision.NameSimilarity)
+	}
+}
+
+// Every other error code must NOT grow a collision detail: an omitempty field
+// that leaks onto unrelated errors is a contract change nothing asked for.
+func TestRunSaveEnrichment_NonCollisionErrorCarriesNoDetail(t *testing.T) {
+	fr := functionResult{Ok: false}
+	fr.Errors = append(fr.Errors, functionError{
+		Path: "canonical_roles[0].dimensions", Code: "unknown_dimension",
+		Message: "x is not a known role dimension", ExistingSlug: "leaked",
+	})
+	raw, _ := json.Marshal(fr)
+
+	env := runSaveEnrichment(context.Background(), validSaveRequest(),
+		&fakeTaxonomySource{tax: testTaxonomy(), exists: true}, &fakeSaver{result: raw})
+
+	if env.Errors[0].Collision != nil {
+		t.Fatalf("collision = %+v, want nil on a non-collision code", env.Errors[0].Collision)
+	}
 }

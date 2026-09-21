@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/selection"
 )
 
 // integrationToken returns a per-test unique token used to namespace seed
@@ -210,9 +212,10 @@ func TestSelectPostings_ForceFalseSkipsClassified(t *testing.T) {
 	seedClassification(t, ctx, pool, p2)
 
 	// Count is intentionally large: the dev DB carries unclassified postings
-	// from prior runs, and the query orders by first_seen_at ASC. Our seeded
-	// rows have current timestamps so they sit at the tail of the ordering;
-	// we filter the result down to this test's company_id for assertions.
+	// from prior runs, and we filter the result down to this test's
+	// company_id for assertions. Config leaves Sort unset, which is the shape
+	// the binary builds when --sort is absent, so this also pins that the Go
+	// runner picks up the shared core's recency-first default.
 	cfg := Config{Count: 1000000, Focus: "", Force: false}
 	postings, already, err := SelectPostings(ctx, pool, cfg)
 	if err != nil {
@@ -232,8 +235,8 @@ func TestSelectPostings_ForceFalseSkipsClassified(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("expected 2 unclassified postings, got %d (%v)", len(got), got)
 	}
-	if got[0] != p1 || got[1] != p3 {
-		t.Errorf("expected ordering [p1=%d, p3=%d], got %v", p1, p3, got)
+	if got[0] != p3 || got[1] != p1 {
+		t.Errorf("expected newest-first ordering [p3=%d, p1=%d], got %v", p3, p1, got)
 	}
 	if containsID(got, p2) {
 		t.Errorf("classified posting p2=%d unexpectedly returned", p2)
@@ -269,8 +272,8 @@ func TestSelectPostings_ForceTrueIncludesClassified(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("expected 3 postings with force=true, got %d (%v)", len(got), got)
 	}
-	if got[0] != p1 || got[1] != p2 || got[2] != p3 {
-		t.Errorf("expected ordering [%d,%d,%d], got %v", p1, p2, p3, got)
+	if got[0] != p3 || got[1] != p2 || got[2] != p1 {
+		t.Errorf("expected newest-first ordering [%d,%d,%d], got %v", p3, p2, p1, got)
 	}
 
 	// alreadyClassified should contain exactly p2 from this test's seed set.
@@ -682,5 +685,55 @@ func TestWriteBack_FailedTransactionCancelledContext(t *testing.T) {
 	}
 	if n != 0 {
 		t.Errorf("expected 0 canonical_roles for slug %q after cancelled writeback, got %d", roleSlug, n)
+	}
+}
+
+// The Go runner has to pick up the per-company cap without being asked: a
+// Config with MaxPerCompany unset is exactly what cmd/batch-enrich builds when
+// --max-per-company is absent, and it must resolve to the shared default
+// rather than to "no cap". The escape hatch has to work too, or a deliberate
+// single-company drain becomes impossible.
+func TestSelectPostings_CapsPostingsPerCompany(t *testing.T) {
+	pool := openTestDB(t)
+	ctx := context.Background()
+	token := integrationToken(t)
+	t.Cleanup(func() { cleanupByToken(t, pool, token) })
+
+	companyID := seedCompany(t, ctx, pool, token)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	// One more posting than the default cap, each with distinct text so no
+	// dedup edge collapses them into a single work unit.
+	labels := []string{"a", "b", "c", "d", "e", "f"}
+	for i, label := range labels {
+		desc := "Distinct posting body number " + label
+		seedPosting(t, ctx, pool, companyID, token, label, "Role "+label, &desc, now.Add(time.Duration(i)*time.Minute))
+	}
+	if len(labels) <= selection.DefaultMaxPerCompany {
+		t.Fatalf("fixture seeds %d postings, which does not exceed the default cap of %d",
+			len(labels), selection.DefaultMaxPerCompany)
+	}
+
+	mine := func(cfg Config) int {
+		t.Helper()
+		postings, _, err := SelectPostings(ctx, pool, cfg)
+		if err != nil {
+			t.Fatalf("SelectPostings: %v", err)
+		}
+		n := 0
+		for _, p := range postings {
+			if p.CompanyID == companyID {
+				n++
+			}
+		}
+		return n
+	}
+
+	if got := mine(Config{Count: 1000000}); got != selection.DefaultMaxPerCompany {
+		t.Errorf("selected %d postings from one company with the cap unset, want the default %d",
+			got, selection.DefaultMaxPerCompany)
+	}
+	if got := mine(Config{Count: 1000000, MaxPerCompany: selection.NoCompanyCap}); got != len(labels) {
+		t.Errorf("selected %d postings with NoCompanyCap, want all %d", got, len(labels))
 	}
 }

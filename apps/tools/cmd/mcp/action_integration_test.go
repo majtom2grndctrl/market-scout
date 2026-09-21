@@ -241,6 +241,81 @@ func TestRecordUnsupportedCompanyFunction_ActionRoleRejectsInvalidInputs(t *test
 	}
 }
 
+// TestAddCompanyFunction_RejectsHTMLCharacterReferences covers the
+// companies_name_no_html_entity / companies_industry_no_html_entity CHECKs
+// added in migration 000035. An agent once passed 'DAT Freight &amp;
+// Analytics' through this path and the insert silently accepted it.
+//
+// The constraint rejects rather than unescapes, so the assertion is that the
+// call fails with a check_violation (SQLSTATE 23514) and persists nothing.
+// The accept cases matter just as much: a raw '&' is an ordinary character in
+// a company name and must still insert, and '&B;' is not a character
+// reference (no single-letter entities exist) so it must not trip the guard.
+func TestAddCompanyFunction_RejectsHTMLCharacterReferences(t *testing.T) {
+	owner, _, action := openActionTestPools(t)
+
+	reject := []struct {
+		name     string
+		company  string
+		industry any
+	}{
+		{name: "named entity in name", company: "MS Entity &amp; Co", industry: nil},
+		{name: "decimal entity in name", company: "MS Entity &#38; Co", industry: nil},
+		{name: "hex entity in name", company: "MS Entity &#x26; Co", industry: nil},
+		{name: "named entity in industry", company: "MS Entity Industry Co", industry: "Widgets &amp; Gadgets"},
+	}
+
+	for _, tt := range reject {
+		t.Run(tt.name, func(t *testing.T) {
+			boardToken := uniqueToken("mcp-entity-reject")
+			t.Cleanup(func() { deleteCompanyByBoardToken(t, owner, boardToken) })
+
+			var id int64
+			err := action.QueryRowContext(t.Context(),
+				"SELECT id FROM mcp.add_company($1, $2, $3, $4, $5)",
+				tt.company, "greenhouse", boardToken, tt.industry, nil).Scan(&id)
+			assertSQLState(t, err, "23514")
+
+			if got := countCompaniesByToken(t, owner, boardToken); got != 0 {
+				t.Fatalf("rejected call persisted %d rows, want 0", got)
+			}
+		})
+	}
+
+	accept := []struct {
+		name     string
+		company  string
+		industry any
+	}{
+		{name: "raw ampersand", company: "MS Raw & Co", industry: "Research & Models"},
+		{name: "ampersand letter semicolon is not an entity", company: "MS A&B; Partners", industry: nil},
+		{name: "null industry", company: "MS Null Industry Co", industry: nil},
+	}
+
+	for _, tt := range accept {
+		t.Run(tt.name, func(t *testing.T) {
+			boardToken := uniqueToken("mcp-entity-accept")
+			t.Cleanup(func() { deleteCompanyByBoardToken(t, owner, boardToken) })
+
+			var id int64
+			if err := action.QueryRowContext(t.Context(),
+				"SELECT id FROM mcp.add_company($1, $2, $3, $4, $5)",
+				tt.company, "greenhouse", boardToken, tt.industry, nil).Scan(&id); err != nil {
+				t.Fatalf("add_company(%q) = %v, want insert to succeed", tt.company, err)
+			}
+
+			var stored string
+			if err := owner.QueryRowContext(t.Context(),
+				"SELECT name FROM companies WHERE board_token = $1", boardToken).Scan(&stored); err != nil {
+				t.Fatalf("read back stored name: %v", err)
+			}
+			if stored != tt.company {
+				t.Fatalf("stored name = %q, want %q (the constraint must reject, never rewrite)", stored, tt.company)
+			}
+		})
+	}
+}
+
 // --- Scenarios #2 and #8: action role CAN save classifications through the
 // approved function, append-only.
 
@@ -313,6 +388,87 @@ func TestSaveEnrichmentHandler_ActionRoleAppendsWithoutMutatingHistory(t *testin
 	if after.seniority != prior.seniority {
 		t.Fatalf("prior classification seniority changed: was %q, now %q", prior.seniority, after.seniority)
 	}
+}
+
+// TestSaveEnrichment_ActionRoleWaitsForTransactionLock proves that the approved
+// action endpoint takes the migration's transaction-scoped advisory lock. The
+// owner deliberately holds that lock while the action role invokes the real
+// function; the call must remain blocked, then complete once the lock releases.
+// It also proves the renamed implementation is not action-role callable.
+func TestSaveEnrichment_ActionRoleWaitsForTransactionLock(t *testing.T) {
+	owner, _, action := openActionTestPools(t)
+	postingID := seedPosting(t, owner)
+
+	payload, err := json.Marshal(map[string]any{
+		"posting_id": postingID,
+		"classification": map[string]any{
+			"seniority": "mid",
+			"notes":     nil,
+		},
+		"canonical_roles": []any{
+			map[string]any{"slug": "software-engineer", "name": "Software Engineer", "dimensions": []any{"engineering"}},
+		},
+		"specializations": []any{},
+		"skills":          []any{},
+	})
+	if err != nil {
+		t.Fatalf("marshal save payload: %v", err)
+	}
+
+	const lockClassID = 734771
+	const lockObjectID = 26
+	ownerConn, err := owner.Conn(t.Context())
+	if err != nil {
+		t.Fatalf("pin owner connection for enrichment lock: %v", err)
+	}
+	t.Cleanup(func() { _ = ownerConn.Close() })
+	if _, err := ownerConn.ExecContext(t.Context(), "SELECT pg_advisory_lock($1, $2)", lockClassID, lockObjectID); err != nil {
+		t.Fatalf("acquire enrichment lock: %v", err)
+	}
+	locked := true
+	release := func() {
+		if !locked {
+			return
+		}
+		locked = false
+		var released bool
+		if err := ownerConn.QueryRowContext(context.Background(), "SELECT pg_advisory_unlock($1, $2)", lockClassID, lockObjectID).Scan(&released); err != nil {
+			t.Errorf("release enrichment lock: %v", err)
+			return
+		}
+		if !released {
+			t.Error("release enrichment lock: lock was not held by the pinned owner connection")
+		}
+	}
+	t.Cleanup(release)
+
+	done := make(chan error, 1)
+	go func() {
+		var result json.RawMessage
+		err := action.QueryRowContext(context.Background(),
+			"SELECT mcp.save_enrichment($1::jsonb, $2, $3)", payload, "mcp-test", "mcp-lock-test-v1").Scan(&result)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		t.Fatalf("save_enrichment completed while lock was held: %v", err)
+	case <-time.After(100 * time.Millisecond):
+		// Expected: the wrapper is waiting on pg_advisory_xact_lock.
+	}
+
+	release()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("save_enrichment after lock release: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("save_enrichment did not complete after lock release")
+	}
+
+	_, err = action.ExecContext(t.Context(), "SELECT mcp.save_enrichment_unlocked($1::jsonb, $2, $3)", payload, "mcp-test", "mcp-lock-test-v1")
+	assertPermissionDenied(t, err)
 }
 
 // --- Scenario #3: action role CANNOT write directly to data/taxonomy tables or

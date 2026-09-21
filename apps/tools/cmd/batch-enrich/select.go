@@ -54,16 +54,23 @@ func OpenDB(ctx context.Context) (*sql.DB, error) {
 
 // SelectPostings runs the shared selection core (internal/enrich/selection) and
 // adapts its results into the batch-enrich working type. The selection rules —
-// the unclassified-postings query, the --force variant, and the ILIKE focus
-// prefilter — live in the shared package so cmd/mcp's enrichment_preview reuses
-// them unchanged. When force=true, alreadyClassified holds the subset of selected
+// the unclassified-postings query, the --force variant, the ILIKE focus
+// prefilter, the recency-first default, and the per-company wave cap — live in
+// the shared package so cmd/mcp's enrichment_preview reuses them unchanged. When force=true, alreadyClassified holds the subset of selected
 // posting IDs that already have at least one classifications row, used downstream
 // to suppress duplicate-write surprises in re-enrichment.
 func SelectPostings(ctx context.Context, pool *sql.DB, cfg Config) ([]SelectedPosting, []int64, error) {
+	sortOrder, err := sortForFlag(cfg.Sort)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	postings, alreadyClassified, err := selection.Select(ctx, pool, selection.Criteria{
-		Count: cfg.Count,
-		Focus: cfg.Focus,
-		Force: cfg.Force,
+		Count:         cfg.Count,
+		Focus:         cfg.Focus,
+		Force:         cfg.Force,
+		Sort:          sortOrder,
+		MaxPerCompany: cfg.MaxPerCompany,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -73,6 +80,8 @@ func SelectPostings(ctx context.Context, pool *sql.DB, cfg Config) ([]SelectedPo
 		"count", len(postings),
 		"focus", cfg.Focus,
 		"force", cfg.Force,
+		"sort", cfg.Sort,
+		"max_per_company", cfg.MaxPerCompany,
 		"requested", cfg.Count,
 	)
 

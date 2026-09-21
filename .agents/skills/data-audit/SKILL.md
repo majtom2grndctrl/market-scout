@@ -22,7 +22,7 @@ Defaults: sample 20 current classifications from the last 14 days. Accept `sampl
 5. Check drift yourself:
    - failures in `agent-output/batch-enrich/failures.jsonl`;
    - emergent taxonomy growth and cross-table slug collisions;
-   - quality split by `prompt_version` when the sample spans versions.
+   - quality split by `prompt_version` when the sample spans versions. Never infer a version from a model. Pre-2026-09-21 cohorts that developer-guide §6.2 marks ambiguous stay unresolved — do not fold them into a neighbouring version.
 6. Report the sound rate with numerator and denominator. Group findings by pattern, then list drift flags and suggested follow-ups.
 
 ## Rules

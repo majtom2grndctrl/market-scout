@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
+import { testDsns } from "./test-dsn";
+
 describe("selectOpenPostings", () => {
   it("returns every explicitly selected view column through the read-only client", async (context) => {
-    const ownerDsn = process.env.DATABASE_URL;
-    const readOnlyDsn = process.env.DATABASE_URL_RO;
+    const { ownerDsn, readOnlyDsn } = testDsns();
     if (!ownerDsn || !readOnlyDsn) {
       context.skip();
       return;

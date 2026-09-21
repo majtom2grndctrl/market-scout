@@ -4,6 +4,7 @@ import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
 import type { FetchHealthRow } from "./status";
+import { testDsns } from "./test-dsn";
 
 // The query aggregates the whole database, so fixtures are measured as a delta
 // rather than against an absolute total.
@@ -25,15 +26,12 @@ const rollback = new Error("rollback fixture transaction");
 
 describe("getFetchHealth", () => {
   it("counts a re-fetched posting once, a multi-classification posting once, a skill once across classifications, and counts 7-day runs both as started and split by status", async (context) => {
-    const ownerDsn = process.env.DATABASE_URL;
-    const readOnlyDsn = process.env.DATABASE_URL_RO;
+    const { ownerDsn, readOnlyDsn } = testDsns();
     if (!ownerDsn || !readOnlyDsn) {
       context.skip();
       return;
     }
 
-    // Imported here, not at module scope: lib/db/client.ts throws on import when
-    // DATABASE_URL_RO is unset, which would fail collection instead of skipping.
     const { selectFetchHealth } = await import("./status");
 
     const owner = postgres(ownerDsn);
@@ -153,7 +151,7 @@ describe("getFetchHealth", () => {
   });
 
   it("is readable through the read-only role", async (context) => {
-    const readOnlyDsn = process.env.DATABASE_URL_RO;
+    const { readOnlyDsn } = testDsns();
     if (!readOnlyDsn) {
       context.skip();
       return;

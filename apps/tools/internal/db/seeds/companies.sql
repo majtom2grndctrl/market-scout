@@ -201,3 +201,181 @@ ON CONFLICT (ats, board_token) DO NOTHING;
 INSERT INTO companies (name, ats, board_token, industry) VALUES
     ('Supio', 'gem', 'supio', 'legal tech')
 ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (Built In Seattle discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Coinme', 'greenhouse', 'coinme', 'Crypto / Fintech'),
+    ('Databricks', 'greenhouse', 'databricks', 'Data & AI Platform'),
+    ('DigitalOcean', 'greenhouse', 'digitalocean98', 'Cloud Infrastructure'),
+    ('Dscout', 'greenhouse', 'dscout', 'UX Research Software'),
+    ('ExtraHop', 'greenhouse', 'extrahopnetworks', 'Computer & Network Security'),
+    ('Huntress', 'greenhouse', 'huntress', 'Computer & Network Security'),
+    ('Impinj', 'greenhouse', 'impinjexternal', 'Semiconductors / RAIN RFID'),
+    ('Nintex', 'greenhouse', 'nintex', 'Software Development'),
+    ('Placements.io', 'greenhouse', 'placementsio', 'Ad Revenue Management Software'),
+    ('SeekOut', 'greenhouse', 'seekout', 'HR Tech'),
+    ('Zenoti', 'greenhouse', 'zenoti', 'Software Development')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (Built In Seattle discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Augmodo', 'ashby', 'augmodo', 'Retail AI / Spatial Computing'),
+    ('Orchard Robotics', 'ashby', 'orchard', 'Agricultural Robotics'),
+    ('Payscale', 'ashby', 'payscale', 'HR Tech')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Lever (Built In Seattle discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Artera', 'lever', 'artera-2', 'Healthtech'),
+    ('Teikametrics', 'lever', 'teikametrics', 'AI retail / advertising'),
+    ('Zoox', 'lever', 'zoox', 'Autonomous Vehicles')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (Built In Seattle discovery run, batch 2, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Cognitiv', 'greenhouse', 'cognitiv', 'AI Advertising'),
+    ('Mixpanel', 'greenhouse', 'mixpanel', 'Product Analytics'),
+    ('MORSE Corp', 'greenhouse', 'morsecorp', 'Defense Tech / AI'),
+    ('NewsBreak', 'greenhouse', 'newsbreak', 'Local News / Consumer App'),
+    ('Pallet', 'greenhouse', 'pallet', 'Logistics AI'),
+    ('SingleStore', 'greenhouse', 'singlestore', 'Database / Data Platform'),
+    ('TaxBit', 'greenhouse', 'taxbit', 'Crypto Tax / Fintech'),
+    ('Vannevar Labs', 'greenhouse', 'vannevarlabs', 'Defense Tech / AI')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (Built In Seattle discovery run, batch 2, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Envoy', 'ashby', 'envoy', 'Workplace Software'),
+    ('Monte Carlo', 'ashby', 'montecarlodata', 'Data Observability'),
+    ('Peek', 'ashby', 'peek', 'Experiences Booking Software'),
+    ('SentiLink', 'ashby', 'sentilink', 'Fraud Prevention / Fintech')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Lever (Built In Seattle discovery run, batch 2, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Duranta', 'lever', 'getduranta', 'Landscaping Software'),
+    ('Lucidworks', 'lever', 'lucidworks', 'Search / AI Platform')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Gem (Built In Seattle discovery run, batch 2, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Goodbill', 'gem', 'goodbill', 'Healthcare Billing'),
+    ('Retool', 'gem', 'retool', 'Internal Tools / Developer Platform')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (Built In Seattle discovery run, batch 3, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('AppViewX', 'greenhouse', 'appviewx', 'Certificate Lifecycle / Security'),
+    ('Axon', 'greenhouse', 'axon', 'Public Safety Technology'),
+    ('Carta', 'greenhouse', 'carta', 'Cap Table / Fintech'),
+    ('CoreWeave', 'greenhouse', 'coreweave', 'AI Cloud Infrastructure'),
+    ('DAT Freight & Analytics', 'greenhouse', 'datsolutions', 'Freight Data / Logistics'),
+    ('Duolingo', 'greenhouse', 'duolingo', 'EdTech'),
+    ('Motivity', 'greenhouse', 'motivity', 'ABA Therapy Software / Healthtech'),
+    ('Pushpay', 'greenhouse', 'pushpay', 'Church Engagement / Payments'),
+    ('Tanium', 'greenhouse', 'tanium', 'Endpoint Security')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (Built In Seattle discovery run, batch 3, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Grow Therapy', 'ashby', 'grow-therapy', 'Mental Health / Healthtech'),
+    ('Headway', 'ashby', 'headway', 'Mental Health / Healthtech'),
+    ('LILT', 'ashby', 'lilt-corporate', 'AI Translation'),
+    ('Mural', 'ashby', 'mural', 'Visual Collaboration'),
+    ('Runway', 'ashby', 'runway-ml', 'Generative AI / Video'),
+    ('Summation', 'ashby', 'summation', 'AI Business Planning')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Lever (Built In Seattle discovery run, batch 3, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Corbalt', 'lever', 'corbalt', 'GovTech / Infrastructure'),
+    ('Magnify', 'lever', 'magnify', 'Customer Experience Software')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Workday (Built In Seattle discovery run, batch 3, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('UserTesting', 'workday', 'usertesting.wd12.myworkdayjobs.com/UserTesting', 'UX Research Software')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (Built In Seattle discovery run, batch 4, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Cloudflare', 'greenhouse', 'cloudflare', 'Cloud Infrastructure / Security'),
+    ('Flexport', 'greenhouse', 'flexport', 'Freight / Logistics'),
+    ('impact.com', 'greenhouse', 'impact', 'Partnership Management / Martech'),
+    ('MCG Health', 'greenhouse', 'mcghealth', 'Healthcare Guidelines / Healthtech'),
+    ('SoFi', 'greenhouse', 'sofi', 'Fintech'),
+    ('Veeam', 'greenhouse', 'veeamsoftware', 'Data Protection / Backup'),
+    ('Zscaler', 'greenhouse', 'zscaler', 'Cloud Security')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (Built In Seattle discovery run, batch 4, September 2026)
+-- Token stored lowercase: the careers page links jobs.ashbyhq.com/Spoton, and
+-- Ashby tokens normalize to lowercase.
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('SpotOn', 'ashby', 'spoton', 'Restaurant / Retail Payments')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Workday (Built In Seattle discovery run, batch 4, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('CrowdStrike', 'workday', 'crowdstrike.wd5.myworkdayjobs.com/crowdstrikecareers', 'Endpoint Security'),
+    ('F5', 'workday', 'ffive.wd5.myworkdayjobs.com/f5jobs', 'Application Delivery / Security'),
+    ('Porch Group', 'workday', 'porch.wd1.myworkdayjobs.com/careers', 'Home Services / Insurtech'),
+    ('Sonos', 'workday', 'sonos.wd1.myworkdayjobs.com/Sonos', 'Consumer Audio'),
+    ('Unity', 'workday', 'unitytech.wd1.myworkdayjobs.com/Unity', 'Game Engine / Developer Tools')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (Built In Seattle discovery run, batch 5, September 2026)
+-- Block covers the Square and Cash App entries in the same source: both are
+-- Block brands hiring through one Greenhouse board.
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Block', 'greenhouse', 'block', 'Fintech / Payments'),
+    ('Metropolis Technologies', 'greenhouse', 'metropolis', 'Computer Vision / Parking')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (Built In Seattle discovery run, batch 5, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('JAMS Software', 'ashby', 'jamssoftware', 'Job Scheduling / IT Orchestration'),
+    ('Luxor Technology', 'ashby', 'luxor', 'Bitcoin Mining Software'),
+    ('Rowan Digital Infrastructure', 'ashby', 'rowan', 'Data Center Infrastructure')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Workable (Built In Seattle discovery run, batch 5, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Squiz', 'workable', 'squiz', 'Digital Experience Platform / CMS'),
+    ('Vix Technology', 'workable', 'vix-technology', 'Transit Ticketing Technology')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Workday (Built In Seattle discovery run, batch 5, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Astound Broadband', 'workday', 'astound.wd108.myworkdayjobs.com/Astound_Careers', 'Telecommunications'),
+    ('CyrusOne', 'workday', 'cyrusone.wd1.myworkdayjobs.com/CyrusOneCareerPortal', 'Data Center Infrastructure'),
+    ('Expedia Group', 'workday', 'expedia.wd108.myworkdayjobs.com/search', 'Travel Technology'),
+    ('NVIDIA', 'workday', 'nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite', 'Semiconductors / AI')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (Built In Seattle discovery run, batch 6, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('CannonDesign', 'greenhouse', 'cannondesign', 'Architecture & Engineering Design'),
+    ('DLR Group', 'greenhouse', 'dlrgroup', 'Architecture & Engineering Design')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (Built In Seattle discovery run, batch 6, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Aurelian', 'ashby', 'aurelian', 'Public Safety AI / Emergency Communications'),
+    ('Pariveda Solutions', 'ashby', 'pariveda', 'Technology Consulting')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Lever (Built In Seattle discovery run, batch 6, September 2026)
+-- Arc'teryx's Lever board is keyed on a domain-style token rather than a bare
+-- slug. Lever tokens are case-sensitive and stored verbatim, so the dot is not
+-- a typo and must not be normalized away.
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Arc''teryx', 'lever', 'arcteryx.com', 'Outdoor Apparel & Equipment'),
+    ('Reply', 'lever', 'reply', 'IT Consulting / Systems Integration'),
+    ('Woven by Toyota', 'lever', 'woven-by-toyota', 'Automotive Software / Autonomous Systems')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Workday (Built In Seattle discovery run, batch 6, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Russell Investments', 'workday', 'russell.wd5.myworkdayjobs.com/russellinvestments', 'Asset Management / Fintech')
+ON CONFLICT (ats, board_token) DO NOTHING;

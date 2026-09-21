@@ -135,6 +135,16 @@ type OpenPostingTaxonomy struct {
 	Name         string
 }
 
+type OpenPostingTitle struct {
+	JobPostingID    int64
+	TitleClean      bool
+	TitleHead       string
+	TitleHeadSlug   bool
+	TitleQualifier  bool
+	TitleSeniority  string
+	TitleHeadSource string
+}
+
 type OpenPostingsDisplay struct {
 	JobPostingID          int64
 	CompanyID             int64
@@ -214,6 +224,19 @@ type RetiredSlug struct {
 	Reason             string
 }
 
+type RetiredSlugLink struct {
+	ID                 int64
+	TableName          string
+	RetiredSlug        string
+	RetiredID          int64
+	RetiredName        string
+	RetiredCreatedAt   time.Time
+	SurvivorSlug       string
+	ClassificationID   sql.NullInt64
+	Collided           bool
+	RetiredByMigration string
+}
+
 type RoleDimension struct {
 	ID   int64
 	Slug string
@@ -232,6 +255,13 @@ type Specialization struct {
 	Slug      string
 	Name      string
 	CreatedAt time.Time
+}
+
+type TitleSenioritySeed struct {
+	Slug     string
+	Name     string
+	Rank     int32
+	Patterns []string
 }
 
 type UnsupportedCompany struct {

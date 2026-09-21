@@ -19,6 +19,7 @@ Take your side, plus **Either side**. Skip the other.
 - **Storybook stories — where they live, why the font decorator exists** → `agent-context/lib/web-guide.md` §Storybook
 - **Build, typecheck, and dev commands** → `agent-context/lib/web-guide.md` §Commands
 - **Web tests, route states, Storybook a11y, or DB view tests** → `agent-context/lib/web-testing-guide.md`
+- **Sketching a page or chart against live data before it earns a spec** → `agent-context/lib/web-guide.md` §Prototypes *(`app/prototypes/` — a low-attention pocket; read it only when directed there)*
 - **Querying Postgres from the web app; what "currently open posting" means** → `agent-context/lib/project.md` §Settled architecture *(derived in SQL views, not per consumer)*
 - **Posting count vs requisition count; why a measure omits a number instead of returning 0** → `agent-context/lib/project.md` §Settled architecture *(both counts are honest; absent is not zero)*
 - **Charts — which library, why every mark is hand-rendered** → `agent-context/lib/project.md` §Settled architecture *(d3 supplies scales and geometry; no chart component library)*

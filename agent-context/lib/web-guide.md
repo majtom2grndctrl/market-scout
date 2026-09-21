@@ -26,6 +26,7 @@ Read [`web-testing-guide.md`](./web-testing-guide.md) before adding or changing 
 ```
 apps/web/
   app/                # App Router. globals.css is the stylesheet entry; theme.css holds colour, tokens.css containers.
+  app/prototypes/     # Sketch surface. Not production, not reviewed. See § Prototypes.
   components/ui/      # shadcn, forked onto the semantic colour tokens
   lib/db/             # Read-only Postgres queries for Server Components
   lib/utils.ts        # cn() — shadcn's clsx + tailwind-merge helper
@@ -259,6 +260,27 @@ CSS requires every `@import` to precede other rules, so `app/tokens.css` imports
 
 Use Storybook to exercise reusable interactive states. The a11y addon checks stories, but does not replace keyboard and focus review in the rendered app. See [`web-testing-guide.md`](./web-testing-guide.md).
 
+## Prototypes
+
+`app/prototypes/` is a sanctioned sketch surface: real tokens, real data, page scale, no production bar.
+
+Storybook covers component-scale work against fixtures. It cannot render a Server Component or reach Postgres, and its story glob scans `components/**` only. A page-scale sketch over live data has nowhere else to sit — and a sketch with nowhere to sit does not get made.
+
+**Agents do not read `prototypes/` unless directed there.** Same status `research/` holds. Sketches are not intent, and a dead end read as precedent becomes an architectural claim nobody made.
+
+Two rules survive the carve-out. Both are safety, not quality:
+
+- Reads go through `lib/db`. A prototype composes existing queries and the measure engine; it never opens a connection or writes SQL of its own. What the engine cannot answer is a finding — the reason to sketch — not an obstacle to route around.
+- Colour comes from the real tokens. `pnpm theme:check` walks every file under `apps/web/`, prototypes included. No exclusion is wanted: Tailwind emits nothing for a colour it cannot resolve, so an unchecked typo reads as a design failure and costs an afternoon.
+
+Everything else is suspended. No loading, empty, or error states. No narrow-viewport, keyboard, or a11y review. No stories, no tests. The Frontend Definition of Done does not apply — suspending it is what the folder is for.
+
+Prototypes still compile. Anything under `app/` is a route, so `pnpm typecheck` and `pnpm build` cover them. There is no clean opt-out and none is needed: the expensive part of a screen is review, not types. Park a sketch that breaks the build by renaming its `page.tsx`, rather than repairing it.
+
+Nothing links to a prototype. `paths.ts` is the production nav contract, typed against `Route`, and a sketch reachable from the sidebar is a screen. Navigate by typed URL.
+
+A prototype exists to produce a decision. It is done when that decision reaches a draft spec, or when the sketch is deleted — whichever comes first. Head each one with the question it answers and the date it was asked, so a prototype whose question is settled is deletable on sight. They stay committed: the sketch is the evidence behind the spec.
+
 ## Commands
 
 Run every web command from `apps/web/`. The supported toolchain is Node 26.7.0 and pnpm 11.21.0 or newer, declared as ranges in `package.json`. Install pnpm, then install exactly what the lockfile declares:
@@ -277,7 +299,7 @@ pnpm install --frozen-lockfile
 | `pnpm dev` | Next dev server. Link `../../.env.local` as `.env.local` first when the route reads Postgres. |
 | `pnpm typecheck` | `tsc --noEmit`. Covers `.storybook/` too. Run while iterating on types. |
 | `pnpm test` | DB-free Vitest suite. Never connects to Postgres. |
-| `pnpm test:db` | Optional view integration suite. Requires `DATABASE_URL` and `DATABASE_URL_RO`; skipped tests are not verification. |
+| `pnpm test:db` | Optional view integration suite. Requires `DATABASE_URL_TEST` and `DATABASE_URL_TEST_RO` — see [Web Testing Guide](./web-testing-guide.md#database-tests) for the full contract; skipped tests are not verification. |
 | `pnpm storybook` | Dev server on port 6006. |
 | `pnpm build-storybook` | Compiles every story. Included in `pnpm preflight`. |
 | `pnpm build` | Production Next build. Included in `pnpm preflight`. |
@@ -286,7 +308,7 @@ pnpm install --frozen-lockfile
 
 ## Frontend Definition of Done
 
-Before handoff, a frontend change has:
+Before handoff, a frontend change has the following. Sketches under `app/prototypes/` are exempt — see § Prototypes.
 
 - A loading state, empty state, and actionable error retry wherever its data can be pending, absent, or unavailable.
 - Narrow and wide viewport review. Layout changes must preserve readable content and usable controls at both.
@@ -294,4 +316,4 @@ Before handoff, a frontend change has:
 - Honest data states. Show missing, partial, unmapped, and unavailable data rather than implying a complete answer.
 - Relevant Storybook states and theme review for reusable or themed components. Run the a11y addon where a story exists.
 
-Run `pnpm preflight`. Add `pnpm test:db` when a changed query, view contract, or read-only grant needs integration coverage and the two DSNs are available.
+Run `pnpm preflight`. Add `pnpm test:db` when a changed query, view contract, or read-only grant needs integration coverage and `DATABASE_URL_TEST`/`DATABASE_URL_TEST_RO` are available.

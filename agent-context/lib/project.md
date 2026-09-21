@@ -31,6 +31,8 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 
 `apps/` houses deployable units. The Go module (binaries and shared packages) lives at `apps/tools/`; the module path is `github.com/majtom2grndctrl/market-scout/apps/tools`. The Next.js app lives at `apps/web/` as a sibling. Shared infra (`docker-compose.yml`, root `.env.local`) stays at repo root and serves both.
 
+`apps/web/app/prototypes/` is the second low-attention pocket, and the only one that is running code. Sketches live there against real tokens and real data so a page can be seen before it is specified. Agents read it only when directed, for the same reason they skip `research/`: an abandoned sketch read as precedent asserts a decision nobody made. See [`web-guide.md`](./web-guide.md).
+
 `research/` sits at repo root as a deliberate low-attention pocket — quasi-documentation that agents read only when explicitly directed. It is not under `agent-context/` (read by default) and not under `apps/` (deployable code). Tools reference its contents via CLI arg, never a hardcoded path.
 
 ## Settled architecture
@@ -39,6 +41,7 @@ Not a product to sell. A personal tool that doubles as a portfolio piece and lea
 |---|---|---|
 | Fetcher | Go binary, `apps/tools/cmd/fetcher` | Concurrent HTTP from ATS APIs, cron-scheduled |
 | Classifier | Codex `batch-enrich` skill over project MCP | Human-operated enrichment path. Coordinator delegates bounded workers; reads use the read-only MCP surface and each append-only write goes through the constrained `mcp.save_enrichment` action. `apps/tools/cmd/batch-enrich` remains an automation/legacy runner. |
+| Enrichment selection | Recency-first, capped per company | Both classifier paths share one selection core, so they cannot drift. Newest description-bearing postings go first, and a wave cycles across companies under a per-company ceiling before it fills on recency. Draining oldest-first kept the classified set months behind the market; sampling the corpus proportionally would make title analysis a report on three companies. Under-sampling the giants is the point. |
 | Database | Postgres in Docker | Option to point at Supabase later |
 | DB client | `sqlc` + `database/sql` + `pgx/v5/stdlib` | Write SQL, get generated type-safe Go. No ORM. Standard `database/sql` target (no `sql_package` override); generated models use `sql.NullString`/`sql.NullTime`, translated to `*string`/`*time.Time` at the DB boundary. |
 | Vector search | pgvector extension | Enabled from day one. Similarity queries in raw SQL. |

@@ -3,10 +3,11 @@ import { randomUUID } from "node:crypto";
 import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
+import { testDsns } from "./test-dsn";
+
 describe("market derivation", () => {
   it("derives curated markets from run-scoped snapshot location arrays", async (context) => {
-    const ownerDsn = process.env.DATABASE_URL;
-    const readOnlyDsn = process.env.DATABASE_URL_RO;
+    const { ownerDsn, readOnlyDsn } = testDsns();
     if (!ownerDsn || !readOnlyDsn) {
       context.skip();
       return;
