@@ -14,10 +14,10 @@ allowed-tools: Read, Bash, Agent, Write
 argument-hint: "<count> [focus description] [--force] [--backlog] [--per-company N]"
 ---
 
-> **Status:** previously deprecated in favor of `cmd/batch-enrich` — back in play as of 2026-07. `claude -p` is no longer covered by the Max subscription, so the Go binary bills API dollars per posting while this skill runs on session tokens. Path forward (skill revival, hook adaptation) is undecided; until then, keep this skill and the binary's classification contract in sync — `classification-pins` below is the shared anchor.
+> **Status:** previously deprecated in favor of `cmd/batch-enrich` — back in play as of 2026-07. `claude -p` is no longer covered by the Max subscription, so the Go binary bills API dollars per posting while this skill runs on session tokens. Path forward (skill revival, hook adaptation) is undecided. As of 2026-09-21, this skill and `cmd/batch-enrich` are separate classification-contract lineages, not a shared one to keep in sync: the `classification-pins` block below anchors this skill's contract only, and the Go runner pins its own separately, in `apps/tools/cmd/batch-enrich/config.go`. See developer-guide §6.2 for why they split.
 
 ```classification-pins
-PROMPT_VERSION=batch-enrich-v8
+PROMPT_VERSION=batch-enrich-v9
 MODEL=claude-haiku-4-5-20251001
 ```
 
@@ -153,7 +153,7 @@ Report both `work_unit_count` and `selected_count` per Step 8 — they differ wh
 - **A work unit is never split across the `count` boundary.** `count` bounds work units, not raw posting rows; every sibling of a selected unit rides along even past `count`, so postings returned is ≥ `count` (fewer only if the remaining pool has fewer than `count` units left).
 - **Why duplicates must collapse before dispatch.** A board can list one job many times — once per location — so several postings describe identical work. Classifying each independently is wasted model time and a correctness problem: the 2026-09-16 run classified Harvey's five identical "GTM Technology Product Owner" postings in different chunks and got three different seniorities for one job.
 - **Why text equality is the strong signal.** Two byte-identical descriptions, within one company, are self-evidencing — no judgement required. That catches the shape that matters most: 442 byte-identical text groups covering 1,253 postings, 149 of them spanning multiple requisition keys (the one-posting-per-location fan-out).
-- **The requisition-key job-family problem, and why it's gated.** An earlier version of this skill treated a shared ATS requisition key alone as a merge signal — a correctness bug that shipped and mis-merged real jobs on 2026-09-17. At Greenhouse and Ashby the requisition key is a job-family / opening-group identifier, not a per-posting identity: 159 of 271 multi-posting requisition-key groups (59%, 481 postings) span more than one title. Merging on it blindly wrote one classification across four different Stripe Staff SWE roles and three different PMM roles — worse than the inconsistency dedup exists to prevent, because it's silent: three jobs get one answer instead of one job getting three visibly different ones. The Go core's fix is narrower than "ignore requisition key": it merges on requisition key *only when the normalized title also matches*, as an additional edge alongside text equality, closed transitively (if A and B share text, and B and C share a gated requisition key, A, B, and C are one unit).
+- **The requisition-key job-family problem, and why it's gated.** An earlier version of this skill treated a shared ATS requisition key alone as a merge signal — a correctness bug that shipped and mis-merged real jobs on 2026-09-17. At Greenhouse the requisition key is a job-family / opening-group identifier, not a per-posting identity: 159 of 271 multi-posting requisition-key groups (59%, 481 postings) span more than one title. Ashby postings carry no requisition key at all (0 of 3,288 in this database), so the requisition edge only ever fires on Greenhouse. Merging on it blindly wrote one classification across four different Stripe Staff SWE roles and three different PMM roles — worse than the inconsistency dedup exists to prevent, because it's silent: three jobs get one answer instead of one job getting three visibly different ones. The Go core's fix is narrower than "ignore requisition key": it merges on requisition key *only when the normalized title also matches*, as an additional edge alongside text equality, closed transitively (if A and B share text, and B and C share a gated requisition key, A, B, and C are one unit).
 - **Title alone is never a signal.** Same title with different text is usually a genuinely different job — this holds in the Go core exactly as it held here before.
 
 To preview a selection before committing to it, call `enrichment_preview` directly ahead of the run — it's the same tool the orchestrator uses for real, so there's no separate preview path to keep in sync.
@@ -295,7 +295,7 @@ Call with:
 
 **On `ok:false` (e.g. `slug_collision`):** read the error and pick a real fix — a distinct non-colliding slug, or drop the field if the concept is already covered elsewhere. Never blindly rename without checking the axis rule (Step 7). Retry the same posting. **Cap: 2 additional attempts (3 total).** If still unresolved, report that posting as failed in the chunk summary rather than looping.
 
-**`name_collision` — a mint whose name is already taken.** Migration `000038` blocks minting a **new** `specializations` or `skills` slug whose name, normalized for case and whitespace, already belongs to a row in that table. Reusing an existing slug is never blocked, and `canonical_roles` is not checked at all. The error names the collider so you can act without searching:
+**`name_collision` — a mint whose name is already taken.** Migrations `000038` and `000040` block minting a **new** `canonical_roles`, `specializations`, or `skills` slug whose name already belongs to a row in that table. The normalizer lowercases and strips **all** whitespace, not just collapsing it, so "Power BI" and "PowerBI" collide even though they differ only in spacing. Punctuation is untouched — `C`, `C++`, and `C#` stay three distinct names. Reusing an existing slug is never blocked; only minting a second row under a name the table already spells trips the gate. The error names the collider so you can act without searching:
 
 ```json
 {"path": "skills[0].name", "code": "name_collision", "table": "skills",
@@ -311,6 +311,14 @@ Exactly two responses are correct. Pick on the concept, not on the scores:
 
 Never mint under a near-miss name to slip the check. The gate blocks rather than substitutes precisely so nothing is guessed: if neither response is defensible, report the posting as failed and say which collider you hit.
 
+**`retired_slug` — a mint that names a slug the registry permanently blocks.** Migration `000031` created `retired_slugs`; `000037` and `000040` added rows to it when they merged duplicate or corrupted terms. The check only fires when a payload slug would be **minted** — a slug already present in its own table is reuse and is never checked against the registry. It runs before the `name_collision` gate above, so a retired slug is rejected outright rather than remapped.
+
+```json
+{"path": "skills[0].slug", "code": "retired_slug",
+ "message": "golang was retired: Duplicate slug, merged into 'go': the two slugs are one term (alias), so a grouping by skill split one population across two rows. Use 'go'."}
+```
+
+The message states why the slug was retired, and for a merged duplicate — like the example above, from `000037`'s cleanup — it names the survivor slug to reuse: that is the response, substitute the named slug and name and re-save. Not every retirement names a survivor this way. A handful of the earliest retirements (`000031`'s seed rows: geography terms, bundled multi-concept slugs, umbrella competencies too broad to discriminate) removed a slug for being a category violation with no single replacement; those messages explain the defect instead of pointing at a substitute — read the reason and pick a slug that avoids the same defect (tag a bundle's components separately, drop a geography term rather than re-mint it). Never retry under a near-miss spelling of a retired slug; that recreates exactly the recurrence the registry exists to stop.
 
 If a fix changes the payload, **re-save the whole work unit with the corrected payload**, including siblings already written. A work unit whose siblings disagree is the defect this design exists to prevent; an extra append-only row per sibling is the cheap price of avoiding it.
 
@@ -353,9 +361,15 @@ Summaries are **not** persisted (storage deferred per `project.md` non-goals), s
 - An empty or short list is a correct result, not a failure. A posting that says "designing and implementing a robust, scalable data platform" with no tools named gets no tool skills — not `aws, azure, gcp, snowflake, databricks, bigquery, kafka, spark, airflow, dbt, java, scala, python` inferred from what data-platform roles typically use.
 - **Ground seniority in scope of influence, not in years.** Work the ladder below in order and stop at the first step that resolves. Years of experience is **corroboration, never a basis** — see the years rule below.
 
-  **Step 1 — a level word acting as a level in the title.** Authoritative. Intern, Junior, Senior, Staff, Principal, Lead, Director, Head, VP modifying the role is the employer's own designation. It is the same word slug discipline strips from the role slug, and it has to land somewhere; `seniority` is where.
+  **Step 1 — a level word acting as a level, in the title or in the description body.** Authoritative. A level word modifying the role is the employer's own designation. It is the same word slug discipline strips from the role slug, and it has to land somewhere; `seniority` is where. Tag it `step1-title` or `step1-body` by where the word sits; when both carry one, quote the title.
+
+  **The body counts, not just the title.** "This is a mid-level role", "we're hiring a Principal Data Center Architect", "entry level", "new grad" — a level word stated in the text is the employer's designation exactly as much as one in the title, and it is quotable. Five of 42 postings in the 2026-09-21 sample carried one and had to smuggle it through Step 2 because this rule did not exist.
+
+  **The level words are:** Intern, Co-op, Apprentice, Graduate / New Grad, Entry-level, Early-career, Junior, Mid / Mid-level, Senior, Staff, Principal, Lead, Leader, Director, Head, VP. Entry-level and Early-career resolve to `junior`, in any spacing or hyphenation — "entry level", "entrylevel", "early career". The list is closed: a word not on it, such as "Experienced", is not a level word. **`Manager` is not one.** It is role-forming, not level-forming — Product Manager, Account Manager, Program Manager and Engineering Manager name job functions, not rungs, and the compound table below already handles "Senior Manager". Never infer a rung from a bare "Manager".
+
+  **Numbered levels are not level words.** Engineer II, SWE3, L4, Level 3, and any other roman or arabic level number mean different rungs at different companies, so none maps to one. "Software Engineer II" carries no level word; go to Step 2.
 - **Read the phrase, not the keyword.** The word only counts when it functions as a level. "Chief of Staff", "Staff Accountant", and "Member of Technical Staff" carry no staff level — a Staff Accountant is an entry-to-mid accounting role.
-- **A band needs a separator; adjacent level words do not form one.** With an explicit `/`, `+`, `or`, or `to` — "Senior/Staff Engineer", "Staff + Sr. Engineer", "Mid-Senior" — the employer means either level, so take the **lower** bound. Two level words sitting adjacent with no separator are a single compound level, coined by the employer as its own rung — not "senior or staff." Abstract rules for resolving compounds have failed twice in one day; resolve by this table instead:
+- **A band needs a separator; adjacent level words do not form one.** With an explicit `/`, `+`, `or`, or `to` — "Senior/Staff Engineer", "Staff + Sr. Engineer", "Mid-Senior", "Entry-level to Mid" — the employer means either level, so take the **lower** bound. Two level words sitting adjacent with no separator are a single compound level, coined by the employer as its own rung — not "senior or staff." Abstract rules for resolving compounds have failed twice in one day; resolve by this table instead:
 
   | Compound title | Resolved level |
   |---|---|
@@ -375,27 +389,66 @@ Summaries are **not** persisted (storage deferred per `project.md` non-goals), s
 
   Match on the words regardless of casing, spacing, or hyphenation — "Senior Staff", "Sr. Staff", and "senior-staff" are the same form. A compound not on this table is genuinely ambiguous: use judgment and record the call in `notes` rather than silently picking a side. On 2026-09-17 an agent read "Senior Staff Software Engineer" as a *band* and filed it `senior` — the only posting in a 62-posting corrective pass that stayed wrong. A follow-up pass applying this table fixed 59 of 60 genuine candidates with zero regressions: enumeration works, description does not.
 
-  **Step 2 — the scope the description asks the person to hold.** When the title carries no level word, read what the job is accountable for. This is the axis that actually separates rungs: junior and mid postings are written about *craft* — doing the work well, to a defined bar, inside a scope someone else set. Senior and above are written about *alignment* — setting the direction, and bringing other people to it.
+  **Step 2 — a quotable scope signal.** When the title and body carry no level word, Step 2 can produce **only `senior` or `director`**, and only against a verbatim quote falling into one of the enumerated classes below. Check the classes in order — (a), (b), (c) — and quote the first that fires.
 
-  | What the description asks the person to do | Rung |
+  | Class | Quote a phrase from the posting that shows | Rung | Tag |
+  |---|---|---|---|
+  | (a) Organizational ownership | This role heads a function or org, owns a P&L, or manages managers — only on the shapes listed below | `director` | `step2-org` |
+  | (b) People management | This role manages individual contributors — hires, has direct reports, "lead a team of" | `senior` | `step2-manages` |
+  | (c) Aligns another function | This role directs a named function or team **at the employer**, in a sentence about this role's own work — only through the verbs listed below | `senior` | `step2-align` |
+
+  **Class (a) qualifies on these three shapes only.** The ownership is organizational — of people or a P&L — never of a body of work.
+
+  | Shape | What the quote must say | Example |
+  |---|---|---|
+  | Heads a function or org | This role is the head of a department-level function or org, named as a function, org, organization or department | "lead our Finance organization", "run the People function" |
+  | Owns a P&L | The thing owned is a P&L or profit and loss | "own the P&L for the EMEA business", "full P&L responsibility" |
+  | Manages managers | The people this role manages are themselves managers or team leads | "manage a team of engineering managers", "your reports include team leads" |
+
+  **Class (a) does not qualify on:**
+  - "Own", "owns", "take ownership of", "be responsible for" or "accountable for" anything other than a P&L — a system, layer, platform, infrastructure, tool, stack, workstream, pipeline, stage, process, program, project, roadmap, product area, motion, campaign, territory or book of business. "Owns the infrastructure layer" describes accountability for work, not headship of people.
+  - "Function" meaning a set of duties rather than a department. "Own our core HR functions" names HR tasks this role performs, not an HR organization it heads.
+  - "Lead the \<X\> team." That is class (b), not class (a).
+  - A reporting line to anyone, the CEO and C-suite included. At a startup many junior hires report to an executive, so who a role reports to carries no rung.
+  - Being the first or founding hire in a function, on its own. The quote still has to show one of the three shapes.
+
+  **Class (c) qualifies on these verbs only.** This role is the subject. The object is a named function or team at the employer other than the role's own, or that function's own strategy, priorities or decisions. The class is about directing another function, not working next to one.
+
+  | Qualifying verb | Example |
   |---|---|
-  | Learn the craft; work is assigned, scoped, and reviewed by others | `junior` |
-  | Own well-scoped features or accounts end to end, where **someone else set the scope**; execute a roadmap handed to you; craft quality is the stated bar | `mid` |
-  | **Define the scope yourself** — an ambiguous area, a function, a territory, a 0-to-1 build — and **align other teams or functions** to it; set direction others follow; mentor or set standards | `senior` |
+  | Align \<functions\> on or around something; drive alignment or consensus across \<functions\> | "align Sales, Finance and Legal on discount policy" |
+  | Coordinate \<functions\> — transitive, the functions are the object | "coordinate Legal, Security and Engineering through vendor approval" |
+  | Resolve or arbitrate trade-offs or conflicts between \<functions\> | "arbitrate roadmap trade-offs between Engineering and Sales" |
+  | Direct, steer, guide or set \<function\>'s strategy, priorities or decisions | "guide Marketing's launch priorities", "set hiring priorities for the Support org" |
+  | Hold \<function\> accountable | "hold Engineering and Operations accountable to launch dates" |
 
-  **"End-to-end ownership" appears on both rows and therefore decides nothing.** Almost every posting above `junior` claims it. Two questions separate the rungs, and both must be asked:
-  1. **Who set the scope?** Handed a defined problem → `mid`. Expected to define the problem → `senior`.
-  2. **Who must be aligned?** Delivery inside one team → `mid`. **Named other functions or teams *at the employer*** that must be brought along — Finance, Legal, Product, leadership, another engineering org — → `senior`. **Customer, partner, and other external contact is neutral: it describes the role, not the rung.** A solutions engineer, forward-deployed engineer, account executive, or implementation consultant talks to customer engineers and executives at every level including the most junior, so "collaborate daily with our customer's engineers and executives" answers nothing. Two agents in the 2026-09-21 correction pass read external-facing language in opposite directions — one counted it as cross-org alignment and filed `senior`, one counted it as no answer and filed `mid` — because this line did not say which. It says now.
+  **Class (c) does not qualify on these phrases, or close variants of them** — with an adverb ("partner closely with", "collaborate deeply with"), as a noun ("in partnership with", "in close collaboration with") or as an -ing form ("partnering directly with"):
+  - "partner with"
+  - "collaborate with"
+  - "work cross-functionally with", "work closely with", "work with", "work across", "work alongside"
+  - "engage with", or "engage" cross-functional collaborators
+  - "coordinate with" — the role coordinates itself around them, not them
+  - "align with", "stay aligned with", "ensure alignment with" — the role aligns itself to them or to a strategy
+  - "liaise with", "interface with", "act as the bridge or liaison between", "sit at the intersection of"
+  - "support", "be a trusted partner to", "build relationships with"
+  - "provide input or feedback to", "inform", "influence", "advocate to", "present to", "brief", "keep \<function\> informed"
+  - "cross-functional" on its own — "a cross-functional role", "lead cross-functional projects"
 
-  **If neither question can be answered from a verbatim phrase, fall through to Step 3 and write `unknown`.** Do not default to `mid` because it sits in the middle. A rung asserted from weak evidence is worse than an honest gap: the gap is visible to every later query and recoverable by a re-run, while a wrong rung is indistinguishable from a right one and silently corrupts any distribution built on it. `mid` is an answer, not a shrug.
+  These describe working next to another function. They appear in nearly every sales, support, success and analyst posting at every level, so they say nothing about the rung. The qualifying table is closed: a verb absent from it does not qualify. A qualifying verb counts only when its own object is the named function. In "partner with Infrastructure leadership to define the plan", Infrastructure is a collaborator and the sentence does not qualify.
 
-  On 2026-09-21 two agents in the same correction pass read near-identical "own X end to end" phrasing and split — one filed `mid`, one filed `senior` — because the earlier version of this table let that phrase match both rows. Ask the two questions; do not resolve on the phrase.
-  | Set technical direction across several teams or the org, as an IC | `staff` / `principal` — only when the title or description names that rung |
-  | Own a function, an org, or a P&L; "Head of X"; reports to an exec | `director` |
+  **A function must be named.** Finance, Legal, Product, Engineering, Sales, Security, leadership, another engineering org. "Stakeholders", "internal teams", "cross-functional teams", "other teams" and "the business" name none.
 
-  **Step 3 — nothing in Step 1 or Step 2 resolves → `unknown`.** This is a correct, common answer, not a cop-out. Most postings that carry no level word and no scope language genuinely do not state a level.
+  Both lists are enumerated for the reason the compound table is. On 2026-09-22 a read-only pilot of the earlier prose version over 42 open postings found class (c) firing on 25, right on about 13 and clearly wrong on about 10 — mostly SDR, AE, CSM, support and analyst roles, some asking 1–2 years, triggered by "partner with" (10), "collaborate with" (4) and "work cross-functionally with" (3) — and class (a) reading "own our core HR functions" and "owns the infrastructure layer" as function ownership. Restricting class (c) to directive verbs took it to 5 hits on that sample, all correct. A re-pilot the same day over 40 further postings found one rung in the wrong direction, from a reporting-line shape class (a) then carried: a first-seat SDR at a small startup, "reporting directly to the CRO", filed `director`.
 
-- **People management is a second axis, not a row on the first.** Read it alongside Step 2, not instead of it. Managing individual contributors puts the floor at `senior`. Managing managers, or owning a whole function or geography — "Head of X", "VP of X", General Manager — is `director` regardless of what the IC ladder would say. A posting with moderate scope language *and* people management takes the management answer: the gap that produced contradictory calls on two General Manager postings in the 2026-09-21 run was exactly this case going unstated.
+  **No quote, no rung.** If nothing in the description falls in a class above, go to Step 3.
+
+  **`mid` and `junior` are not reachable from Step 2.** They come from Step 1 only. This is deliberate. The mid/senior boundary was described in prose three separate ways on 2026-09-21 and failed all three times: agents split on near-identical "own X end to end" phrasing; split again on whether external-facing language counted; and in a 42-posting sample five of nine workers independently invented an "accountable for" versus "participates in" threshold the contract never contained, then applied it inconsistently — one worker filed two postings five minutes apart at different rungs on the same shape of sentence. The distinction is not stated in job descriptions, so no wording of it can be checked, and a rule that cannot be checked returns a different answer each time it is read. Abstaining leaves a gap; asserting a rung the text does not support corrupts the distribution and cannot be told apart from a correct call.
+
+  **External parties never count.** Customer, partner, vendor and client contact describes the role, not the rung. A solutions engineer, forward-deployed engineer, account executive or implementation consultant talks to customer engineers and executives at every level including the most junior — so "collaborate daily with our customer's engineers and executives" answers nothing, and neither does a customer's project having "set the scope".
+
+  **Step 3 — nothing in Step 1 or Step 2 resolves → `unknown`.** A correct and common answer, not a cop-out. Expect it often. A visible gap is recoverable by a later re-run; a wrong rung is indistinguishable from a right one.
+
+- **People management and organizational ownership are Step 2 signal classes, not a separate axis.** They sit in the table above. Where the *title* already says "Head of X", "VP of X" or General Manager, Step 1 resolves it to `director` and Step 2 is never reached.
 
 - **"Head of X" is `director`.** Not `senior`. Four postings in the 2026-09-21 run — Head of Growth Marketing, Head of Field & Executive Marketing, Head of Developer Growth Marketing, General Manager (Italy) — were each filed `senior` because the agent read the function as mid-scope and ignored the title. Head of a function is the function's owner.
 
@@ -407,7 +460,17 @@ Summaries are **not** persisted (storage deferred per `project.md` non-goals), s
 
 - **These are one rule, not two.** "Not the subject matter" never means discard an explicit level word. An agent on 2026-09-16 read it the strict way, dropped the only unambiguous signal its posting had, and filed a Staff Engineer as `mid`.
 
-- **Write the grounding phrase into `classification.notes`,** prefixed `seniority: `, so the evidence is persisted next to the value rather than living only in a chunk report that may never be saved. Eight of 72 agents in the 2026-09-21 run dropped their reports entirely; the reasoning behind those calls is unrecoverable.
+- **Write the grounding phrase into `classification.notes`, tagged with the step that produced it,** on its own line as `seniority[<tag>]: "<verbatim phrase>"` — for example `seniority[step1-title]: "Senior Staff Product Designer"`. The tag set is closed:
+
+  | Tag | Produced by |
+  |---|---|
+  | `step1-title` | Step 1, level word in the title |
+  | `step1-body` | Step 1, level word in the description body |
+  | `step2-org` | Step 2, class (a) |
+  | `step2-manages` | Step 2, class (b) |
+  | `step2-align` | Step 2, class (c) |
+
+  `unknown` carries no seniority note. There is no quote to record, and a note saying what the posting lacks is a gloss, not evidence. The tag lets analyses separate seniority the employer stated (Step 1) from seniority this contract inferred (Step 2), the same split `title_head_source` makes for titles. The phrase itself is persisted so the evidence sits next to the value rather than only in a chunk report that may never be saved. Eight of 72 agents in the 2026-09-21 run dropped their reports entirely; the reasoning behind those calls is unrecoverable.
 
 - **Every non-`unknown` seniority needs a `grounding_phrase`: text copied verbatim from the title or the description.** Not your paraphrase of it, not your inference from it. "Senior Staff Product Designer" is a grounding phrase; "small, gritty team indicates mid-level responsibility" is not — that is your gloss, and a gloss cannot be checked. If you cannot find a phrase in the posting that carries the level, the level is `unknown`.
 
@@ -504,7 +567,19 @@ FROM usage;
 
 This is only meaningful once the run has finished — a slug minted late in the run hasn't had the same chance to be reused as one minted early, so mid-run it reads more single-use than it will end up being. A high value means the run invented vocabulary nobody else will ever match: 43% of all skills are used exactly once, and among skills minted on 2026-09-16/17 it's roughly 68%. A skill used once is not vocabulary.
 
-**3. Advisory-ignored count** — how many mints happened despite `save_enrichment` returning a `similarity_candidates` entry for that slug: the agent minted anyway, after the tool told it a near match already existed. Migration `000034` computes `similarity_candidates`; the writeback envelope (Step 6) returns it per call, per payload. **It is returned but not persisted — there is no audit table for it**, so this count cannot be queried and must be aggregated from agent reports this run instead (an agent that minted a slug also named in its own `similarity_candidates` response for that call reports the collision in its chunk summary). It needs no threshold: an ignored advisory is either justified — the near match really is a different concept — or it isn't, and a human can read forty of them. Persisting `similarity_candidates` to a table is a follow-up, not this skill's job.
+**3. Advisory-ignored count** — how many mints happened despite `save_enrichment` showing a near match for that slug: the agent minted anyway, after the tool told it one already existed. Migration `000039` persists every near match the gate shows into `taxonomy_similarity_advisories`, append-only, one row per (proposal × candidate shown). Each row carries `table_name`, `proposed_slug`/`proposed_name`, `candidate_slug`/`candidate_name`, `candidate_rank`, `candidate_source` (`advisory` — shown, agent free to ignore; `substitution` — the gate remapped it), `slug_similarity`/`name_similarity`/`advisory_similarity`, `outcome` (`minted` | `reused`, read off the write that actually happened, not predicted from the gate's decision), and `model`/`prompt_version`/`created_at`. Query it directly — do not aggregate agent self-reports; that is the same bias the "New taxonomy minted this run" bullet above names, and it is why this measure existed only as an unfalsifiable self-report before 000039: two agents in the 2026-09-21 run filed self-contradictory accounts of their own mint/reuse in the same run.
+
+```sql
+SELECT
+  count(*) FILTER (WHERE candidate_source = 'advisory') AS advisories_shown,
+  count(*) FILTER (WHERE candidate_source = 'advisory' AND outcome = 'minted') AS advisory_ignored
+FROM taxonomy_similarity_advisories
+WHERE prompt_version = '<PROMPT_VERSION>'
+  AND model = '<MODEL>'
+  AND created_at >= '<run start>';
+```
+
+Scope this the same way as the other two measures: `prompt_version`/`model` pin the cohort to this skill's contract, `created_at >= '<run start>'` pins it to this invocation. It needs no threshold: an ignored advisory is either justified — the near match really is a different concept — or it isn't, and a human can read the rows (`proposed_name` next to `candidate_name`, `slug_similarity`/`name_similarity`) to judge which.
 
 **Report only.** All three measures report; none of them gate, fail, or reject a run, and this skill adds no threshold that does. Do not "improve" this into an enforcement mechanism — a rejected run has no rollback path once written, for reasons load-bearing enough to state plainly:
 - `save_enrichment` writes per payload, but mint rate is a run-level aggregate. By the time the rate is computable, the rows it's counting already exist committed — there is nothing left to roll back.
