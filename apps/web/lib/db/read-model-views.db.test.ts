@@ -261,6 +261,16 @@ describe("read-model views", () => {
           slug: `${marker}-specialization`,
           name: 'Fixture specialization',
         },
+        {
+          term_kind: 'title_head',
+          slug: 'tied-fixture-role',
+          name: 'tied fixture role',
+        },
+        {
+          term_kind: 'title_seniority',
+          slug: 'unstated',
+          name: 'Unstated',
+        },
       ]);
     } finally {
       if (companyId !== undefined) {

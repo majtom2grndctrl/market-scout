@@ -291,6 +291,16 @@ describe("market derivation", () => {
           slug: "sf-bay-area",
           name: "SF Bay Area",
         },
+        {
+          term_kind: "title_head",
+          slug: "market-fixture-sf",
+          name: "market fixture: sf",
+        },
+        {
+          term_kind: "title_seniority",
+          slug: "unstated",
+          name: "Unstated",
+        },
       ]);
     } finally {
       if (companyId !== undefined) {
