@@ -215,6 +215,15 @@ type PostingTaxonomy struct {
 	Name         string
 }
 
+type RetiredRoleDimension struct {
+	ID                 int64
+	RetiredSlug        string
+	RetiredID          int64
+	DimensionSlug      string
+	Collided           bool
+	RetiredByMigration string
+}
+
 type RetiredSlug struct {
 	ID                 int64
 	Slug               string
@@ -255,6 +264,28 @@ type Specialization struct {
 	Slug      string
 	Name      string
 	CreatedAt time.Time
+}
+
+// Append-only record of every near match mcp.save_enrichment showed a worker, and whether the proposed term was minted anyway or reused. Added by 000039.
+type TaxonomySimilarityAdvisory struct {
+	ID                 int64
+	ClassificationID   int64
+	JobPostingID       int64
+	TableName          string
+	ProposedSlug       string
+	ProposedName       string
+	CandidateSlug      string
+	CandidateName      string
+	CandidateRank      int32
+	CandidateSource    string
+	MatchKind          string
+	SlugSimilarity     string
+	NameSimilarity     string
+	AdvisorySimilarity string
+	Outcome            string
+	Model              string
+	PromptVersion      string
+	CreatedAt          time.Time
 }
 
 type TitleSenioritySeed struct {
