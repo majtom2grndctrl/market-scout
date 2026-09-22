@@ -84,13 +84,15 @@ func Validate(resp AgentResponse, taxonomy Taxonomy) []Failure {
 	}
 
 	// Seniority. Whitespace-only counts as missing — the contract requires the
-	// canonical "unknown" sentinel when undeterminable. The closed-set lookup
-	// uses the original (untrimmed) value so padding like " senior " is rejected
-	// with invalid_seniority rather than silently accepted; the DB CHECK constraint
+	// canonical "unknown" sentinel when undeterminable, so the message names it
+	// as the fix. mcp.save_enrichment emits the same code for the same
+	// condition (migration 000043). The closed-set lookup uses the original
+	// (untrimmed) value so padding like " senior " is rejected with
+	// invalid_seniority rather than silently accepted; the DB CHECK constraint
 	// and mcp.save_enrichment both compare the raw value.
 	if strings.TrimSpace(resp.Classification.Seniority) == "" {
 		add("classification.seniority", CodeMissingSeniority,
-			"seniority is required. Emit one of: "+SeniorityList()+".")
+			"seniority is required, even when you abstain: send `unknown` rather than omitting the field. Valid values: "+SeniorityList()+".")
 	} else if _, ok := validSeniorities[resp.Classification.Seniority]; !ok {
 		add("classification.seniority", CodeInvalidSeniority,
 			fmt.Sprintf("`%s` is not a valid seniority. Use one of: %s.", resp.Classification.Seniority, SeniorityList()))

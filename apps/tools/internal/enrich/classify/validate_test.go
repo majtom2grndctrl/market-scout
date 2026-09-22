@@ -84,6 +84,10 @@ func TestValidate_MissingSeniority(t *testing.T) {
 	if f.Path != "classification.seniority" {
 		t.Fatalf("path = %q, want classification.seniority", f.Path)
 	}
+	// A worker that abstains by omitting the field must be told the fix.
+	if !strings.Contains(f.Message, "send `unknown`") {
+		t.Fatalf("message = %q, want it to name `unknown` as the abstain value", f.Message)
+	}
 }
 
 func TestValidate_InvalidSeniority(t *testing.T) {

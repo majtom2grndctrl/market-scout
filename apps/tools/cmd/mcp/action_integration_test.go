@@ -471,6 +471,134 @@ func TestSaveEnrichment_ActionRoleWaitsForTransactionLock(t *testing.T) {
 	assertPermissionDenied(t, err)
 }
 
+// TestSaveEnrichment_MissingSeniorityIsStructuredError covers migration 000043
+// at both layers a worker can reach. An omitted or null
+// classification.seniority must come back as an ok:false missing_seniority
+// error that names `unknown` as the fix, never as a raw NOT NULL violation;
+// `unknown` must save; an out-of-set string must still report
+// invalid_seniority.
+//
+// The "function" subtests call mcp.save_enrichment directly through the action
+// DSN, bypassing Go validation, because that is the only way to put a NULL
+// seniority in front of the SQL check: the Go DTO decodes omitted and null to
+// "" and rejects it first. The "handler" subtests drive the real tool with the
+// same raw arguments, so they prove what an MCP caller actually receives.
+func TestSaveEnrichment_MissingSeniorityIsStructuredError(t *testing.T) {
+	owner, readOnly, action := openActionTestPools(t)
+	postingID := seedPosting(t, owner)
+	handler := saveEnrichmentHandler(readOnly, action)
+
+	// absent is a sentinel: leave the seniority key out of the payload.
+	absent := new(int)
+	tests := []struct {
+		name      string
+		seniority any
+		wantOk    bool
+		wantCode  string
+	}{
+		{"omitted", absent, false, "missing_seniority"},
+		{"null", nil, false, "missing_seniority"},
+		{"unknown", "unknown", true, ""},
+		{"invalid string", "ultra", false, "invalid_seniority"},
+	}
+
+	classification := func(seniority any) map[string]any {
+		c := map[string]any{"notes": nil}
+		if seniority != absent {
+			c["seniority"] = seniority
+		}
+		return c
+	}
+	// Seeded taxonomy only (migration 000001), so a successful save mints
+	// nothing and cannot collide with shared taxonomy.
+	roles := []any{
+		map[string]any{"slug": "software-engineer", "name": "Software Engineer", "dimensions": []any{"engineering"}},
+	}
+
+	for _, tc := range tests {
+		t.Run("function/"+tc.name, func(t *testing.T) {
+			payload, err := json.Marshal(map[string]any{
+				"posting_id":      postingID,
+				"classification":  classification(tc.seniority),
+				"canonical_roles": roles,
+				"specializations": []any{},
+				"skills":          []any{},
+			})
+			if err != nil {
+				t.Fatalf("marshal payload: %v", err)
+			}
+
+			before := countClassifications(t, readOnly, postingID)
+			var raw json.RawMessage
+			if err := action.QueryRowContext(t.Context(),
+				"SELECT mcp.save_enrichment($1::jsonb, $2, $3)", payload, "mcp-test", "mcp-seniority-test-v1").Scan(&raw); err != nil {
+				t.Fatalf("mcp.save_enrichment raised instead of returning an envelope: %v", err)
+			}
+			var fr functionResult
+			if err := json.Unmarshal(raw, &fr); err != nil {
+				t.Fatalf("decode function result %s: %v", raw, err)
+			}
+			after := countClassifications(t, readOnly, postingID)
+
+			if tc.wantOk {
+				if !fr.Ok {
+					t.Fatalf("ok=false, want ok=true; errors=%+v", fr.Errors)
+				}
+				if after != before+1 {
+					t.Fatalf("classifications = %d, want %d", after, before+1)
+				}
+				return
+			}
+			if fr.Ok {
+				t.Fatalf("ok=true, want ok=false with %s", tc.wantCode)
+			}
+			if len(fr.Errors) != 1 || fr.Errors[0].Path != "classification.seniority" || fr.Errors[0].Code != tc.wantCode {
+				t.Fatalf("errors = %+v, want exactly one %s on classification.seniority", fr.Errors, tc.wantCode)
+			}
+			if tc.wantCode == "missing_seniority" && !strings.Contains(fr.Errors[0].Message, "'unknown'") {
+				t.Fatalf("message = %q, want it to name 'unknown' as the abstain value", fr.Errors[0].Message)
+			}
+			if after != before {
+				t.Fatalf("classifications = %d, want %d: a rejected call must write nothing", after, before)
+			}
+		})
+
+		t.Run("handler/"+tc.name, func(t *testing.T) {
+			before := countClassifications(t, readOnly, postingID)
+			env := callSaveEnrichment(t, handler, newCallToolRequest(map[string]any{
+				"posting_id":      postingID,
+				"provenance":      map[string]any{"model": "mcp-test", "prompt_version": "mcp-seniority-test-v1"},
+				"classification":  classification(tc.seniority),
+				"canonical_roles": roles,
+				"summary":         "missing seniority integration test",
+			}))
+			after := countClassifications(t, readOnly, postingID)
+
+			if tc.wantOk {
+				if !env.Ok {
+					t.Fatalf("ok=false, want ok=true; errors=%+v", env.Errors)
+				}
+				if after != before+1 {
+					t.Fatalf("classifications = %d, want %d", after, before+1)
+				}
+				return
+			}
+			if env.Ok {
+				t.Fatalf("ok=true, want ok=false with %s", tc.wantCode)
+			}
+			if len(env.Errors) != 1 || env.Errors[0].Path != "classification.seniority" || env.Errors[0].Code != tc.wantCode {
+				t.Fatalf("errors = %+v, want exactly one %s on classification.seniority", env.Errors, tc.wantCode)
+			}
+			if tc.wantCode == "missing_seniority" && !strings.Contains(env.Errors[0].Message, "`unknown`") {
+				t.Fatalf("message = %q, want it to name `unknown` as the abstain value", env.Errors[0].Message)
+			}
+			if after != before {
+				t.Fatalf("classifications = %d, want %d: a rejected call must write nothing", after, before)
+			}
+		})
+	}
+}
+
 // --- Scenario #3: action role CANNOT write directly to data/taxonomy tables or
 // run DDL. Direct SQL through the action DSN; every attempt must be denied.
 
