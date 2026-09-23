@@ -1,0 +1,96 @@
+---
+name: validate-plan
+description: >
+  Adversarial direction review of a spec or problem brief: is this a
+  reasonable solution to the problem at hand? One fresh reviewer judges
+  framing, layer placement, foreclosure, unstated divergence from prior
+  commitments, reversibility, and the strongest alternative. Can conclude
+  the work needs no plan, or a bigger one. Run after /draft-brief, before
+  /review-draft-spec on a spec, or a la carte on any plan whose direction
+  has gone stale.
+argument-hint: "[plan-name]"
+context: fork
+agent: general-purpose
+---
+
+# Validate Plan
+
+One reviewer, one altitude: direction. Never checks identifiers, AC wording, or task completeness — those are `/review-draft-spec`, `/review-implementability`, and `/review-brief`, and they run after this.
+
+## Premise
+
+A plan can be locally correct and globally wrong: every identifier grounded, every AC sound, and still the wrong kind of solution. Detail review passes it, because nothing is wrong with the details.
+
+That failure is attentional, not a capability gap. A reviewer asked to check identifiers *and* judge direction does the identifier work — concrete and gradeable — then gestures at direction in a closing paragraph. Separate passes are the point.
+
+Because attention cannot be split by instruction, this skill does not ask a reviewer to resist anchoring. It controls read order instead.
+
+## Process
+
+### 1. Commitment search
+
+The real defect is usually a **cross-cutting thesis** violated by a package-local drafter — precisely the commitment they never read. Direct-predecessor lineage does not reach it. Example: a plan that computes an aggregate in Go for one consumer violates the thesis that derived state lives once in SQL views, stated in `project.md`, while its own predecessor plan said nothing about where derivation lives.
+
+So obvious lineage is a **floor, not a scope**:
+
+1. Route through `agent-context/lib/index.md` to the docs governing the surface. Mandatory per CLAUDE.md; the reviewer reads what it routes to.
+2. Grep `agent-context/plans/done/` for the **concepts** the plan touches — append-only, derived once, trust tiers, backend computes vs model narrates, read role vs action role, absent vs zero — not the package name. Cross-plan hits are the point.
+3. Note the direct predecessor and the source files the plan names.
+
+Hand all of it to the reviewer as a labeled list of paths, explicitly as a starting floor it must extend. The reviewer owns the search; a coordinator's guess must not become the ceiling.
+
+### 2. Spawn one reviewer (read-only, fresh context)
+
+Dispatch prompt contains exactly:
+
+- The plan, **inlined verbatim**. No summary, no statement of intent, no "what I was going for" — the coordinator's framing anchors the reviewer as effectively as a bad plan.
+- The step 1 paths, labeled, marked as a floor to extend.
+- The six questions and the verdict set below.
+- Locked owner decisions, with the rider in step 3.
+- Instructions: report only, no edits, no migrations, no live-surface commands.
+
+**Read order is load-bearing.** On a spec: answer Q1, Q4 and Q6 from Goal, Scope and Tasks **before** reading `Rough sketch` and `Open questions`, where the drafter's chosen shape and rejected alternatives live. On a brief (the line under the title starts `Brief ·`): answer from Problem and Acceptance before reading Decisions and Path; Decisions is the direction, and Path's "strongest rival" is the alternatives section. Then read the rest and report the diff. Agreement is corroboration. An alternative the reviewer reached independently that is *absent* from the plan's alternatives is itself a finding — that is the one section a drafter can satisfy by rebutting a rival it never held, and it has no external referent to check against.
+
+The reviewer answers six questions and must reach a verdict on each; "some concerns" is not an answer.
+
+1. **What problem is this actually solving, and what observation produced it?** One sentence for the problem — cause or symptom of something upstream? Then the evidence: a data audit, a bug, an owner request, a review finding, or an anticipation. Anticipated problems are legitimate, but naming one as anticipated is how the strongest form of *Not a spec* — no one has hit this yet — becomes reachable.
+2. **Is it being solved at the right level?** Name the placement axis before judging it. This repo has several: derived-in-view vs per-consumer, write-time vs read-time, deterministic code vs agent judgment, read role vs action role, `tools` vs `web`, backend computes vs model narrates, Server Component vs route handler. Pick the ones in play; do not default to the first.
+3. **What does this foreclose?** What becomes harder or impossible afterward. "Nothing material" is a legitimate and common answer — say it plainly rather than manufacturing a foreclosure. What is banned is the empty hedge "nothing significant" standing in for not having looked.
+4. **What has this project already committed to that this touches?** Extend the step 1 floor. See *Precedence* below.
+5. **Is this a one-way door, and what does undoing it cost?** Distinct from Q3: foreclosure is what becomes impossible *afterward*, reversibility is what it costs to back out of *this*. A migration over append-only history, rows written with the wrong provenance, and an MCP tool shape a skill already depends on are the usual one-way doors here. A reversible wrong direction is often worth shipping to learn from; an irreversible right-looking one earns a reshape.
+6. **What is the strongest alternative, and why not that?** Propose a rival shape; do not just list concerns. Committing to an alternative forces a real judgment and gives the owner something to compare.
+
+**Verdict, one of:**
+
+- *Direction sound* — on a spec, proceed to `/review-draft-spec`. On a brief: owner sign-off, or `/review-brief` first when the stakes warrant it.
+- *Reshape* — the named alternative is better, or the placement is wrong.
+- *Not a spec* — the work is smaller than a plan. Say what it is instead.
+- *Under-scoped* — the real problem is bigger than what is scoped. Say what is missing.
+
+The last two are first-class outcomes. A reviewer that can only grade direction good-or-bad never reaches them, and both are common.
+
+Proportionality is not a seventh question — it is this verdict set. Over-built resolves to *Not a spec*, under-sized to *Under-scoped*, and the comparison that settles either is Q6's alternative. Asking it separately just gets it answered twice.
+
+### 3. Locked decisions
+
+The reviewer may not relitigate a locked owner decision. It **must** state when one is load-bearing for its verdict, and what would follow if it were reopened.
+
+Without that rider, "Direction sound" silently means "sound conditional on a lock I was forbidden to examine" — and in a direction review the locked decisions often *are* the direction.
+
+### 4. Report
+
+Verdict, the reasoning, any load-bearing locks, and — for *Reshape*, *Not a spec*, or *Under-scoped* — the concrete alternative. Reshaping is the owner's decision: surface it, never auto-apply.
+
+## Precedence is a hint, not a rule
+
+Question 4 is not a conformance check. Read as "does this match what we did before," it privileges whatever happened first, mistakes included — this repo ships precedents documented as defects (the Go batch-enrich runner's ungated write path, in `project.md`), and plans are right to decline them.
+
+The defect is not divergence. It is *unwitting* divergence. A plan that says "we are doing X differently because Y" is doing its job, and the argument can be had on the merits. A plan that contradicts a thesis while citing its source approvingly has not noticed it is choosing.
+
+## Working rules
+
+- One reviewer, all six questions, on `opus`. The characteristic finding is a cross-question one; splitting returns local passes.
+- Fresh context both halves. This skill runs forked so the coordinating session is unimmersed too — immersion is what makes a locally-correct wrong shape feel obviously right.
+- Direction only. Ungrounded identifiers and AC problems belong to later passes; raising them here dilutes the lens.
+- The reviewer never edits. Reshaping is an owner decision.
+- Don't pad. No praise, no emojis.

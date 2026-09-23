@@ -25,9 +25,11 @@ Write a build brief for frontend work. Output: `agent-context/plans/in-progress/
 
 Frontend earns it twice over. Backend verification is expensive, so reading a spec catches mistakes more cheaply than running the thing; here the running thing is the verification artifact and the user is the expert reading it.
 
-Use `/draft-plan` instead when work fans out to parallel agents through `/orchestrate`. A brief underspecifies for agents nobody is watching, and they diverge on exactly what it omits.
+Use `/draft-plan` instead when work fans out to parallel agents through `/build-spec`. A brief underspecifies for agents nobody is watching, and they diverge on exactly what it omits.
 
-Say which lane this is if the request is ambiguous. Don't guess silently.
+Use `/draft-brief` instead when a decision must be reviewed before code exists — a view other consumers read, a write path. A one-pager has no review gate.
+
+Say which lane this is if the request is ambiguous. Don't guess silently. `/draft-session` is where the route gets chosen; start from its handoff when one exists.
 
 ## What earns a place
 
@@ -58,7 +60,7 @@ Follow `agent-context/lib/style-guide.md` — **Direct and brief**, **Seamless**
 ```markdown
 # <Feature Name>
 
-> Brief — decisions and non-goals. No task breakdown, no acceptance criteria.
+> One-pager — decisions and non-goals. No task breakdown, no acceptance criteria.
 
 ## Goal
 What this achieves and why it matters now.
@@ -73,7 +75,7 @@ Code sketch. What call-sites look like when this is done.
 - <Thing> — <why it's tempting, why it's wrong here>.
 
 ## Build order
-(Optional. Numbered, one line per step. For a human steering — not phases for /orchestrate.)
+(Optional. Numbered, one line per step. For a human steering — not phases for /build-spec.)
 
 ## Done when
 - Commands that pass.
@@ -83,7 +85,7 @@ Code sketch. What call-sites look like when this is done.
 (Omit when empty.)
 ```
 
-Keep the marker line. `agent-context/plans/in-progress/` is enumerated by other skills, and a brief found there looks like a spec until something says otherwise.
+Keep the marker line. `agent-context/plans/in-progress/` is enumerated by other skills, and a one-pager found there looks like a spec or a problem brief until something says otherwise.
 
 **Target usage carries the format.** Each call-site demonstrates one property of the API and names it in a comment — the orthogonal axis, the responsive form, the case a prop exists to handle. Sites differing only in values collapse into one; four snippets of the same happy path teach nothing that the prop table wouldn't. Write the comment first and the snippet under it, so each one has a claim to make.
 

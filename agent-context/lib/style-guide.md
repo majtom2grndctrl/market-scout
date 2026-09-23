@@ -221,9 +221,11 @@ Context files are the durable layer. Plans are the ephemeral layer.
 
 **Plans** live in `agent-context/plans/`, moving through four stages: `drafts/` → `ready/` → `in-progress/` → `done/`. Plans contain detailed implementation specs — function names, SQL, task breakdowns, acceptance criteria. That detail earns its place during planning but becomes maintenance debt once the code exists.
 
-**Briefs** — the one-page format from `/one-pager` — run `in-progress/` → `done/` only. The two skipped stages hold a spec between review gates, and a brief has none: the user reviews it in conversation, then verifies the built result on screen.
+**Problem briefs** from `/draft-brief` take the same four stages as specs. At build time a `plan.md` lands beside the brief and holds resumable state; both move to `done/` together.
 
-**Before a plan moves from `drafts/` to `ready/`:** capture durable decisions in `agent-context/lib/`. New architectural constraints, adapter contracts, and pipeline topology belong there — not in the plan. Agents working the plan find full context in the codebase, not in plan documents. Briefs never make that transition, so they capture in the same commit that lands the brief — nothing reshapes them in between.
+**One-pagers** from `/one-pager`, and **design contracts** from `/build-session`, run `in-progress/` → `done/` only. The two skipped stages hold a plan between review gates, and these have none: the owner reviews them in conversation before the build. A marker line under the title names the form, so skills enumerating `in-progress/` don't mistake one for a spec.
+
+**Before a plan moves from `drafts/` to `ready/`:** capture durable decisions in `agent-context/lib/`. New architectural constraints, adapter contracts, and pipeline topology belong there — not in the plan. Agents working the plan find full context in the codebase, not in plan documents. One-pagers and design contracts never make that transition, so they capture as the work lands — nothing reshapes them in between.
 
 **After a plan ships:** the plan moves to `done/` and stays as a historical record. Don't maintain it. The implementation is the source of truth; `agent-context/lib/` holds the durable architectural layer.
 

@@ -14,7 +14,7 @@ argument-hint: "[plan-name | task description]"
 
 Implement a single task. Read the spec, load context, understand dependencies, build. Do not commit — the caller handles integration.
 
-Dispatched by `/orchestrate`? Your brief already inlines context and task — skip §1–§2 and start at §3.
+Dispatched by `/build-spec`? Your brief already inlines context and task — skip §1–§2 and start at §3.
 
 ## Process
 

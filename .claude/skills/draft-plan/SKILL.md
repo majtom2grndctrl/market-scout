@@ -2,8 +2,8 @@
 name: draft-plan
 description: >
   Drafts feature or epic specs. A session may produce zero, one,
-  or several plans depending on scope. Use when starting new planning work.
-  Does not promote to ready/ — that is a separate step after review.
+  or several plans depending on scope. Use after /draft-session routes work
+  to a spec. Does not promote to ready/ — that is a separate step after review.
 ---
 
 # Draft Plan
@@ -20,7 +20,7 @@ A drafting session may produce 0, 1, or N plans. Scope often shifts during plann
 
 ### 1. Understand the goal
 
-Read the user's description. Ask focused questions when scope is unclear — don't over-interrogate.
+Start from the `/draft-session` handoff: problem, outcome, verified facts, decisions, proof, and the route. If none exists, run `/draft-session` first — routing is its job, not this skill's. Ask a focused question only where the handoff leaves the Goal or "done" unwritable.
 
 Pin down:
 - What outcome matters
@@ -73,7 +73,7 @@ One paragraph. What to build.
 ...
 
 ## Sequencing
-(Required when Tasks section exists. Feeds /orchestrate.)
+(Required when Tasks section exists. Feeds /build-spec.)
 
 **Phase 1 (sequential):** Task 1 — blocks everything.
 **Phase 2 (concurrent):** Task 2, Task 3 — independent.
@@ -115,7 +115,7 @@ Named types, functions, and line numbers belong in the sketch — not AC. AC sur
 
 ### 5. Sequencing
 
-Feeds `/orchestrate`. Terse is fine — models read short phase blocks reliably.
+Feeds `/build-spec`. Terse is fine — models read short phase blocks reliably.
 
 Rules:
 - Concurrent by default.
@@ -140,12 +140,17 @@ Stage and commit the plan folder (`index.md` + optional `research.md`).
 
 **Do not update `agent-context/lib/` during drafting.** Durable capture happens at promotion — after review. Reviewer agents often reshape the spec; library updates should land once, against the final shape.
 
-### 8. Report
+### 8. Validate direction
+
+Run `/validate-plan <name>` on each plan the session produced. Surface the verdict as a fresh reader would; do not rebut it from inside the session that drafted the plan. Never act on *Reshape*, *Not a spec*, or *Under-scoped* unilaterally — those are owner decisions.
+
+### 9. Report
 
 - What was planned, or if the session produced no plan (scope already covered, etc.)
 - Task count and phase summary
+- The `/validate-plan` verdict per plan
 - Open questions left for the user
-- Plan lives in `drafts/` — not ready for `/orchestrate` until promoted
+- Plan lives in `drafts/` — not ready for `/build-spec` until promoted
 
 ## Promoting a plan to `ready/`
 
@@ -162,4 +167,4 @@ At promotion:
 1. Capture durable decisions in `agent-context/lib/` — new architectural constraints, subsystem contracts, pipeline topology. Agents working the plan find full context in the library, not in the plan document.
 2. `git mv agent-context/plans/drafts/<name> agent-context/plans/ready/<name>`
 3. Commit the move and the `agent-context/lib/` updates together.
-4. Run `/review-implementability` on the promoted spec before `/orchestrate`.
+4. Run `/review-implementability` on the promoted spec before `/build-spec`.

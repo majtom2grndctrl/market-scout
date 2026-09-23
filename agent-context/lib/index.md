@@ -24,6 +24,8 @@ Take your side, plus **Either side**. Skip the other.
 - **Posting count vs requisition count; why a measure omits a number instead of returning 0** → `agent-context/lib/project.md` §Settled architecture *(both counts are honest; absent is not zero)*
 - **Charts — which library, why every mark is hand-rendered** → `agent-context/lib/project.md` §Settled architecture *(d3 supplies scales and geometry; no chart component library)*
 - **Geography / `market` dimension, why location is curated not raw** → `agent-context/lib/project.md` §Settled architecture *(curated market dictionary; `unmapped` is an explicit value; no coverage denominator)*
+- **Profile, résumé onboarding, pinned roles, title heads as labels** → `agent-context/lib/project.md` §Settled architecture *(pins are canonical roles; extraction is reviewed before save)*
+- **Dashboard widgets — how they are chosen, where models may enter** → `agent-context/lib/project.md` §Settled architecture *(detectors propose, ranker chooses; models narrate, never compute)*
 - **Chat surface, streaming responses, when a route handler is allowed** → `agent-context/lib/project.md` §Settled architecture *(streaming is the one exception; request-response stays in Server Components)*
 
 **Backend (`apps/tools/`)**
@@ -47,7 +49,7 @@ Take your side, plus **Either side**. Skip the other.
 - **Repo layout (`apps/`, `research/`)** → `agent-context/lib/project.md` §Repo layout
 - **Settled architecture decisions** → `agent-context/lib/project.md` §Settled architecture
 - **Generated files — never hand-edit** → `agent-context/lib/developer-guide.md` §5.8 *(sqlc)* · `agent-context/lib/web-guide.md` §Colour *(`apps/web/app/theme.css`)*
-- **When to skip the plan pipeline** → `agent-context/lib/developer-guide.md` §1.5 *(the light lane)*
+- **When to skip the plan pipeline; which route — build session, one-pager, brief, or spec** → `agent-context/lib/developer-guide.md` §1.5 *(the light lane; routes)*
 - **Writing / editing `agent-context/` files** → `agent-context/lib/style-guide.md`
 - **What's deferred / out of scope** → `agent-context/lib/project.md` §Non-goals
 
@@ -65,5 +67,6 @@ Take your side, plus **Either side**. Skip the other.
 | App layer | Next.js Server Components → Postgres direct | No separate Go API server. `postgres` on the read-only DSN. Route handlers reserved for streaming. |
 | Charts | Hand-rendered SVG on d3 modules | d3 supplies scales and path geometry. No chart component library; marks are app-owned so charts inherit design tokens. |
 | Colour | Generated semantic tokens, `apps/web/app/theme.css` | Nine families over one calibrated OKLCH palette. Trend (blue/orange) is deliberately separate from status (green/amber/red): a falling posting count is not a failure. Accent is achromatic so hue stays reserved for data. |
+| Primary surface | Profile → pinned roles → adaptive dashboard | Pins are canonical roles; title heads label them. Chat comes later, for unanticipated questions. |
 | Read model | SQL views in numbered migrations | "Open posting" and other derived state defined once in SQL, read by both the web app and the agent. |
 | ATS adapters | Interface in `apps/tools/cmd/fetcher`; implementations in `apps/tools/internal/ats/` | All adapters implement the same `FetchPostings` contract. |

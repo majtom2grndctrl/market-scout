@@ -82,7 +82,16 @@ Normative home: [Style Guide](./style-guide.md) §Documentation Lifecycle. Summa
 - **Architecture docs** (`agent-context/lib/`) capture what's durable — design principles, package boundaries, contracts, snapshot model, schema invariants. Content an agent can't derive by opening the relevant file.
 - **Code comments** capture implementation-level "why" decisions. Rationale a reader can't derive from the code alone. See §7.
 
-**The light lane.** The plan pipeline (draft → review → promote → orchestrate) is institutional memory for stateless agents, not quality control. A change touching no schema, no agent-facing contract, and no data write path skips it: implement directly, then `/review-panel`. When in doubt, the cost of a wrong guess decides — code is rewritable; data and contracts are not.
+**The light lane.** The plan pipeline (draft → review → promote → build) is institutional memory for stateless agents, not quality control. A change touching no schema, no agent-facing contract, and no data write path skips it: build it directly. When in doubt, the cost of a wrong guess decides — code is rewritable; data and contracts are not.
+
+**Routes.** `/draft-session` grounds the work and picks one. Route by the cost of a wrong decision after code exists, not by breadth.
+
+| Route | Artifact | Built by |
+|---|---|---|
+| Direct build | Design contract, written in-session | `/build-session` |
+| One-pager | `apps/web/` work the owner steers on screen | The owner, hands-on |
+| Problem brief | Decisions reviewed before code; one integrating executor | `/build-brief` |
+| Full spec | Owner-reviewed task contracts; several executors | `/build-spec` |
 
 **What doesn't belong in `agent-context/lib/`:**
 
