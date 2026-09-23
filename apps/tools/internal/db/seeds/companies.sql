@@ -379,3 +379,64 @@ ON CONFLICT (ats, board_token) DO NOTHING;
 INSERT INTO companies (name, ats, board_token, industry) VALUES
     ('Russell Investments', 'workday', 'russell.wd5.myworkdayjobs.com/russellinvestments', 'Asset Management / Fintech')
 ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (Trilogy Equity portfolio discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Comet ML', 'greenhouse', 'comet', 'AI/ML Developer Tools'),
+    ('Lookout', 'greenhouse', 'lookout', 'Mobile Security'),
+    ('Twindo', 'greenhouse', 'twindo', '3D Scanning / Construction Software')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (Trilogy Equity portfolio discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Rollout', 'ashby', 'rollout', 'Public Safety AI / Govtech')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Workable (Trilogy Equity portfolio discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Owlet Baby Care', 'workable', 'owlet-baby-care-1', 'Consumer Health Devices')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Gem (Trilogy Equity portfolio discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Kanu AI', 'gem', 'kanu-ai', 'AI Cloud Engineering / Developer Tools')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (Flying Fish Ventures portfolio discovery run, September 2026)
+-- Nectar Social was listed as getnectar.ai and Orbital Industries as Orbital
+-- Materials; both domains redirect to the renamed company.
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Axiom Math', 'ashby', 'axiommath', 'AI Research / Mathematical Reasoning'),
+    ('Hiverge', 'ashby', 'hiverge', 'AI Algorithm Discovery'),
+    ('Simular', 'ashby', 'simular', 'AI Agents / Computer Use'),
+    ('Latent Labs', 'ashby', 'latentlabs', 'AI Protein Design / Biotech'),
+    ('Nectar Social', 'ashby', 'nectar-social', 'Conversational AI / Social Commerce'),
+    ('Orbital Industries', 'ashby', 'orbitalindustries', 'AI Materials Discovery')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (Fuse portfolio discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Portal Space Systems', 'greenhouse', 'portalspacesystems', 'Space / In-Orbit Mobility'),
+    ('WellSaid', 'greenhouse', 'wellsaidlabs', 'AI Voice / Text-to-Speech')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Ashby (Fuse portfolio discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Elastix AI', 'ashby', 'elastix', 'AI Inference Infrastructure'),
+    ('General Compute', 'ashby', 'generalcompute', 'AI Inference Cloud / Compute Infrastructure')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Lever (Fuse portfolio discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Quandri', 'lever', 'quandri', 'Insurance Automation / AI')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Gem (Fuse portfolio discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('Prosper Medical', 'gem', 'prospermedical-com', 'Primary Care / Healthtech')
+ON CONFLICT (ats, board_token) DO NOTHING;
+
+-- Greenhouse (Voyager Capital portfolio discovery run, September 2026)
+INSERT INTO companies (name, ats, board_token, industry) VALUES
+    ('ThoughtExchange', 'greenhouse', 'thoughtexchange', 'Crowdsourcing / Decision-Making Software')
+ON CONFLICT (ats, board_token) DO NOTHING;
