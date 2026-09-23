@@ -1,7 +1,7 @@
 // strip_boilerplate exposes the company-scoped preprocessing step that workers
 // use before classification. It binds only the read-only pool and returns text
 // for explicitly selected posting ids; it never exposes a general database DSN.
-// See: agent-context/plans/ready/codex-native-batch-enrichment/index.md
+// See: agent-context/plans/done/codex-native-batch-enrichment/index.md
 package main
 
 import (
