@@ -261,9 +261,13 @@ After a schema change, regenerate sqlc:
 sqlc generate
 ```
 
+A migration that changes a read-model view also changes what the web read-model suite asserts. The Go suites don't cover those assertions, so a migration can pass every Go test and still break them. Run `pnpm test:db` from `apps/web/` before handoff. See `web-testing-guide.md` §Database Tests.
+
 #### Teardown and Recovery
 
 `migrate down` is a full teardown — it reverts every migration, not a single step. It blocks at the RESTRICT foreign keys in migrations 000007 and 000008 when enrichment history exists, leaving the DB `dirty`. That block is a feature: it protects enrichment provenance from being silently dropped.
+
+So `down` cannot test one migration's reversibility. Run that migration's `.down.sql`, then its `.up.sql`, directly against the database, and diff the affected tables or view output against a pre-down snapshot. The recorded version never moves, which is correct: the schema ends where it started.
 
 To recover from a stuck teardown:
 
