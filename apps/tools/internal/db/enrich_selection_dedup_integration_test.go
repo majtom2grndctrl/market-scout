@@ -173,8 +173,8 @@ func assertReps(t *testing.T, repOf map[int64]bool, ids []int64, want []bool) {
 }
 
 // The requisition edge is gated on a matching normalized title. At Greenhouse
-// and Ashby the requisition key names a job family, not a posting, so an
-// ungated key merged four distinct Stripe Staff SWE roles into one
+// the requisition key names a job family, not a posting (Ashby carries no
+// requisition key at all), so an ungated key merged four distinct Stripe Staff SWE roles into one
 // classification. Normalization is what makes the gate usable: titles that
 // differ only by case or runs of whitespace are the same title.
 func TestListUnclassifiedPostings_DedupRequisitionEdgeRequiresMatchingTitle(t *testing.T) {

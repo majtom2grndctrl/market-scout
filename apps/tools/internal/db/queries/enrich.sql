@@ -23,8 +23,9 @@
 --     title. One requisition whose description was edited between fetches keeps
 --     its key and its title while its text drifts.
 --
--- The requisition edge is gated on the title because at Greenhouse and Ashby the
--- requisition key identifies a job *family*, not a posting. Over the corpus, 152
+-- The requisition edge is gated on the title because at Greenhouse the
+-- requisition key identifies a job *family*, not a posting. Ashby and Lever carry
+-- no requisition key, so the edge never fires there. Over the corpus, 152
 -- of the 271 multi-posting requisition-key groups (463 postings) span more than
 -- one normalized title; ungated, that merged four distinct Stripe Staff SWE roles
 -- into one classification. Normalization is load-bearing, not cosmetic: raw-title
