@@ -92,12 +92,17 @@ A 137M-parameter embedding model at 512 tokens runs ~1.5 s per posting on this C
 | Jev `noul` for every skill | 2,586 questions overflow the budget; a 1% false-yes rate adds ~26 wrong skills against a true 5.9. |
 | kNN or linear model on stored labels | Inherits title-contaminated v2–v6 labels; weak on singleton roles; retrains on every mint. A distillation step after Jev, not an alternative. |
 | Local 7B LLM | Impractically slow on this CPU. |
+| Unattended v9 with minting over a hosted LLM via OpenRouter | Mint rate: 78 roles in 14 days even under supervision, followed by cleanup migrations 000031, 000037, 000038, 000040. Unattended minting multiplies that. |
 | Cheap hosted LLM with a closed enum (~$0.40/1k) | The fallback if Jev fails the kill criteria. Gives up calibrated per-label scores. |
 | Zero-shot NLI models | One forward pass per label; too slow and coarse at this label count. |
 
 ## Direction review, round 1
 
 `/validate-plan` returned *Under-scoped*: a second classifier entered `latest_classifications` with no read-model story; write-time thresholds made re-tuning a paid, non-deterministic re-run; single-role and duplicated seniority rules broke stated commitments unnamed; deferred postings were re-selected and re-paid; the implemented `codex-native-batch-enrichment` plan still sat in `ready/`. Owner resolutions: lineage in the view plus a three-month backfill; probabilities stored with offline re-derivation; one assigned role with the blend measured from stored pass-2 probabilities; one seniority core shared through MCP.
+
+## Direction review, round 2
+
+`/validate-plan` returned *Under-scoped*, direction unchanged. Skill reach capped at the seed table reads as zero in the measure engine, whose classified denominator counts any latest classification; deferrals to the skills keep the window mixed-lineage, so the single-classifier claim was false; seniority evidence stayed in `notes` without a warrant. A read-only query found 1,132 of 12,260 postings first seen in the last three months classified, the last on 2026-09-21. Owner resolutions: read-model lineage, engine reach, and the backfill move to a follow-up brief, `lineage-aware-measures`, and live runs stop at the pilot until it lands; seniority evidence stays in `notes`; a two-phase owner gate at the probe.
 
 ## Review trail
 

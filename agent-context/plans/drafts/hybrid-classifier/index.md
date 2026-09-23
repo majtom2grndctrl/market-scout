@@ -4,7 +4,7 @@ Brief · resumable · reads: `agent-context/lib/project.md` §Settled architectu
 
 ## Problem
 
-Owner-requested capability. The Go enricher, `cmd/batch-enrich`, shells out to LLM CLIs and writes taxonomy and classification rows directly under owner credentials, a second write route that skips every gate `mcp.save_enrichment` enforces; it stays unused until rewritten. The owner wants an unattended classifier that is cheap per posting, uses the right instrument for each dimension, and keeps the evidence behind each label. When done, an operator runs one Go binary over a selected cohort. It writes one append-only classification per posting through `mcp.save_enrichment`, or writes nothing and records why. Every label records its instrument, and every model judgment keeps its probabilities, so thresholds can be re-tuned without paying for a new model call. The read model shows which classifier wrote each row, and the recent window is reclassified so analyses over it read one classifier. Seniority has one implementation, shared with the LLM skills.
+Owner-requested capability. The Go enricher, `cmd/batch-enrich`, shells out to LLM CLIs and writes taxonomy and classification rows directly under owner credentials, a second write route that skips every gate `mcp.save_enrichment` enforces; it stays unused until rewritten. The owner wants an unattended classifier that is cheap per posting, uses the right instrument for each dimension, and keeps the evidence behind each label. When done, an operator runs one Go binary over a selected cohort. It writes one append-only classification per posting through `mcp.save_enrichment`, or writes nothing and records why. Every label records its instrument, and every model judgment keeps its probabilities, so thresholds can be re-tuned without paying for a new model call. Seniority has one implementation, shared with the LLM skills.
 
 ## Decisions
 
@@ -30,7 +30,7 @@ Owner-requested capability. The Go enricher, `cmd/batch-enrich`, shells out to L
 - **Probabilities are stored; labels are applied at write time.** Every Jev candidate above a low recording floor is stored with its probability, including the full pass-2 role distribution. Join tables keep meaning "assigned label", so no existing view changes meaning. A probability is stored once, in the candidate table, never copied onto the join row.
 - **Re-tuning is an offline re-derivation.** A re-derive mode reads a prior run's stored candidates, applies new thresholds, recomputes the deterministic instruments, and writes new classifications under a bumped `prompt_version` with no Jev call. The run record names its source run. Candidates below the recording floor are gone, so a floor raised above it cannot be re-derived.
 - **One seniority core for both paths.** A Go package implements the v9 ladder once, on boilerplate-cleaned text. `cmd/classify` imports it. The LLM skills get it through a new read-only MCP tool and stop reading seniority themselves, which bumps both skill pins to the next `batch-enrich-v<n>`. The core stays deterministic, so both paths return identical answers for the same posting.
-- **Seniority keeps v9's evidence format.** Notes carry `seniority[<tag>]: "<verbatim phrase>"`; `unknown` carries none. The core returns the note line, so no caller formats it.
+- **Seniority keeps v9's evidence format.** Notes carry `seniority[<tag>]: "<verbatim phrase>"`; `unknown` carries none. The core returns the note line, so no caller formats it. Diverges from `research/enrichment-tool-design-inputs.md` §Provenance and lineage, which places a seniority source column in this tool's output: no consumer parses the tag yet, so the column waits for its first reader, and meanwhile new rows keep the format earlier rows use.
 - **A role is written with its existing dimension set.** `save_enrichment` requires dimensions; echoing the current set adds no `canonical_role_dimensions` rows, so the ratchet (`research/enrichment-tool-design-inputs.md` §Taxonomy interaction) does not grow.
 - **Writes go only through `mcp.save_enrichment` on the action role.** The Go-side checks the MCP handler runs (provenance, payload build, result decode) move to an `internal/` package both binaries import. The MCP save tool's surface is unchanged: agents never send instruments, candidates, or run ids.
 - **Schema, additive.**
@@ -40,8 +40,11 @@ Owner-requested capability. The Go enricher, `cmd/batch-enrich`, shells out to L
   - A skill seed table listing each reachable skill, its instrument, and its lexical aliases.
 
   Run rows are written through new approved `mcp` functions, because the action role holds only per-function EXECUTE (`action_role.sql`). The payload extension keeps the external `mcp.save_enrichment(jsonb, text, text)` signature. Undo cost: the down migration drops the tables and columns, discarding stored probabilities and run history.
-- **The read model shows the classifier.** `latest_classifications` gains `prompt_version`, `model`, and the run reference, appended so existing consumers keep their columns. This is the read-model placement: lineage is derived once in the view, not rejoined per consumer (`project.md` §Settled architecture).
-- **The recent window is reclassified once.** After the pilot passes, the owner runs a backfill that force-reclassifies every posting first seen within three months of the run. Analyses over that window then read one classifier. Selection gains an opt-in first-seen window criterion for it. Older postings keep their LLM rows, visible by lineage.
+- **Live runs stop at the pilot.** Any larger live run, the recent-window backfill included, waits for the follow-up brief `lineage-aware-measures`. A `classify-v` row that becomes a posting's latest hides skills the tool cannot reach, and today's measure engine reads that absence as zero (`project.md` §Settled architecture: absent is not zero). The window stays mixed-lineage by design, because deferred postings go to the skills.
+- **Two phases with an owner gate.**
+  - Phase 1 lands only what writes nothing or survives a failed probe: the seniority core and `infer_seniority`, the Jev client, the role tournament, label rules, dry-run with the seed table loaded from a file, the gold set, and the probe.
+  - Phase 2 starts when the owner accepts the probe: migrations, the `save_enrichment` extension, writes, run records, skill edits, and the pilot.
+  - If the kill criteria fire, the seniority core and its MCP tool still stand.
 - **Provenance.** `prompt_version` is a new lineage, `classify-v<n>`, pinned once in Go and bumped by hand for any change to rules, thresholds, or question wording (`developer-guide.md` §6.2: never encode the model). `model` is the id the Jev response reports. Each run records its thresholds and the hashes of the role and specialization option sets, the seed table, and the question wording. At startup the tool warns when the seed hash differs from the last run under the same `prompt_version`.
 - **Transport: `net/http` against OpenRouter's decisions endpoint, behind an interface declared in the consuming package.** No SDK, since the endpoint is alpha. The interface lets tests use a fake. The key comes from `AI_SERVICE_KEY`, which nothing else reads today.
 - **Dry-run is the probe.** A dry-run mode runs the real pipeline, writes no classification and no run row, and emits per-posting JSONL.
@@ -55,7 +58,7 @@ Owner-requested capability. The Go enricher, `cmd/batch-enrich`, shells out to L
   - The dimension-ratchet fix.
   - Persisting required-vs-preferred skills.
   - A workflow to seed newly minted skills.
-  - Measure-engine changes. Lineage in the view plus the backfill keeps the recent window single-classifier; splitting measures by lineage is the engine's own follow-up.
+  - Lineage in `latest_classifications`, measure-engine handling of reach and lineage, and the recent-window backfill. `lineage-aware-measures` owns them, because the engine is the consumer that must act on reach.
   - Moving the existing Go integration suites to the test database.
   - An LLM fallback, which would be a new brief if the kill criteria fire.
 
@@ -107,7 +110,7 @@ Duplicate, unknown, or cross-company ids fail the whole call, as in `strip_boile
 **Re-derivation**
 - [ ] Re-derive over a prior run makes zero Jev calls. Its labels equal the new thresholds applied to that run's stored candidates, it writes under the bumped `prompt_version`, and its run record names the source run.
 
-**Writes, provenance, read model**
+**Writes and provenance**
 - [ ] A written role carries exactly its existing dimensions, and a run adds no rows to `canonical_role_dimensions`.
 - [ ] Against the test database on the action role, a classification persists each label's instrument, its candidates, its run reference, the pinned `prompt_version`, and the model id from the Jev response.
 - [ ] A `save_enrichment` call without instruments, candidates, or run id, the shape the MCP skill sends, still succeeds.
@@ -116,7 +119,6 @@ Duplicate, unknown, or cross-company ids fail the whole call, as in `strip_boile
 - [ ] A run's outcome rows account for every selected posting, and its closing counts of written, deferred, and failed match them.
 - [ ] Dry-run leaves every classification, candidate, and run table unchanged.
 - [ ] A changed seed-table hash under an unchanged `prompt_version` prints a warning, and an unchanged hash prints none.
-- [ ] `latest_classifications` returns `prompt_version`, `model`, and the run reference for both a `classify-v` row and a legacy row, and `pnpm test:db` passes.
 - [ ] The migration's own down and up files round-trip on the test database, and `action_role.sql` re-runs cleanly and grants the new run functions.
 
 ### Manual
@@ -124,13 +126,13 @@ Duplicate, unknown, or cross-company ids fail the whole call, as in `strip_boile
 - [ ] A probe dry-run over about 150 postings, sampled under the selection core's per-company cap, reports role top-1 and top-3 accuracy against the gold set, accuracy by confidence bucket, the role flip rate across two runs, per-instrument precision and recall for skills and specializations, the co-fire rate of near-synonym pairs flagged by the existing slug and name similarity, precision of non-`unknown` seniority, and cost per 1,000 postings. It passes every kill criterion.
 - [ ] A description arm writes role descriptions from one half of the probe sample and is compared with name-only on the other half. The owner decides whether a description column earns a follow-up.
 - [ ] In a Claude and a Codex session, the batch-enrich skill calls `infer_seniority` and saves its seniority and note under the bumped skill pin.
-- [ ] A pilot live run over about 40 postings shows instruments, candidates, and run references in the read model, run counts that match, and a cost within the probe's estimate. The owner runs it (`developer-guide.md` §2 Cost map).
-- [ ] After the owner-run backfill, every posting first seen in the window has a `classify-v` latest classification or a deferred or failed outcome in the backfill run.
+- [ ] No migration, `save_enrichment` change, write path, or skill edit merges before the owner accepts the probe.
+- [ ] A pilot live run over about 40 postings persists instruments, candidates, and run references, with run counts that match and a cost within the probe's estimate. The owner runs it (`developer-guide.md` §2 Cost map).
 
 ## Path
 
 - **Reuse.**
-  - `selection.Select` and its criteria, extended with the first-seen window and the deferral exclusion.
+  - `selection.Select` and its criteria, extended with the deferral exclusion.
   - `boilerplate.NewDBLoader` and `boilerplate.CleanSelected`, imported rather than shelling out to `bin/strip-boilerplate`.
   - `classify.LoadTaxonomy` and `classify.Validate`.
   - `db.Queries.SaveEnrichment`.
