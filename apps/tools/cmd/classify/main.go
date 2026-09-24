@@ -7,6 +7,8 @@
 //
 //	classify --dry-run --seed <file> [flags]   classify selected postings
 //	classify seed [--out <file>]               generate this install's skill seed (free, read-only)
+//	classify sample [--count 150]              select a probe sample (free, read-only)
+//	classify probe-report --gold <file> ...    score dry-runs against a gold set (free)
 //
 // See: agent-context/plans/in-progress/hybrid-classifier/index.md
 package main
@@ -39,8 +41,15 @@ const pingTimeout = 10 * time.Second
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	if len(os.Args) > 1 && os.Args[1] == "seed" {
-		os.Exit(runSeed(os.Args[2:]))
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "seed":
+			os.Exit(runSeed(os.Args[2:]))
+		case "sample":
+			os.Exit(runSample(os.Args[2:]))
+		case "probe-report":
+			os.Exit(runProbeReport(os.Args[2:]))
+		}
 	}
 	os.Exit(run())
 }
@@ -53,15 +62,11 @@ func runSeed(args []string) int {
 		fmt.Fprintf(os.Stderr, "[classify] startup error: %v\n", err)
 		return 2
 	}
-	_ = godotenv.Load(".env.local")
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	pool, err := openDB(ctx, "DATABASE_URL_RO")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[classify] open db: %v\n", err)
-		return 1
+	ctx, stop, pool, code := openReadOnly()
+	if code != 0 {
+		return code
 	}
+	defer stop()
 	defer pool.Close()
 
 	seed, err := generateSeed(ctx, db.New(pool), int32(cfg.CorpusDocs))
@@ -170,23 +175,38 @@ func run() int {
 	slog.Info("[classify] starting dry-run", "prompt_version", PromptVersion, "model", cfg.Model,
 		"count", cfg.Count, "concurrency", cfg.Concurrency, "out", outPath)
 
-	loader := boilerplate.NewDBLoader(q)
+	selectPostings := func(ctx context.Context) ([]selection.Posting, error) {
+		postings, _, err := selection.Select(ctx, pool, selection.Criteria{
+			Count: cfg.Count, Focus: cfg.Focus, Sort: cfg.Sort, MaxPerCompany: cfg.MaxPerCompany,
+		})
+		return postings, err
+	}
+	if cfg.SamplePath != "" {
+		ids, err := readSampleIDs(cfg.SamplePath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[classify] %v\n", err)
+			return 2
+		}
+		selectPostings = func(ctx context.Context) ([]selection.Posting, error) { return postingsByID(ctx, q, ids) }
+	}
+	var descriptions map[string]string
+	if cfg.RoleDescPath != "" {
+		if descriptions, err = readRoleDescriptions(cfg.RoleDescPath); err != nil {
+			fmt.Fprintf(os.Stderr, "[classify] %v\n", err)
+			return 2
+		}
+	}
+
 	deps := runDeps{
-		selectPostings: func(ctx context.Context) ([]selection.Posting, error) {
-			postings, _, err := selection.Select(ctx, pool, selection.Criteria{
-				Count: cfg.Count, Focus: cfg.Focus, Sort: cfg.Sort, MaxPerCompany: cfg.MaxPerCompany,
-			})
-			return postings, err
-		},
-		clean: func(ctx context.Context, companyID int64, ids []int64) ([]boilerplate.CorpusPosting, error) {
-			return boilerplate.CleanSelected(ctx, loader, companyID, ids)
-		},
-		loadTaxonomy: func(ctx context.Context) (classify.Taxonomy, error) { return classify.LoadTaxonomy(ctx, q) },
-		crossTable:   q.ListCrossTableSlugs,
-		seed:         seed,
-		dups:         dbDuplicateFinder{q: q},
-		decider:      jev.New(key),
-		now:          time.Now,
+		selectPostings:   selectPostings,
+		clean:            dbCleaner(q),
+		roleDescriptions: descriptions,
+		loadTaxonomy:     func(ctx context.Context) (classify.Taxonomy, error) { return classify.LoadTaxonomy(ctx, q) },
+		crossTable:       q.ListCrossTableSlugs,
+		seed:             seed,
+		dups:             dbDuplicateFinder{q: q},
+		decider:          jev.New(key),
+		now:              time.Now,
 	}
 
 	summary, err := dryRun(ctx, cfg, deps, f)
@@ -204,6 +224,29 @@ func run() int {
 		return 130
 	}
 	return 0
+}
+
+// openReadOnly loads .env.local, installs signal handling, and opens the
+// read-only pool, for the subcommands that only read. A non-zero code means
+// setup failed and was reported.
+func openReadOnly() (context.Context, context.CancelFunc, *sql.DB, int) {
+	_ = godotenv.Load(".env.local")
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	pool, err := openDB(ctx, "DATABASE_URL_RO")
+	if err != nil {
+		stop()
+		fmt.Fprintf(os.Stderr, "[classify] open db: %v\n", err)
+		return nil, nil, nil, 1
+	}
+	return ctx, stop, pool, 0
+}
+
+// dbCleaner strips boilerplate against each company's full corpus.
+func dbCleaner(q *db.Queries) func(context.Context, int64, []int64) ([]boilerplate.CorpusPosting, error) {
+	loader := boilerplate.NewDBLoader(q)
+	return func(ctx context.Context, companyID int64, ids []int64) ([]boilerplate.CorpusPosting, error) {
+		return boilerplate.CleanSelected(ctx, loader, companyID, ids)
+	}
 }
 
 // openDB opens and pings the pool named by env.

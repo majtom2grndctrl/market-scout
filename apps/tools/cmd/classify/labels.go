@@ -114,6 +114,12 @@ type dbDuplicateFinder struct {
 }
 
 func (f dbDuplicateFinder) nearDuplicatePairs(ctx context.Context, terms []label) ([][2]int, error) {
+	return f.pairsAt(ctx, terms, saveDupThreshold)
+}
+
+// pairsAt returns the pairs among terms whose slug or name similarity reaches
+// threshold.
+func (f dbDuplicateFinder) pairsAt(ctx context.Context, terms []label, threshold string) ([][2]int, error) {
 	type term struct {
 		Slug string `json:"slug"`
 		Name string `json:"name"`
@@ -126,7 +132,7 @@ func (f dbDuplicateFinder) nearDuplicatePairs(ctx context.Context, terms []label
 	if err != nil {
 		return nil, err
 	}
-	rows, err := f.q.ListNearDuplicatePairs(ctx, db.ListNearDuplicatePairsParams{Terms: raw, Threshold: saveDupThreshold})
+	rows, err := f.q.ListNearDuplicatePairs(ctx, db.ListNearDuplicatePairsParams{Terms: raw, Threshold: threshold})
 	if err != nil {
 		return nil, err
 	}

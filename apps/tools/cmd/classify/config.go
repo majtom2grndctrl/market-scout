@@ -57,6 +57,12 @@ type Config struct {
 	Model         string
 	OutPath       string
 	SeedPath      string
+	// SamplePath classifies exactly the postings in a `classify sample` file
+	// instead of selecting, so repeated runs and arms cover the same set.
+	SamplePath string
+	// RoleDescPath offers roles with descriptions: the probe's description
+	// arm. Without it roles are offered by name only.
+	RoleDescPath string
 }
 
 // ParseFlags parses and validates the command line.
@@ -71,6 +77,8 @@ func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 	fs.IntVar(&cfg.Concurrency, "concurrency", 8, "postings classified at once")
 	fs.StringVar(&cfg.Model, "model", DefaultModel, "Jev model slug to request")
 	fs.StringVar(&cfg.OutPath, "out", "", "dry-run JSONL path (default agent-output/classify/dry-run-<timestamp>.jsonl)")
+	fs.StringVar(&cfg.SamplePath, "sample", "", "classify the postings in a `classify sample` file instead of selecting")
+	fs.StringVar(&cfg.RoleDescPath, "role-descriptions", "", "JSON object of role slug → description (probe description arm only)")
 	fs.StringVar(&cfg.SeedPath, "seed", "", "skill seed file from `classify seed` (required until the seed table lands)")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err

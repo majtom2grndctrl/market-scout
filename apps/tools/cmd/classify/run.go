@@ -26,8 +26,10 @@ type runDeps struct {
 	crossTable     func(ctx context.Context) ([]string, error)
 	seed           skillseed.Seed
 	dups           duplicateFinder
-	decider        decider
-	now            func() time.Time
+	// roleDescriptions, by slug, turn on the probe's description arm.
+	roleDescriptions map[string]string
+	decider          decider
+	now              func() time.Time
 }
 
 // JSONL record types. The first line is the run header, one line follows per
@@ -45,7 +47,10 @@ type runHeader struct {
 	SpecOptions    int        `json:"specialization_options"`
 	SkillNoul      int        `json:"skill_noul_options"`
 	SkillLexical   int        `json:"skill_lexical_entries"`
-	SeedHash       string     `json:"seed_hash"`
+	Hashes         runHashes  `json:"hashes"`
+	// RoleDescriptions hashes the description arm's input; empty when roles
+	// are offered by name only, as the contract offers them.
+	RoleDescriptions string `json:"role_descriptions_hash,omitempty"`
 }
 
 type postingLine struct {
@@ -80,6 +85,11 @@ func dryRun(ctx context.Context, cfg Config, deps runDeps, w io.Writer) (runSumm
 	if err != nil {
 		return runSummary{}, fmt.Errorf("building options: %w", err)
 	}
+	opts.roles.descriptions = deps.roleDescriptions
+	var descHash string
+	if len(deps.roleDescriptions) > 0 {
+		descHash = hashOf(deps.roleDescriptions)
+	}
 
 	selected, err := deps.selectPostings(ctx)
 	if err != nil {
@@ -96,7 +106,8 @@ func dryRun(ctx context.Context, cfg Config, deps runDeps, w io.Writer) (runSumm
 		StartedAt: started, Thresholds: pinnedThresholds, Selected: len(selected),
 		RoleOptions: len(opts.roles.byName), RoleChunks: len(opts.roles.chunks),
 		SpecOptions: len(opts.specs), SkillNoul: len(opts.skills),
-		SkillLexical: len(opts.seed.Entries) - len(opts.skills), SeedHash: opts.seed.Hash(),
+		SkillLexical: len(opts.seed.Entries) - len(opts.skills), Hashes: computeHashes(opts),
+		RoleDescriptions: descHash,
 	}); err != nil {
 		return runSummary{}, err
 	}

@@ -89,8 +89,8 @@ type postingResult struct {
 	SeniorityNote       string               `json:"seniority_note,omitempty"`
 	SeniorityUncovered  bool                 `json:"seniority_uncovered,omitempty"`
 	SeniorityCandidates []seniorityCandidate `json:"seniority_candidates,omitempty"`
-	Model            string       `json:"model,omitempty"`
-	RequestKeys      []string     `json:"request_keys,omitempty"`
+	Model               string               `json:"model,omitempty"`
+	RequestKeys         []string             `json:"request_keys,omitempty"`
 }
 
 // classifier holds what every posting in a run shares: the decider, the option

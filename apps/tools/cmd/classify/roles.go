@@ -32,6 +32,9 @@ type roleOption struct {
 type roleOptions struct {
 	chunks [][]roleOption
 	byName map[string]roleOption
+	// descriptions, keyed by slug, are set only for the probe's description
+	// arm. The contract offers roles by name alone.
+	descriptions map[string]string
 }
 
 // newRoleOptions reads every live role into stable chunks: sorted by slug and
@@ -71,11 +74,15 @@ func newRoleOptions(tax classify.Taxonomy) (roleOptions, error) {
 	return roleOptions{chunks: chunks, byName: byName}, nil
 }
 
-// choiceQuestion offers roles by name alone, plus the abstain option.
-func choiceQuestion(instructions string, roles []roleOption) jev.Question {
+// choiceQuestion offers roles by name, plus the abstain option. A role gets a
+// description only in the description arm.
+func choiceQuestion(instructions string, roles []roleOption, descriptions map[string]string) jev.Question {
 	criteria := make(map[string]*string, len(roles)+1)
 	for _, r := range roles {
 		criteria[r.Name] = nil
+		if d, ok := descriptions[r.Slug]; ok {
+			criteria[r.Name] = ptr(d)
+		}
 	}
 	criteria[noneFit] = noneFitDescription
 	return jev.Question{Type: jev.TypeChoice, Instructions: instructions, Criteria: criteria}
@@ -91,7 +98,7 @@ const pass2QuestionID = "role_pass2"
 func pass1Request(model, state string, opts roleOptions, extra map[string]jev.Question) jev.Request {
 	qs := make(map[string]jev.Question, len(opts.chunks)+len(extra))
 	for i, c := range opts.chunks {
-		qs[pass1QuestionID(i)] = choiceQuestion(rolePass1Instructions, c)
+		qs[pass1QuestionID(i)] = choiceQuestion(rolePass1Instructions, c, opts.descriptions)
 	}
 	maps.Copy(qs, extra)
 	return jev.Request{Model: model, State: state, Questions: qs}
@@ -165,7 +172,7 @@ func runTournament(ctx context.Context, d *sharedDecider, model, state string, o
 	}
 	leaders := pass1Leaders(p1, opts)
 	p2Req := jev.Request{Model: model, State: state, Questions: map[string]jev.Question{
-		pass2QuestionID: choiceQuestion(rolePass2Instructions, leaders),
+		pass2QuestionID: choiceQuestion(rolePass2Instructions, leaders, opts.descriptions),
 	}}
 	p2, key2, err := d.decide(ctx, p2Req)
 	if err != nil {

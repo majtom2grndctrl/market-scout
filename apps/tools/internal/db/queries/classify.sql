@@ -57,3 +57,24 @@ LEFT JOIN skills sk ON sk.id = jps.skill_id
 GROUP BY lc.job_posting_id, lc.classified_at, snap.description_text
 ORDER BY lc.classified_at DESC, lc.job_posting_id DESC
 LIMIT @max_docs::int;
+
+-- name: ListPostingsForClassify :many
+-- Named postings with their latest snapshot's title and description, in the
+-- shape selection returns. cmd/classify reads a fixed probe sample through it,
+-- so repeated runs and arms classify exactly the same postings.
+SELECT jp.id AS posting_id,
+       jp.company_id,
+       c.name AS company_name,
+       coalesce(s.title, '')::text AS title,
+       s.description_text::text AS description_text
+FROM job_postings jp
+JOIN companies c ON c.id = jp.company_id
+JOIN LATERAL (
+    SELECT title, description_text
+    FROM posting_snapshots
+    WHERE job_posting_id = jp.id
+    ORDER BY fetched_at DESC
+    LIMIT 1
+) s ON s.description_text IS NOT NULL
+WHERE jp.id = ANY(@ids::bigint[])
+ORDER BY jp.id;

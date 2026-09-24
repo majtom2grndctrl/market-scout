@@ -100,6 +100,65 @@ func (q *Queries) ListNearDuplicatePairs(ctx context.Context, arg ListNearDuplic
 	return items, nil
 }
 
+const listPostingsForClassify = `-- name: ListPostingsForClassify :many
+SELECT jp.id AS posting_id,
+       jp.company_id,
+       c.name AS company_name,
+       coalesce(s.title, '')::text AS title,
+       s.description_text::text AS description_text
+FROM job_postings jp
+JOIN companies c ON c.id = jp.company_id
+JOIN LATERAL (
+    SELECT title, description_text
+    FROM posting_snapshots
+    WHERE job_posting_id = jp.id
+    ORDER BY fetched_at DESC
+    LIMIT 1
+) s ON s.description_text IS NOT NULL
+WHERE jp.id = ANY($1::bigint[])
+ORDER BY jp.id
+`
+
+type ListPostingsForClassifyRow struct {
+	PostingID       int64
+	CompanyID       int64
+	CompanyName     string
+	Title           string
+	DescriptionText string
+}
+
+// Named postings with their latest snapshot's title and description, in the
+// shape selection returns. cmd/classify reads a fixed probe sample through it,
+// so repeated runs and arms classify exactly the same postings.
+func (q *Queries) ListPostingsForClassify(ctx context.Context, ids []int64) ([]ListPostingsForClassifyRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPostingsForClassify, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPostingsForClassifyRow
+	for rows.Next() {
+		var i ListPostingsForClassifyRow
+		if err := rows.Scan(
+			&i.PostingID,
+			&i.CompanyID,
+			&i.CompanyName,
+			&i.Title,
+			&i.DescriptionText,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSeedCorpus = `-- name: ListSeedCorpus :many
 SELECT lc.job_posting_id,
        snap.description_text::text AS description_text,
