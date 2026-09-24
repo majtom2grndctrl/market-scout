@@ -46,7 +46,11 @@ type label struct {
 }
 
 // Label instruments, as the boundary inventory names them.
-const methodJev = "jev"
+const (
+	methodJev     = "jev"
+	methodLexical = "lexical"
+	methodRule    = "rule"
+)
 
 // postingResult is everything a run learned about one posting. Candidates are
 // kept on deferred postings too, so a later re-derive can move a floor either

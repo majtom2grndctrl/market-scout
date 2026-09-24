@@ -26,10 +26,24 @@ type thresholds struct {
 	// RoleFloor is the pass-2 probability the top role must reach to be
 	// written. Below it the posting is deferred.
 	RoleFloor float64 `json:"role_floor"`
+	// Specializations and Skills keep noul labels; Skills covers only the
+	// model-judged skills, since lexical matches carry no threshold.
+	Specializations labelRule `json:"specializations"`
+	Skills          labelRule `json:"skills"`
+	// SeniorityFloor is the probability a candidate phrase must reach to be
+	// judged acting as a level.
+	SeniorityFloor float64 `json:"seniority_floor"`
+	// RecordingFloor is the lowest candidate probability stored as evidence.
+	// Re-derive cannot move a floor below it.
+	RecordingFloor float64 `json:"recording_floor"`
 }
 
 var pinnedThresholds = thresholds{
-	RoleFloor: 0.40,
+	RoleFloor:       0.40,
+	Specializations: labelRule{Floor: 0.50, Relative: 0.5, Cap: 5},
+	Skills:          labelRule{Floor: 0.50, Relative: 0.5, Cap: 8},
+	SeniorityFloor:  0.50,
+	RecordingFloor:  0.05,
 }
 
 // Config is the parsed command line.
