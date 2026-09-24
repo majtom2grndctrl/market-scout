@@ -25,6 +25,7 @@ Take your side, plus **Either side**. Skip the other.
 - **Charts — which library, why every mark is hand-rendered** → `agent-context/lib/project.md` §Settled architecture *(d3 supplies scales and geometry; no chart component library)*
 - **Geography / `market` dimension, why location is curated not raw** → `agent-context/lib/project.md` §Settled architecture *(curated market dictionary; `unmapped` is an explicit value; no coverage denominator)*
 - **Profile, résumé onboarding, pinned roles, title heads as labels** → `agent-context/lib/project.md` §Settled architecture *(pins are canonical roles; extraction is reviewed before save)*
+- **App-owned state, the `app` schema, the app client** → `agent-context/lib/web-guide.md` §Data access *(read-only role cannot reach it; never read app state through the read-only client)*
 - **Dashboard widgets — how they are chosen, where models may enter** → `agent-context/lib/project.md` §Settled architecture *(detectors propose, ranker chooses; models narrate, never compute)*
 - **Chat surface, streaming responses, when a route handler is allowed** → `agent-context/lib/project.md` §Settled architecture *(streaming is the one exception; request-response stays in Server Components)*
 
@@ -41,6 +42,7 @@ Take your side, plus **Either side**. Skip the other.
 - **pgvector / semantic search** → `agent-context/lib/project.md` §The database as AI agent knowledge store
 - **Inspecting enrichment / classification data quality** → `agent-context/lib/developer-guide.md` §6.2
 - **Company watchlist (active scrape run, candidates, onboarding)** → `agent-context/lib/watchlist.md`
+- **Merging or retiring a role, specialization, or skill; a new table referencing taxonomy** → `agent-context/lib/project.md` §Settled architecture *(owner-only repair functions are the only path; new references extend them)*
 - **Trust tiers for agent-written data** → `agent-context/lib/project.md` §Evidence trust tiers
 
 **Either side**
