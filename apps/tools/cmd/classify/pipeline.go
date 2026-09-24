@@ -83,6 +83,12 @@ type postingResult struct {
 	RoleDistribution []scoredRole `json:"role_distribution,omitempty"`
 	NoneFit          float64      `json:"none_fit_probability"`
 	Candidates       []candidate  `json:"candidates,omitempty"`
+	// Seniority is set on every posting that reaches its question, deferred
+	// ones included; SeniorityNote is v9's evidence line, empty for unknown.
+	Seniority           string               `json:"seniority,omitempty"`
+	SeniorityNote       string               `json:"seniority_note,omitempty"`
+	SeniorityUncovered  bool                 `json:"seniority_uncovered,omitempty"`
+	SeniorityCandidates []seniorityCandidate `json:"seniority_candidates,omitempty"`
 	Model            string       `json:"model,omitempty"`
 	RequestKeys      []string     `json:"request_keys,omitempty"`
 }
@@ -132,10 +138,26 @@ func (c *classifier) classify(ctx context.Context, p posting) postingResult {
 	res.NoneFit = role.NoneFit
 	res.RequestKeys = role.RequestKeys
 
+	sen, err := judgeSeniority(ctx, c.decider, c.model, p, c.thresholds.SeniorityFloor)
+	if err != nil {
+		return fail(err.Error())
+	}
+	res.Seniority, res.SeniorityNote, res.SeniorityUncovered = sen.Result.Value, sen.Result.Note(), sen.Result.Uncovered
+	for _, sc := range sen.Candidates {
+		if sc.Probability >= c.thresholds.RecordingFloor {
+			res.SeniorityCandidates = append(res.SeniorityCandidates, sc)
+		}
+	}
+	responseModels := role.Models
+	if sen.Model != "" {
+		responseModels = append(responseModels, sen.Model)
+		res.RequestKeys = append(res.RequestKeys, sen.RequestKey)
+	}
+
 	// model is the id each response reports. One classification row carries
 	// one model, so a posting answered by two dated models cannot be recorded
 	// honestly and is failed for the next run to retry.
-	models := slices.Compact(slices.Sorted(slices.Values(role.Models)))
+	models := slices.Compact(slices.Sorted(slices.Values(responseModels)))
 	if len(models) != 1 {
 		return fail(fmt.Sprintf("%s: %s", reasonMixedModels, strings.Join(models, ", ")))
 	}

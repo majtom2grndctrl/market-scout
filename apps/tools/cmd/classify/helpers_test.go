@@ -28,6 +28,8 @@ import (
 //   - "FAIL" returns an error
 //   - "NOUL:<slug>" answers that term's noul question 0.9, every other noul
 //     0.02; "NOUL:<slug>=0.6" answers it 0.6
+//   - a seniority question is judged a level (0.9) unless its passage contains
+//     a word named by "NOTLEVEL:<word>", which judges it not a level (0.02)
 type fakeDecider struct {
 	mu       sync.Mutex
 	requests []jev.Request
@@ -49,7 +51,7 @@ func (f *fakeDecider) Decide(_ context.Context, req jev.Request) (jev.Response, 
 	resp := jev.Response{Model: f.model, Answers: map[string]jev.Answer{}, Usage: jev.Usage{InputTokens: 100, Cost: 0.0000042}}
 	for id, q := range req.Questions {
 		if q.Type == jev.TypeNoul {
-			resp.Answers[id] = fakeNoul(req.State, id)
+			resp.Answers[id] = fakeNoul(req.State, id, q.Instructions)
 			continue
 		}
 		resp.Answers[id] = fakeChoice(req.State, q)
@@ -57,7 +59,16 @@ func (f *fakeDecider) Decide(_ context.Context, req jev.Request) (jev.Response, 
 	return resp, nil
 }
 
-func fakeNoul(state, id string) jev.Answer {
+func fakeNoul(state, id, instructions string) jev.Answer {
+	if strings.HasPrefix(id, "seniority_") {
+		p := 0.9
+		for _, f := range strings.Fields(state) {
+			if w, ok := strings.CutPrefix(f, "NOTLEVEL:"); ok && strings.Contains(instructions, w) {
+				p = 0.02
+			}
+		}
+		return jev.Answer{Type: jev.TypeNoul, Noul: &p}
+	}
 	_, slug, _ := strings.Cut(id, ":")
 	p := 0.02
 	for _, f := range strings.Fields(state) {

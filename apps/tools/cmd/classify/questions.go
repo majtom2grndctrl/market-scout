@@ -26,6 +26,20 @@ func skillInstructions(name string) string {
 	return fmt.Sprintf("Does this job posting ask the candidate for %s?", name)
 }
 
+// seniorityInstructions asks whether one level phrase, read in its sentence,
+// states the level of the job. v9's Step 1: the word counts only when it acts
+// as a level ("Senior Engineer"), not when it describes something else
+// ("partner with senior stakeholders", "Chief of Staff").
+func seniorityInstructions(phrase, context string) string {
+	return fmt.Sprintf("In the passage %q, does %q state the seniority level of the job this posting is hiring for?", context, phrase)
+}
+
+// seniorityState is what the seniority questions read: the title, then the
+// cleaned description.
+func seniorityState(p posting) string {
+	return "Job title: " + p.Title + "\n\n" + p.Description
+}
+
 // maskPlaceholder replaces a masked title. It holds no letters, so it can
 // never re-form a title or collide with one.
 const maskPlaceholder = "[—]"

@@ -405,3 +405,68 @@ func TestDimensions(t *testing.T) {
 		}
 	})
 }
+
+func TestSeniority_Pipeline(t *testing.T) {
+	tax := taxonomyWithRoles(60)
+	cases := []struct {
+		name, title, desc string
+		value, note       string
+	}{
+		{"a title level word acting as a level", "Senior Widget Engineer",
+			"hiring a Job Family 001. You will partner with senior stakeholders. NOTLEVEL:stakeholders",
+			"senior", `seniority[step1-title]: "Senior"`},
+		{"a body level word acting as a level", "Widget Engineer",
+			"hiring a Job Family 001 at the Staff level for our platform.",
+			"staff", `seniority[step1-body]: "Staff"`},
+		{"senior stakeholders is judged not a level", "Widget Engineer",
+			"hiring a Job Family 001. You will partner with senior stakeholders. NOTLEVEL:stakeholders",
+			"unknown", ""},
+		{"Chief of Staff carries no level", "Chief of Staff",
+			"hiring a Job Family 001 to run the office. NOTLEVEL:Chief",
+			"unknown", ""},
+		{"no candidate is unknown with no note", "Widget Engineer",
+			"hiring a Job Family 001 to build widgets.",
+			"unknown", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, _, _ := runDry(t, testDeps(tax, newFakeDecider(), sel(1, 1, tc.title, tc.desc)))
+			r := got[1]
+			if r.Seniority != tc.value || r.SeniorityNote != tc.note {
+				t.Errorf("seniority = %q, note %q; want %q, %q", r.Seniority, r.SeniorityNote, tc.value, tc.note)
+			}
+		})
+	}
+
+	t.Run("seniority reads the title in its own request; the role requests never do", func(t *testing.T) {
+		d := newFakeDecider()
+		runDry(t, testDeps(tax, d, sel(1, 1, "Senior Widget Engineer", "hiring a Job Family 001 as a Senior Widget Engineer.")))
+		if d.calls() != 3 {
+			t.Fatalf("sent %d requests, want pass 1, pass 2, and seniority", d.calls())
+		}
+		for _, r := range d.requests {
+			_, isSeniority := r.Questions["seniority_001"]
+			hasTitle := strings.Contains(strings.ToLower(r.State), "widget engineer")
+			if isSeniority != hasTitle {
+				t.Errorf("request with seniority=%v carries the title=%v: %q", isSeniority, hasTitle, r.State)
+			}
+		}
+	})
+
+	t.Run("the same phrase in the same sentence is asked once", func(t *testing.T) {
+		d := newFakeDecider()
+		runDry(t, testDeps(tax, d, sel(1, 1, "Widget Engineer", "hiring a Job Family 001. Lead, Lead, Lead. Lead, Lead, Lead.")))
+		var seniorityReq int
+		for _, r := range d.requests {
+			if _, ok := r.Questions["seniority_001"]; ok {
+				seniorityReq++
+				if len(r.Questions) != 1 {
+					t.Errorf("asked %d questions for one repeated phrase", len(r.Questions))
+				}
+			}
+		}
+		if seniorityReq != 1 {
+			t.Errorf("%d seniority requests", seniorityReq)
+		}
+	})
+}
