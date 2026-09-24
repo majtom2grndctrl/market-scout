@@ -37,11 +37,11 @@ apps/web/
 
 ## Data access
 
-Server Components query Postgres directly with the read-only `DATABASE_URL_RO`. `lib/db/client.ts` owns the pooled `postgres` client and marks reads dynamic before opening it. Do not import it from Client Components.
+Server Components query Postgres directly with the read-only `DATABASE_URL_RO`, except for app-owned state (below). `lib/db/client.ts` owns the pooled `postgres` client and marks reads dynamic before opening it. Do not import it from Client Components.
 
 Keep read queries in `lib/db/`. A query accepts a SQL client so DB tests can run the same read through the read-only role; the Server Component wrapper obtains that client. SQL views define derived state such as open postings. Consumers do not recreate those rules.
 
-Route handlers are reserved for streaming responses. A normal request-response read belongs in a Server Component. First app-owned writes use Server Actions and a dedicated role; do not broaden the read-only connection.
+Route handlers are reserved for streaming responses. A normal request-response read belongs in a Server Component. App-owned state — the profile — lives in the private `app` schema, which the read-only role cannot reach. It is read and written through a separate client on the app role; Server Actions write through it, and no Client Component imports it. Do not broaden the read-only connection, and do not read app-owned state through it.
 
 Raw location text is excluded from analytical groupings and filters. Curated `market` is the supported location dimension. It maps observed values through the read model and preserves `unmapped` as an explicit result. Compensation is excluded from the analytical vocabulary.
 
