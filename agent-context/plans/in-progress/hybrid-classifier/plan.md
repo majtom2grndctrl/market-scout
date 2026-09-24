@@ -1,7 +1,7 @@
 # hybrid-classifier — plan of record
 
 mode: resumable
-status: proposed
+status: approved
 read at: db1afeb
 
 No source under `apps/tools/` changed between the brief's read-at (2bde04f) and db1afeb. Every symbol the Decisions and Path cite was re-read at db1afeb and exists as described: `selection.Select`/`Criteria.Force`, `boilerplate.NewDBLoader`/`CleanSelected`, `classify.LoadTaxonomy`/`Validate`, `db.Queries.SaveEnrichment`, `validateProvenance`/`buildPayload` in `cmd/mcp/save_enrichment.go`, the `mcp.save_enrichment` advisory-lock wrapper (000026) over `save_enrichment_unlocked` (000043), its Phase C within-payload near-duplicate drop (`c_payload_dup_at` 0.85 on the greater of slug and name `similarity()`), its `empty_dimensions` check, `fetch_runs` (000005), `title_seniority_seeds` (000036), the per-function grant blocks in `action_role.sql`, `apps/web/lib/db/test-dsn.ts`, and `AI_SERVICE_KEY` in `.env.local` (read by nothing).
