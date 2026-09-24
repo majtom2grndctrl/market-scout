@@ -7,7 +7,7 @@
 # to recompile — it tracks transitive source deps correctly, which a Makefile
 # prerequisite list does not. A no-op `go build` is near-instant.
 
-CMDS := fetcher migrate onboard batch-enrich strip-boilerplate mcp
+CMDS := fetcher migrate onboard batch-enrich strip-boilerplate mcp classify
 
 .PHONY: build vet check clean $(CMDS)
 

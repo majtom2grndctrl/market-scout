@@ -22,6 +22,12 @@ No source under `apps/tools/` changed between the brief's read-at (2bde04f) and 
 - Near-duplicate pre-dedup uses the database's own `similarity()` over the kept labels only (a read-only sqlc query), so the tool's test matches Phase C exactly instead of reimplementing pg_trgm in Go.
 - Where candidates are written — a live save sends its run id, candidates, per-label method, and expected-latest precondition in the `save_enrichment` payload, and the function records the `written` outcome and its candidates in the same transaction. Deferred, skipped, and failed outcomes go through a new approved `mcp` function. The MCP handler's payload builder whitelists fields, so agent-sent extras never reach the function.
 
+## Implementation notes
+
+- Title masking has no word edges. Stripped HTML glues words ("Founding Software EngineerYou'll") and longer forms carry the title ("software engineering"); both leaked past an edge-bounded match on real data. The mask replaces title text wherever it appears, so "software engineering" becomes "[—]ing".
+- Usage decoding reads `input_tokens`, `prompt_tokens`, and `cost` because the alpha endpoint's usage field names are undocumented. Task 2 confirms which the endpoint sends.
+- Dry-run connects on `DATABASE_URL_RO`; it never needs write access.
+
 ## Owner gate
 
 Probe acceptance: *not yet recorded.* No commit touching `apps/tools/internal/db/migrations/`, `cmd/mcp/save_enrichment.go`, or any write path lands before this line records it, with date and commit.
@@ -77,7 +83,7 @@ Commits: one per completed task, carrying its `plan.md` row update. Every paid c
 
 | # | Task | Owner | Depends on | Status |
 |---|---|---|---|---|
-| 1 | **First slice.** `internal/enrich/jev` client: plain `net/http`, the decisions request and response types, `retry-after` retries on 429 and 529, typed errors. `cmd/classify` holds the decider interface, title masking, the role tournament, per-run request sharing keyed on whitespace-stripped state and questions, and a dry-run over `selection.Select` plus `boilerplate.CleanSelected` that emits JSONL. Fake decider and `httptest`. AC R1, R2, A2, A3; R3, A1, and W10 in unit form | integrating executor | — | |
+| 1 | **First slice.** `internal/enrich/jev` client: plain `net/http`, the decisions request and response types, `retry-after` retries on 429 and 529, typed errors. `cmd/classify` holds the decider interface, title masking, the role tournament, per-run request sharing keyed on whitespace-stripped state and questions, and a dry-run over `selection.Select` plus `boilerplate.CleanSelected` that emits JSONL. Fake decider and `httptest`. AC R1, R2, A2, A3; R3, A1, and W10 in unit form | integrating executor | — | done: `go test -race ./cmd/classify ./internal/enrich/jev ./internal/enrich/seniority` — `TestMaskTitle`, `TestRoleTournament` (incl. P14), `TestRoleDefer`, `TestPostingAtomicity`, `TestRequestSharing` (P5–P7), `TestDryRun_JSONL`, `TestClient_Retry`. Free offline check on the dev DB (read-only role, no Jev calls): selection and boilerplate reads work; 291 roles → 6 chunks; masked states 0.5k–11k chars; 0 title leaks over 300 postings (117 had the title in the body) |
 | 2 | **First-slice check.** A paid dry-run over about 10 postings: request shape accepted, context budget, dated model id reported, and role answers read against the full taxonomy. Results recorded here. Stop and report if the endpoint, budget, or accuracy premise fails | owner (command supplied) | 1 | |
 | 3 | **Label rules.** Floor, half-of-top, and cap; recording floor; near-duplicate pre-dedup through the database's `similarity()`; zero survivors allowed. AC L1, L3, L4; L2 in unit form | integrating executor | 2 | |
 | 4 | **Skill seed and specializations.** `internal/enrich/skillseed`: generator from live skills (lexical aliases, `noul` head by link mass, curated context rules for short names), lexical matcher, seed file I/O for phase 1. Specialization `noul` over every live specialization. AC L5, L6 (L6's database half lands after Task 9) | integrating executor | 3 | |
