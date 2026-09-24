@@ -205,3 +205,24 @@ func readRoleDescriptions(path string) (map[string]string, error) {
 	}
 	return m, nil
 }
+
+func writeJSONFile(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encoding %s: %w", path, err)
+	}
+	return os.WriteFile(path, append(b, '\n'), 0o644)
+}
+
+// readJSONArray decodes a file holding one JSON array of T.
+func readJSONArray[T any](path string) ([]T, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	var out []T
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, fmt.Errorf("decoding %s: %w", path, err)
+	}
+	return out, nil
+}

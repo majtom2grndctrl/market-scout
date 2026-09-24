@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -174,5 +175,50 @@ func TestProbeReport(t *testing.T) {
 	}
 	if !strings.Contains(rep.markdown(), "Kill criteria: STOP") {
 		t.Error("report does not lead with the STOP verdict")
+	}
+}
+
+func TestGoldMerge(t *testing.T) {
+	sample := []sampleLine{{PostingID: 1}, {PostingID: 2}, {PostingID: 3}}
+	l := func(id int64, who, role, sen string, skills ...string) labelLine {
+		return labelLine{PostingID: id, Labeler: who, Role: role, RoleUncovered: role == "", Seniority: sen, Skills: skills}
+	}
+	labels := []labelLine{
+		l(1, "opus", "designer", "senior", "figma", "sql"), l(1, "sonnet", "designer", "senior", "figma"),
+		l(2, "opus", "analyst", "unknown"), l(2, "sonnet", "engineer", "unknown"),
+		l(3, "opus", "", "mid"), l(3, "sonnet", "", "senior"),
+	}
+
+	gold, open, err := mergeLabels(sample, labels, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(gold) != 1 || len(open) != 2 {
+		t.Fatalf("gold %d, open %d; want 1 agreed and 2 to settle", len(gold), len(open))
+	}
+	if !open[0].Role || open[0].Seniority || open[1].Role || !open[1].Seniority {
+		t.Errorf("disagreement flags = %+v / %+v", open[0], open[1])
+	}
+	g := gold[0]
+	if g.Role != "designer" || !*g.RoleAgreed || !slices.Equal(g.Skills, []string{"figma"}) || !slices.Equal(g.SkillsAny, []string{"figma", "sql"}) {
+		t.Errorf("agreed gold = %+v", g)
+	}
+
+	gold, open, _ = mergeLabels(sample, labels, map[int64]decision{
+		2: {PostingID: 2, Role: "engineer"},
+		3: {PostingID: 3, Seniority: "mid"},
+	})
+	if len(open) != 0 || len(gold) != 3 {
+		t.Fatalf("after decisions: gold %d, open %d", len(gold), len(open))
+	}
+	if gold[1].Role != "engineer" || *gold[1].RoleAgreed {
+		t.Errorf("settled role = %+v", gold[1])
+	}
+	if !gold[2].RoleUncovered || gold[2].Seniority != "mid" || !*gold[2].RoleAgreed {
+		t.Errorf("agreed-uncovered, settled seniority = %+v", gold[2])
+	}
+
+	if _, _, err := mergeLabels(sample, labels[:5], nil); err == nil {
+		t.Error("merged a posting with one label")
 	}
 }

@@ -20,14 +20,29 @@ import (
 // whose job no live role fits, where deferring is the right answer.
 // RoleAgreed records whether the two labelers agreed on the role before the
 // owner settled it; its mean is the gold set's own agreement.
+//
+// Specializations and Skills are the labels both labelers gave, and recall is
+// scored against them; the Any sets are the labels either gave, and precision
+// is scored against those. Tags are not adjudicated one by one, so the gold
+// for them is a band, not a point, and the report says so.
 type goldLine struct {
-	PostingID       int64    `json:"posting_id"`
-	Role            string   `json:"role"`
-	RoleUncovered   bool     `json:"role_uncovered"`
-	Specializations []string `json:"specializations"`
-	Skills          []string `json:"skills"`
-	Seniority       string   `json:"seniority"`
-	RoleAgreed      *bool    `json:"role_agreed"`
+	PostingID          int64    `json:"posting_id"`
+	Role               string   `json:"role"`
+	RoleUncovered      bool     `json:"role_uncovered"`
+	Specializations    []string `json:"specializations"`
+	SpecializationsAny []string `json:"specializations_any,omitempty"`
+	Skills             []string `json:"skills"`
+	SkillsAny          []string `json:"skills_any,omitempty"`
+	Seniority          string   `json:"seniority"`
+	RoleAgreed         *bool    `json:"role_agreed"`
+}
+
+// anyOr returns the either-labeler set when the gold file carries one.
+func anyOr(anySet, agreed []string) []string {
+	if anySet != nil {
+		return anySet
+	}
+	return agreed
 }
 
 // runLine decodes any line of a dry-run file.
@@ -98,6 +113,7 @@ type probeReport struct {
 	SpecP, SpecR          ratio
 	SkillP, SkillR        map[string]*[2]ratio // method → precision, recall
 	SeniorityP            ratio
+	SeniorityFromTitle    int
 	SeniorityUncovered    int
 	Cofire                ratio
 	CofirePairs           int
@@ -193,7 +209,8 @@ func scoreProbe(in probeInputs) (probeReport, error) {
 		}
 
 		if r.Outcome == outcomeWouldWrite {
-			scoreSet(&rep.SpecP, &rep.SpecR, slugSet(r.Specializations, ""), setOf(g.Specializations), nil)
+			scoreSet(&rep.SpecP, nil, slugSet(r.Specializations, ""), setOf(anyOr(g.SpecializationsAny, g.Specializations)), nil)
+			scoreSet(nil, &rep.SpecR, slugSet(r.Specializations, ""), setOf(g.Specializations), nil)
 			for _, m := range []string{methodLexical, methodJev} {
 				if rep.SkillP[m] == nil {
 					rep.SkillP[m], rep.SkillR[m] = &[2]ratio{}, &[2]ratio{}
@@ -205,9 +222,15 @@ func scoreProbe(in probeInputs) (probeReport, error) {
 				if in.seed == nil {
 					reach = nil
 				}
-				scoreSet(&rep.SkillP[m][0], &rep.SkillR[m][0], slugSet(r.Skills, m), setOf(g.Skills), reach)
+				scoreSet(&rep.SkillP[m][0], nil, slugSet(r.Skills, m), setOf(anyOr(g.SkillsAny, g.Skills)), reach)
+				scoreSet(nil, &rep.SkillR[m][0], slugSet(r.Skills, m), setOf(g.Skills), reach)
 			}
-			if r.Seniority != "" && r.Seniority != seniority.Unknown && g.Seniority != "" {
+			// Gold labelers never saw the title, so only body-sourced seniority
+			// can be checked against them; title-sourced answers are counted.
+			switch {
+			case strings.HasPrefix(r.SeniorityNote, "seniority[step1-title]"):
+				rep.SeniorityFromTitle++
+			case r.Seniority != "" && r.Seniority != seniority.Unknown && g.Seniority != "":
 				rep.SeniorityP.Of++
 				if r.Seniority == g.Seniority {
 					rep.SeniorityP.Hit++
@@ -314,14 +337,21 @@ func killCriteria(r probeReport) []string {
 	return out
 }
 
-// scoreSet adds one posting's precision and recall counts. Recall counts only
-// gold labels the instrument can reach, when reach is known.
+// scoreSet adds one posting's precision or recall counts; pass nil for the one
+// not wanted. Recall counts only gold labels the instrument can reach, when
+// reach is known.
 func scoreSet(p, r *ratio, pred, gold map[string]bool, reach map[string]bool) {
 	for s := range pred {
+		if p == nil {
+			break
+		}
 		p.Of++
 		if gold[s] {
 			p.Hit++
 		}
+	}
+	if r == nil {
+		return
 	}
 	for s := range gold {
 		if reach != nil && !reach[s] {
@@ -376,14 +406,15 @@ func (r probeReport) markdown() string {
 	w("| Gold set's own role agreement | %s |", r.GoldAgreement)
 	w("| Top-1 by confidence third: low / middle / high | %s / %s / %s |", r.Thirds[0], r.Thirds[1], r.Thirds[2])
 	w("| Role flip rate across two runs | %s |", r.Flip)
-	w("| Specializations (jev): precision / recall | %s / %s |", r.SpecP, r.SpecR)
+	w("| Specializations (jev): precision vs either labeler / recall vs both | %s / %s |", r.SpecP, r.SpecR)
 	for _, m := range []string{methodLexical, methodJev} {
 		if pr := r.SkillP[m]; pr != nil {
-			w("| Skills (%s): precision / recall over reachable gold | %s / %s |", m, pr[0], r.SkillR[m][0])
+			w("| Skills (%s): precision vs either labeler / recall vs both, over reachable gold | %s / %s |", m, pr[0], r.SkillR[m][0])
 		}
 	}
 	w("| Near-synonym co-fire: postings with a pair / pairs | %s / %d |", r.Cofire, r.CofirePairs)
-	w("| Precision of non-unknown seniority | %s |", r.SeniorityP)
+	w("| Precision of non-unknown seniority read from the body (gold never saw titles) | %s |", r.SeniorityP)
+	w("| Seniority read from the title (not checkable against gold) | %d |", r.SeniorityFromTitle)
 	w("| Seniority left unknown for an uncovered compound | %d |", r.SeniorityUncovered)
 	w("| Top-1 on titles that strip to one word | %s |", r.SingleWordTitles)
 	w("| Cost per 1,000 postings | $%.3f (%.0f input tokens per posting) |", r.CostPer1k, r.TokensPer1)

@@ -9,6 +9,8 @@
 //	classify seed [--out <file>]               generate this install's skill seed (free, read-only)
 //	classify sample [--count 150]              select a probe sample (free, read-only)
 //	classify probe-report --gold <file> ...    score dry-runs against a gold set (free)
+//	classify taxonomy-export                   write live option sets for gold labelers (free, read-only)
+//	classify gold-merge [--decisions <file>]   merge two labelers; settle disagreements (free)
 //
 // See: agent-context/plans/in-progress/hybrid-classifier/index.md
 package main
@@ -49,6 +51,10 @@ func main() {
 			os.Exit(runSample(os.Args[2:]))
 		case "probe-report":
 			os.Exit(runProbeReport(os.Args[2:]))
+		case "taxonomy-export":
+			os.Exit(runTaxonomyExport(os.Args[2:]))
+		case "gold-merge":
+			os.Exit(runGoldMerge(os.Args[2:]))
 		}
 	}
 	os.Exit(run())
