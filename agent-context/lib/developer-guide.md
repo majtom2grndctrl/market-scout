@@ -306,7 +306,8 @@ Builds and tests are free — run them liberally. Live-surface commands spend mo
 | `go build`, `go vet`, `go test ./...` | Free | The primary verification loop. Run freely. |
 | `go test -tags=integration ./...` | Cheap; needs Postgres | Run when touching queries or migrations. |
 | `go run ./cmd/fetcher` | Live ATS traffic | One manual run to verify a change is fine. Never in a loop — rate limits and politeness are real. |
-| `go run ./cmd/batch-enrich` | Legacy/automation runner; may consume model/API budget | Never run as a test. Exercise the pipeline with unit tests and fakes; a live run is an operator decision. |
+| `go run ./cmd/classify` | OpenRouter API spend per posting. Dry-run sends the same paid requests and writes nothing. | Never run as a test; tests use a fake decider. A live run or probe is an operator decision, and live runs stop at the pilot until the measure engine reads lineage. |
+| `go run ./cmd/batch-enrich` | Legacy runner; may consume model/API budget | Unused, and removed after the classifier's pilot. Never run as a test. |
 | `/batch-enrich` skill | Session tokens; worker usage is model-dependent | Primary human-operated bulk path. It reads through the project MCP server and writes only through `mcp.save_enrichment`; still an operator decision, never a test. |
 | `batch-enrich --force` (either path) | Paid re-classification, provenance churn | Operator-only, after a contract fix. Never to "re-verify." |
 | `go run ./cmd/migrate down` | Full teardown; blocks on enrichment history | See §2 Teardown and Recovery. Never a casual reset. |
@@ -540,13 +541,21 @@ else restates it as a literal.
 |---|---|---|
 | Codex skill (live path) | `classification-pins` block, `.agents/skills/batch-enrich/SKILL.md` | `batch-enrich-v<n>` |
 | Claude skill | `classification-pins` block, `.claude/skills/batch-enrich/SKILL.md` | `batch-enrich-v<n>` |
-| Go runner (legacy/automation) | `PromptVersion` constant, `apps/tools/cmd/batch-enrich/config.go` | `batch-enrich-go-v<n>` |
+| Go runner (legacy, removed after the classifier's pilot) | `PromptVersion` constant, `apps/tools/cmd/batch-enrich/config.go` | `batch-enrich-go-v<n>` |
+| Unattended classifier | `PromptVersion` constant, `apps/tools/cmd/classify` | `classify-v<n>` |
 
 The two skills share one lineage and bump together: they run the same
 classification contract under different harnesses and models. The Go runner
 does not — different contract, different transport, and it can run the same
 Haiku model as the Claude skill, so a shared lineage would make its rows
 indistinguishable.
+
+The unattended classifier's pin covers its rules, thresholds, and question
+wording, and is bumped by hand when any of them changes. A new dated model
+does not bump it; `model` records that. Inputs that change between runs — the
+taxonomy option sets and the generated skill seed table — are hashed into each
+run record instead, and the classifier warns when the seed hash changes under
+an unchanged pin.
 
 `mcp.save_enrichment` requires `provenance.model` and
 `provenance.prompt_version` and rejects a call omitting either. It does not
