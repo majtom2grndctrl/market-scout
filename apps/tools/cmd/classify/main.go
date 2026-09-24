@@ -4,6 +4,10 @@
 // judgment turns on context. Until the owner accepts the probe it runs only as
 // a dry-run, which sends the same paid requests and writes JSONL instead of
 // classifications.
+//
+//	classify --dry-run --seed <file> [flags]   classify selected postings
+//	classify seed [--out <file>]               generate this install's skill seed (free, read-only)
+//
 // See: agent-context/plans/in-progress/hybrid-classifier/index.md
 package main
 
@@ -28,18 +32,95 @@ import (
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/classify"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/jev"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/selection"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/skillseed"
 )
 
 const pingTimeout = 10 * time.Second
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	if len(os.Args) > 1 && os.Args[1] == "seed" {
+		os.Exit(runSeed(os.Args[2:]))
+	}
 	os.Exit(run())
+}
+
+// runSeed generates the install's skill seed from its live skills and recent
+// classifications. It reads only.
+func runSeed(args []string) int {
+	cfg, err := ParseSeedFlags(flag.NewFlagSet("classify seed", flag.ContinueOnError), args)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[classify] startup error: %v\n", err)
+		return 2
+	}
+	_ = godotenv.Load(".env.local")
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	pool, err := openDB(ctx, "DATABASE_URL_RO")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[classify] open db: %v\n", err)
+		return 1
+	}
+	defer pool.Close()
+
+	seed, err := generateSeed(ctx, db.New(pool), int32(cfg.CorpusDocs))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[classify] generate seed: %v\n", err)
+		return 1
+	}
+	if err := os.MkdirAll(filepath.Dir(cfg.OutPath), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "[classify] create output dir: %v\n", err)
+		return 1
+	}
+	if err := seed.Save(cfg.OutPath); err != nil {
+		fmt.Fprintf(os.Stderr, "[classify] %v\n", err)
+		return 1
+	}
+	slog.Info("[classify] seed written", "out", cfg.OutPath, "hash", seed.Hash(), "live_skills", seed.Stats.LiveSkills,
+		"corpus_docs", seed.Stats.CorpusDocs, "lexical", seed.Stats.Lexical, "rule_matched", seed.Stats.RuleMatched,
+		"noul_head", seed.Stats.NoulHead, "unreachable", seed.Stats.Unreachable)
+	return 0
+}
+
+// generateSeed reads what the generator measures. Skills whose slug also lives
+// in another taxonomy table are left out: the save rejects them.
+func generateSeed(ctx context.Context, q *db.Queries, corpusDocs int32) (skillseed.Seed, error) {
+	cross, err := q.ListCrossTableSlugs(ctx)
+	if err != nil {
+		return skillseed.Seed{}, fmt.Errorf("loading cross-table slugs: %w", err)
+	}
+	excluded := make(map[string]bool, len(cross))
+	for _, s := range cross {
+		excluded[s] = true
+	}
+	rows, err := q.ListSkillLinkMass(ctx)
+	if err != nil {
+		return skillseed.Seed{}, fmt.Errorf("loading skills: %w", err)
+	}
+	var skills []skillseed.SkillStat
+	for _, r := range rows {
+		if !excluded[r.Slug] {
+			skills = append(skills, skillseed.SkillStat{Slug: r.Slug, Name: r.Name, LinkMass: r.LinkMass})
+		}
+	}
+	docs, err := q.ListSeedCorpus(ctx, corpusDocs)
+	if err != nil {
+		return skillseed.Seed{}, fmt.Errorf("loading corpus: %w", err)
+	}
+	corpus := make([]skillseed.Doc, len(docs))
+	for i, d := range docs {
+		labels := make(map[string]bool, len(d.SkillSlugs))
+		for _, s := range d.SkillSlugs {
+			labels[s] = true
+		}
+		corpus[i] = skillseed.Doc{Text: d.DescriptionText, Skills: labels}
+	}
+	return skillseed.Generate(skills, corpus, skillseed.DefaultParams, time.Now()), nil
 }
 
 // run is main's testable body; it returns the process exit code.
 func run() int {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-
 	cfg, err := ParseFlags(flag.NewFlagSet("classify", flag.ContinueOnError), os.Args[1:])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[classify] startup error: %v\n", err)
@@ -55,6 +136,12 @@ func run() int {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	seed, err := skillseed.Load(cfg.SeedPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[classify] %v\n", err)
+		return 2
+	}
 
 	// A dry-run only reads, so it connects on the read-only role.
 	pool, err := openDB(ctx, "DATABASE_URL_RO")
@@ -95,6 +182,9 @@ func run() int {
 			return boilerplate.CleanSelected(ctx, loader, companyID, ids)
 		},
 		loadTaxonomy: func(ctx context.Context) (classify.Taxonomy, error) { return classify.LoadTaxonomy(ctx, q) },
+		crossTable:   q.ListCrossTableSlugs,
+		seed:         seed,
+		dups:         dbDuplicateFinder{q: q},
 		decider:      jev.New(key),
 		now:          time.Now,
 	}

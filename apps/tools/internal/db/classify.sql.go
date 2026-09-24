@@ -8,7 +8,47 @@ package db
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/lib/pq"
 )
+
+const listCrossTableSlugs = `-- name: ListCrossTableSlugs :many
+SELECT slug FROM (
+    SELECT slug FROM canonical_roles
+    UNION ALL SELECT slug FROM specializations
+    UNION ALL SELECT slug FROM skills
+    UNION ALL SELECT slug FROM role_dimensions
+) t
+GROUP BY slug
+HAVING count(*) > 1
+ORDER BY slug
+`
+
+// Slugs that live in more than one taxonomy table. mcp.save_enrichment rejects
+// any payload naming one (slug_collision), even as reuse, so cmd/classify
+// offers none of them.
+func (q *Queries) ListCrossTableSlugs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listCrossTableSlugs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		items = append(items, slug)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
 
 const listNearDuplicatePairs = `-- name: ListNearDuplicatePairs :many
 SELECT a.ord::int AS left_index, b.ord::int AS right_index
@@ -47,6 +87,96 @@ func (q *Queries) ListNearDuplicatePairs(ctx context.Context, arg ListNearDuplic
 	for rows.Next() {
 		var i ListNearDuplicatePairsRow
 		if err := rows.Scan(&i.LeftIndex, &i.RightIndex); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSeedCorpus = `-- name: ListSeedCorpus :many
+SELECT lc.job_posting_id,
+       snap.description_text::text AS description_text,
+       coalesce(array_agg(sk.slug ORDER BY sk.slug) FILTER (WHERE sk.slug IS NOT NULL), '{}')::text[] AS skill_slugs
+FROM latest_classifications lc
+JOIN LATERAL (
+    SELECT description_text
+    FROM posting_snapshots
+    WHERE job_posting_id = lc.job_posting_id
+    ORDER BY fetched_at DESC
+    LIMIT 1
+) snap ON snap.description_text IS NOT NULL
+LEFT JOIN job_posting_skills jps ON jps.classification_id = lc.classification_id
+LEFT JOIN skills sk ON sk.id = jps.skill_id
+GROUP BY lc.job_posting_id, lc.classified_at, snap.description_text
+ORDER BY lc.classified_at DESC, lc.job_posting_id DESC
+LIMIT $1::int
+`
+
+type ListSeedCorpusRow struct {
+	JobPostingID    int64
+	DescriptionText string
+	SkillSlugs      []string
+}
+
+// The most recently classified postings' latest descriptions, each with the
+// skill slugs its latest classification assigned. The seed generator measures
+// how often a skill name appears against how often it is the assigned skill.
+func (q *Queries) ListSeedCorpus(ctx context.Context, maxDocs int32) ([]ListSeedCorpusRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSeedCorpus, maxDocs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSeedCorpusRow
+	for rows.Next() {
+		var i ListSeedCorpusRow
+		if err := rows.Scan(&i.JobPostingID, &i.DescriptionText, pq.Array(&i.SkillSlugs)); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSkillLinkMass = `-- name: ListSkillLinkMass :many
+SELECT s.slug, s.name, count(jps.classification_id)::bigint AS link_mass
+FROM skills s
+LEFT JOIN job_posting_skills jps ON jps.skill_id = s.id
+GROUP BY s.id, s.slug, s.name
+ORDER BY s.slug
+`
+
+type ListSkillLinkMassRow struct {
+	Slug     string
+	Name     string
+	LinkMass int64
+}
+
+// Every live skill with its link count across all classifications. The seed
+// generator chooses the noul head by it.
+func (q *Queries) ListSkillLinkMass(ctx context.Context) ([]ListSkillLinkMassRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSkillLinkMass)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSkillLinkMassRow
+	for rows.Next() {
+		var i ListSkillLinkMassRow
+		if err := rows.Scan(&i.Slug, &i.Name, &i.LinkMass); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

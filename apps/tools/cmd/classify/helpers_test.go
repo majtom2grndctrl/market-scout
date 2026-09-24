@@ -16,6 +16,7 @@ import (
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/classify"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/jev"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/selection"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/skillseed"
 )
 
 // fakeDecider stands in for Jev. Its answers are driven by markers in the
@@ -25,6 +26,8 @@ import (
 //   - "NONEFIT" makes none_fit win
 //   - "LOW" gives the named role 0.38 and spreads the rest
 //   - "FAIL" returns an error
+//   - "NOUL:<slug>" answers that term's noul question 0.9, every other noul
+//     0.02; "NOUL:<slug>=0.6" answers it 0.6
 type fakeDecider struct {
 	mu       sync.Mutex
 	requests []jev.Request
@@ -45,9 +48,29 @@ func (f *fakeDecider) Decide(_ context.Context, req jev.Request) (jev.Response, 
 	}
 	resp := jev.Response{Model: f.model, Answers: map[string]jev.Answer{}, Usage: jev.Usage{InputTokens: 100, Cost: 0.0000042}}
 	for id, q := range req.Questions {
+		if q.Type == jev.TypeNoul {
+			resp.Answers[id] = fakeNoul(req.State, id)
+			continue
+		}
 		resp.Answers[id] = fakeChoice(req.State, q)
 	}
 	return resp, nil
+}
+
+func fakeNoul(state, id string) jev.Answer {
+	_, slug, _ := strings.Cut(id, ":")
+	p := 0.02
+	for _, f := range strings.Fields(state) {
+		term, val, hasVal := strings.Cut(strings.TrimPrefix(f, "NOUL:"), "=")
+		if !strings.HasPrefix(f, "NOUL:") || term != slug {
+			continue
+		}
+		p = 0.9
+		if hasVal {
+			fmt.Sscanf(val, "%g", &p)
+		}
+	}
+	return jev.Answer{Type: jev.TypeNoul, Noul: &p}
 }
 
 func fakeChoice(state string, q jev.Question) jev.Answer {
@@ -96,13 +119,33 @@ func (f *fakeDecider) calls() int {
 }
 
 // taxonomyWithRoles builds n roles whose slugs and names differ, so a test can
-// tell which one reached the model.
+// tell which one reached the model, plus a few specializations and skills.
 func taxonomyWithRoles(n int) classify.Taxonomy {
-	t := classify.Taxonomy{CanonicalRoles: map[string]classify.TaxonomyEntry{}}
+	t := classify.Taxonomy{
+		CanonicalRoles:  map[string]classify.TaxonomyEntry{},
+		Specializations: map[string]classify.TaxonomyEntry{},
+		Skills:          map[string]classify.TaxonomyEntry{},
+	}
 	for i := range n {
 		t.CanonicalRoles[fmt.Sprintf("role-%03d", i)] = classify.TaxonomyEntry{ID: int64(i + 1), Name: fmt.Sprintf("Job Family %03d", i)}
 	}
+	for i, s := range []string{"payments", "developer-tools", "ai-agents"} {
+		t.Specializations[s] = classify.TaxonomyEntry{ID: int64(i + 1), Name: s}
+	}
+	for i, s := range []string{"python", "terraform", "stakeholder-management", "problem-solving"} {
+		t.Skills[s] = classify.TaxonomyEntry{ID: int64(i + 1), Name: s}
+	}
 	return t
+}
+
+// testSeed reaches python and terraform lexically and two soft skills by noul.
+func testSeed() skillseed.Seed {
+	return skillseed.Seed{Entries: []skillseed.Entry{
+		{SkillSlug: "python", SkillName: "Python", Reach: skillseed.ReachLexical, Aliases: []string{"Python"}},
+		{SkillSlug: "terraform", SkillName: "Terraform", Reach: skillseed.ReachLexical, Aliases: []string{"Terraform"}},
+		{SkillSlug: "stakeholder-management", Reach: skillseed.ReachNoul},
+		{SkillSlug: "problem-solving", Reach: skillseed.ReachNoul},
+	}}
 }
 
 // testDeps wires a dry-run over in-memory postings. Descriptions pass through
@@ -122,6 +165,9 @@ func testDeps(tax classify.Taxonomy, d decider, postings ...selection.Posting) r
 			return out, nil
 		},
 		loadTaxonomy: func(context.Context) (classify.Taxonomy, error) { return tax, nil },
+		crossTable:   func(context.Context) ([]string, error) { return nil, nil },
+		seed:         testSeed(),
+		dups:         &pairFinder{},
 		decider:      d,
 		now:          func() time.Time { return time.Date(2026, 9, 24, 12, 0, 0, 0, time.UTC) },
 	}

@@ -68,7 +68,7 @@ func TestRoleTournament(t *testing.T) {
 	}
 
 	t.Run("every live role is in exactly one pass-1 question, by name only", func(t *testing.T) {
-		req := pass1Request(DefaultModel, "state", opts)
+		req := pass1Request(DefaultModel, "state", opts, nil)
 		if len(req.Questions) != 3 {
 			t.Fatalf("pass 1 has %d questions for 120 roles, want 3 chunks of at most %d", len(req.Questions), maxChunkSize)
 		}
@@ -106,7 +106,7 @@ func TestRoleTournament(t *testing.T) {
 
 	t.Run("pass 2 offers each chunk's leaders plus none_fit", func(t *testing.T) {
 		d := newFakeDecider()
-		res, err := runTournament(t.Context(), newSharedDecider(d), DefaultModel, "hiring a Job Family 042", opts)
+		res, _, err := runTournament(t.Context(), newSharedDecider(d), DefaultModel, "hiring a Job Family 042", opts, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -329,4 +329,79 @@ func TestChunkSizes(t *testing.T) {
 			t.Errorf("291 roles make %d chunks, want 6", len(opts.chunks))
 		}
 	}
+}
+
+func labelsBy(ls []label) map[string]string {
+	out := map[string]string{}
+	for _, l := range ls {
+		out[l.Slug] = l.Method
+	}
+	return out
+}
+
+func TestDimensions(t *testing.T) {
+	tax := taxonomyWithRoles(60)
+
+	t.Run("each dimension uses its instrument and rules", func(t *testing.T) {
+		got, _, _ := runDry(t, testDeps(tax, newFakeDecider(),
+			sel(1, 1, "Maker", "hiring a Job Family 001 who writes Python NOUL:payments NOUL:ai-agents=0.3 NOUL:stakeholder-management"),
+		))
+		r := got[1]
+		if !maps.Equal(labelsBy(r.Specializations), map[string]string{"payments": methodJev}) {
+			t.Errorf("specializations = %v", labelsBy(r.Specializations))
+		}
+		if !maps.Equal(labelsBy(r.Skills), map[string]string{"python": methodLexical, "stakeholder-management": methodJev}) {
+			t.Errorf("skills = %v", labelsBy(r.Skills))
+		}
+		recordedSlugs := map[string]float64{}
+		for _, c := range r.Candidates {
+			recordedSlugs[c.Dimension+":"+c.Slug] = c.Probability
+		}
+		if recordedSlugs["specialization:ai-agents"] != 0.3 {
+			t.Errorf("a dropped label above the recording floor was not kept as a candidate: %v", recordedSlugs)
+		}
+		if _, ok := recordedSlugs["skill:problem-solving"]; ok {
+			t.Error("a candidate below the recording floor was kept")
+		}
+	})
+
+	t.Run("a deferred posting keeps its candidates and gets no labels", func(t *testing.T) {
+		got, _, _ := runDry(t, testDeps(tax, newFakeDecider(), sel(1, 1, "Maker", "NONEFIT NOUL:payments Python")))
+		r := got[1]
+		if r.Outcome != outcomeDeferred || len(r.Candidates) == 0 || r.Specializations != nil || r.Skills != nil {
+			t.Errorf("deferred posting: %+v", r)
+		}
+	})
+
+	t.Run("a posting with no surviving specialization or skill still writes, arrays empty", func(t *testing.T) {
+		got, _, _ := runDry(t, testDeps(tax, newFakeDecider(), sel(1, 1, "Maker", "hiring a Job Family 001")))
+		r := got[1]
+		if r.Outcome != outcomeWouldWrite || len(r.Specializations) != 0 || len(r.Skills) != 0 {
+			t.Errorf("zero-survivor posting: %+v", r)
+		}
+	})
+
+	t.Run("a slug in two taxonomy tables is offered nowhere", func(t *testing.T) {
+		d := newFakeDecider()
+		deps := testDeps(tax, d, sel(1, 1, "Maker", "hiring a Job Family 001"))
+		deps.crossTable = func(context.Context) ([]string, error) { return []string{"payments", "stakeholder-management"}, nil }
+		runDry(t, deps)
+		for id := range d.requests[0].Questions {
+			if id == specQuestionID("payments") || id == skillQuestionID("stakeholder-management") {
+				t.Errorf("offered cross-table slug %s", id)
+			}
+		}
+	})
+
+	t.Run("noul questions ride on the pass-1 request, by name", func(t *testing.T) {
+		d := newFakeDecider()
+		runDry(t, testDeps(tax, d, sel(1, 1, "Maker", "hiring a Job Family 001")))
+		if d.calls() != 2 {
+			t.Errorf("sent %d requests, want pass 1 and pass 2 only", d.calls())
+		}
+		q := d.requests[0].Questions[skillQuestionID("problem-solving")]
+		if q.Type != "noul" || !strings.Contains(q.Instructions, "problem-solving") {
+			t.Errorf("skill noul = %+v", q)
+		}
+	})
 }

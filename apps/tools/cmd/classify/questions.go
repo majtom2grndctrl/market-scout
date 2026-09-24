@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 // Question wording. Every string here is part of the classify contract: a
 // change bumps PromptVersion, and the run's question hash records it.
 
@@ -14,6 +16,15 @@ const (
 		"Judging from the duties and requirements it describes, which of these job roles is it hiring for?"
 	rolePass2Instructions = rolePass1Instructions
 )
+
+// Noul wording for the multi-label dimensions. Each term is asked by name.
+func specInstructions(name string) string {
+	return fmt.Sprintf("Does the job this posting hires for work in the area of %s?", name)
+}
+
+func skillInstructions(name string) string {
+	return fmt.Sprintf("Does this job posting ask the candidate for %s?", name)
+}
 
 // maskPlaceholder replaces a masked title. It holds no letters, so it can
 // never re-form a title or collide with one.

@@ -14,6 +14,7 @@ import (
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/boilerplate"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/classify"
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/selection"
+	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/skillseed"
 )
 
 // runDeps are the run's inputs from outside the process. main wires them to
@@ -22,6 +23,9 @@ type runDeps struct {
 	selectPostings func(ctx context.Context) ([]selection.Posting, error)
 	clean          func(ctx context.Context, companyID int64, ids []int64) ([]boilerplate.CorpusPosting, error)
 	loadTaxonomy   func(ctx context.Context) (classify.Taxonomy, error)
+	crossTable     func(ctx context.Context) ([]string, error)
+	seed           skillseed.Seed
+	dups           duplicateFinder
 	decider        decider
 	now            func() time.Time
 }
@@ -38,6 +42,10 @@ type runHeader struct {
 	Selected       int        `json:"selected"`
 	RoleOptions    int        `json:"role_options"`
 	RoleChunks     int        `json:"role_chunks"`
+	SpecOptions    int        `json:"specialization_options"`
+	SkillNoul      int        `json:"skill_noul_options"`
+	SkillLexical   int        `json:"skill_lexical_entries"`
+	SeedHash       string     `json:"seed_hash"`
 }
 
 type postingLine struct {
@@ -64,9 +72,13 @@ func dryRun(ctx context.Context, cfg Config, deps runDeps, w io.Writer) (runSumm
 	if err != nil {
 		return runSummary{}, fmt.Errorf("loading taxonomy: %w", err)
 	}
-	roles, err := newRoleOptions(tax)
+	cross, err := deps.crossTable(ctx)
 	if err != nil {
-		return runSummary{}, fmt.Errorf("building role options: %w", err)
+		return runSummary{}, fmt.Errorf("loading cross-table slugs: %w", err)
+	}
+	opts, err := buildOptions(tax, cross, deps.seed)
+	if err != nil {
+		return runSummary{}, fmt.Errorf("building options: %w", err)
 	}
 
 	selected, err := deps.selectPostings(ctx)
@@ -82,13 +94,15 @@ func dryRun(ctx context.Context, cfg Config, deps runDeps, w io.Writer) (runSumm
 	if err := out.write(runHeader{
 		Type: "run", DryRun: true, PromptVersion: PromptVersion, RequestedModel: cfg.Model,
 		StartedAt: started, Thresholds: pinnedThresholds, Selected: len(selected),
-		RoleOptions: len(roles.byName), RoleChunks: len(roles.chunks),
+		RoleOptions: len(opts.roles.byName), RoleChunks: len(opts.roles.chunks),
+		SpecOptions: len(opts.specs), SkillNoul: len(opts.skills),
+		SkillLexical: len(opts.seed.Entries) - len(opts.skills), SeedHash: opts.seed.Hash(),
 	}); err != nil {
 		return runSummary{}, err
 	}
 
 	shared := newSharedDecider(deps.decider)
-	c := &classifier{decider: shared, model: cfg.Model, roles: roles, thresholds: pinnedThresholds}
+	c := &classifier{decider: shared, model: cfg.Model, opts: opts, dups: deps.dups, thresholds: pinnedThresholds}
 	counts := map[outcome]int{}
 	var mu sync.Mutex
 	record := func(r postingResult) error {

@@ -13,3 +13,47 @@ WHERE greatest(
           public.similarity(a.term ->> 'name', b.term ->> 'name'))::numeric
       >= @threshold::numeric
 ORDER BY a.ord, b.ord;
+
+-- name: ListCrossTableSlugs :many
+-- Slugs that live in more than one taxonomy table. mcp.save_enrichment rejects
+-- any payload naming one (slug_collision), even as reuse, so cmd/classify
+-- offers none of them.
+SELECT slug FROM (
+    SELECT slug FROM canonical_roles
+    UNION ALL SELECT slug FROM specializations
+    UNION ALL SELECT slug FROM skills
+    UNION ALL SELECT slug FROM role_dimensions
+) t
+GROUP BY slug
+HAVING count(*) > 1
+ORDER BY slug;
+
+-- name: ListSkillLinkMass :many
+-- Every live skill with its link count across all classifications. The seed
+-- generator chooses the noul head by it.
+SELECT s.slug, s.name, count(jps.classification_id)::bigint AS link_mass
+FROM skills s
+LEFT JOIN job_posting_skills jps ON jps.skill_id = s.id
+GROUP BY s.id, s.slug, s.name
+ORDER BY s.slug;
+
+-- name: ListSeedCorpus :many
+-- The most recently classified postings' latest descriptions, each with the
+-- skill slugs its latest classification assigned. The seed generator measures
+-- how often a skill name appears against how often it is the assigned skill.
+SELECT lc.job_posting_id,
+       snap.description_text::text AS description_text,
+       coalesce(array_agg(sk.slug ORDER BY sk.slug) FILTER (WHERE sk.slug IS NOT NULL), '{}')::text[] AS skill_slugs
+FROM latest_classifications lc
+JOIN LATERAL (
+    SELECT description_text
+    FROM posting_snapshots
+    WHERE job_posting_id = lc.job_posting_id
+    ORDER BY fetched_at DESC
+    LIMIT 1
+) snap ON snap.description_text IS NOT NULL
+LEFT JOIN job_posting_skills jps ON jps.classification_id = lc.classification_id
+LEFT JOIN skills sk ON sk.id = jps.skill_id
+GROUP BY lc.job_posting_id, lc.classified_at, snap.description_text
+ORDER BY lc.classified_at DESC, lc.job_posting_id DESC
+LIMIT @max_docs::int;

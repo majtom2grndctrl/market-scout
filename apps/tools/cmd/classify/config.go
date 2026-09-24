@@ -56,6 +56,7 @@ type Config struct {
 	Concurrency   int
 	Model         string
 	OutPath       string
+	SeedPath      string
 }
 
 // ParseFlags parses and validates the command line.
@@ -70,6 +71,7 @@ func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 	fs.IntVar(&cfg.Concurrency, "concurrency", 8, "postings classified at once")
 	fs.StringVar(&cfg.Model, "model", DefaultModel, "Jev model slug to request")
 	fs.StringVar(&cfg.OutPath, "out", "", "dry-run JSONL path (default agent-output/classify/dry-run-<timestamp>.jsonl)")
+	fs.StringVar(&cfg.SeedPath, "seed", "", "skill seed file from `classify seed` (required until the seed table lands)")
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
 	}
@@ -87,11 +89,34 @@ func ParseFlags(fs *flag.FlagSet, args []string) (Config, error) {
 		// (plan.md, Owner gate). Until then there is no write path to run.
 		return Config{}, errors.New("only --dry-run is available until the probe is accepted")
 	}
+	if cfg.SeedPath == "" {
+		return Config{}, errors.New("--seed is required: generate one with `go run ./cmd/classify seed`")
+	}
 	if cfg.Count < 1 {
 		return Config{}, fmt.Errorf("--count must be at least 1, got %d", cfg.Count)
 	}
 	if cfg.Concurrency < 1 {
 		return Config{}, fmt.Errorf("--concurrency must be at least 1, got %d", cfg.Concurrency)
+	}
+	return cfg, nil
+}
+
+// SeedConfig is the parsed `classify seed` command line.
+type SeedConfig struct {
+	OutPath    string
+	CorpusDocs int
+}
+
+// ParseSeedFlags parses the seed subcommand.
+func ParseSeedFlags(fs *flag.FlagSet, args []string) (SeedConfig, error) {
+	var cfg SeedConfig
+	fs.StringVar(&cfg.OutPath, "out", "agent-output/classify/skill-seed.json", "where to write the generated seed")
+	fs.IntVar(&cfg.CorpusDocs, "corpus", 100000, "most recently classified postings to measure name distinctiveness over (default covers all)")
+	if err := fs.Parse(args); err != nil {
+		return SeedConfig{}, err
+	}
+	if cfg.CorpusDocs < 1 {
+		return SeedConfig{}, fmt.Errorf("--corpus must be at least 1, got %d", cfg.CorpusDocs)
 	}
 	return cfg, nil
 }

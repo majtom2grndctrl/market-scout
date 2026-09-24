@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -84,12 +85,15 @@ func pass1QuestionID(i int) string { return fmt.Sprintf("role_pass1_%02d", i+1) 
 
 const pass2QuestionID = "role_pass2"
 
-// pass1Request puts every chunk in one request, so the state is billed once.
-func pass1Request(model, state string, opts roleOptions) jev.Request {
-	qs := make(map[string]jev.Question, len(opts.chunks))
+// pass1Request puts every role chunk in one request, so the state is billed
+// once. extra carries the other dimensions' questions, which ride along on
+// the same state.
+func pass1Request(model, state string, opts roleOptions, extra map[string]jev.Question) jev.Request {
+	qs := make(map[string]jev.Question, len(opts.chunks)+len(extra))
 	for i, c := range opts.chunks {
 		qs[pass1QuestionID(i)] = choiceQuestion(rolePass1Instructions, c)
 	}
+	maps.Copy(qs, extra)
 	return jev.Request{Model: model, State: state, Questions: qs}
 }
 
@@ -152,11 +156,12 @@ func (r roleResult) top() (scoredRole, bool) {
 	return r.Distribution[0], true
 }
 
-// runTournament asks pass 1 over every chunk, then pass 2 over the leaders.
-func runTournament(ctx context.Context, d *sharedDecider, model, state string, opts roleOptions) (roleResult, error) {
-	p1, key1, err := d.decide(ctx, pass1Request(model, state, opts))
+// runTournament asks pass 1 over every chunk, plus extra, then pass 2 over the
+// leaders. It returns the pass-1 response so the caller reads extra's answers.
+func runTournament(ctx context.Context, d *sharedDecider, model, state string, opts roleOptions, extra map[string]jev.Question) (roleResult, jev.Response, error) {
+	p1, key1, err := d.decide(ctx, pass1Request(model, state, opts, extra))
 	if err != nil {
-		return roleResult{}, fmt.Errorf("role pass 1: %w", err)
+		return roleResult{}, jev.Response{}, fmt.Errorf("pass 1: %w", err)
 	}
 	leaders := pass1Leaders(p1, opts)
 	p2Req := jev.Request{Model: model, State: state, Questions: map[string]jev.Question{
@@ -164,7 +169,7 @@ func runTournament(ctx context.Context, d *sharedDecider, model, state string, o
 	}}
 	p2, key2, err := d.decide(ctx, p2Req)
 	if err != nil {
-		return roleResult{}, fmt.Errorf("role pass 2: %w", err)
+		return roleResult{}, jev.Response{}, fmt.Errorf("role pass 2: %w", err)
 	}
 	dist, nf := ranked(p2.Answers[pass2QuestionID], opts)
 	return roleResult{
@@ -172,5 +177,5 @@ func runTournament(ctx context.Context, d *sharedDecider, model, state string, o
 		NoneFit:      nf,
 		Models:       []string{p1.Model, p2.Model},
 		RequestKeys:  []string{key1, key2},
-	}, nil
+	}, p1, nil
 }
