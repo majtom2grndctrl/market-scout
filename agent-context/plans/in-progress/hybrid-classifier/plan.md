@@ -42,7 +42,12 @@ Probe result, 2026-09-25 (runs `probe/run-name-1.jsonl`, `run-name-2.jsonl`, `ru
 - Misses on run 1: 41 in all. 30 are a wrong role written, mostly between neighbouring roles, and 15 of the 41 fall on the 25 postings whose gold was split. 11 are deferrals where gold has a live role; in 5 of those, the top pick was right at p 0.22–0.39. Top-1 is 79.2% (99/125) on gold-agreed postings and 40% (10/25) on split ones.
 - Role floor sweep (chosen with the gold in view, so it is optimistic): at 0.35, top-1 is 74.0% / 73.3% on runs 1 / 2; at 0.30, 75.3% / 74.0%; with no floor, 76.0% on both. Written precision falls from 77% at 0.40 to 75% with no floor.
 - Not kill criteria, but weak: specialization precision 36.2% (recall 78.6%), jev skill precision 17.6% (recall 36.3%), near-synonym co-fire on 75.9% of written postings. Lexical skills: precision 69.6%, recall 77.8%. Body-read seniority precision: 2/5. Cost: $0.91 per 1,000 postings.
-- Description arm, half B: 72.5% name-only vs 75.0% with descriptions (2 postings apart). No commit touching `apps/tools/internal/db/migrations/`, `cmd/mcp/save_enrichment.go`, or any write path lands before this line records it, with date and commit.
+- Description arm, half B: 72.5% name-only vs 75.0% with descriptions (2 postings apart).
+- Tag sweep, run 1, written postings (free, on the paid runs):
+  - **Jev skills: no setting works.** Even each posting's single most probable skill is right 19.5% of the time against either labeler. A floor of 0.95 still leaves about 10 skills per posting at 16.7% precision. Jev's multi-label probabilities over the 300-skill head do not discriminate.
+  - **Specializations: top-1 or top-2 by probability reaches about 50% precision,** at 26% and 45% recall. Floors alone top out at 37%.
+  - **Tags are fuzzy in the gold too.** The two labelers agree on 50% of the specializations either gave, and on 34% of the skills. The near-synonym co-fire rate says the taxonomy contributes as well.
+  - **What works:** role choice (borderline, well calibrated) and lexical skills (70% precision, 78% recall). No commit touching `apps/tools/internal/db/migrations/`, `cmd/mcp/save_enrichment.go`, or any write path lands before this line records it, with date and commit.
 
 ## AC-to-proof
 
