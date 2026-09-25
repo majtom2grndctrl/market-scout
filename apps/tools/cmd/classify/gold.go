@@ -96,19 +96,23 @@ type disagreement struct {
 	Labels            [2]labelLine `json:"labels"`
 }
 
-// decision is the owner's call on one disagreement.
+// decision is the owner's call on one disagreement. RoleAny lists further
+// roles that are equally right, for a posting that fits several.
 type decision struct {
-	PostingID int64  `json:"posting_id"`
-	Role      string `json:"role,omitempty"` // a slug, or none_fit
-	Seniority string `json:"seniority,omitempty"`
+	PostingID int64    `json:"posting_id"`
+	Role      string   `json:"role,omitempty"` // a slug, or none_fit
+	RoleAny   []string `json:"role_any,omitempty"`
+	Seniority string   `json:"seniority,omitempty"`
 }
 
-// runGoldMerge merges two labelers' files. Without --decisions it writes the
-// disagreements to settle; with them it writes the final gold file.
+// runGoldMerge merges two labelers' files. A third labeler's file, given with
+// --tiebreak, settles a split it agrees with one side on. Without --decisions
+// it writes what is still split; with them it writes the final gold file.
 func runGoldMerge(args []string) int {
 	fs := flag.NewFlagSet("classify gold-merge", flag.ContinueOnError)
 	labelsGlob := fs.String("labels", "agent-output/classify/probe/labels/*.jsonl", "labeler JSONL files")
 	samplePath := fs.String("sample", "agent-output/classify/probe/sample.jsonl", "the probe sample")
+	tiebreakPath := fs.String("tiebreak", "", "a third labeler's JSONL, labeled blind, whose agreement with one side settles a split")
 	decisionsPath := fs.String("decisions", "", "the owner's decisions JSON; omit to write disagreements instead")
 	out := fs.String("out", "agent-output/classify/probe", "output directory")
 	if err := fs.Parse(args); err != nil {
@@ -133,6 +137,18 @@ func runGoldMerge(args []string) int {
 		return fail(err)
 	}
 
+	var tiebreak map[int64]labelLine
+	if *tiebreakPath != "" {
+		ls, err := readJSONL[labelLine](*tiebreakPath)
+		if err != nil {
+			return fail(err)
+		}
+		tiebreak = map[int64]labelLine{}
+		for _, l := range ls {
+			tiebreak[l.PostingID] = l
+		}
+	}
+
 	var decisions map[int64]decision
 	if *decisionsPath != "" {
 		ds, err := readJSONArray[decision](*decisionsPath)
@@ -145,7 +161,7 @@ func runGoldMerge(args []string) int {
 		}
 	}
 
-	gold, open, err := mergeLabels(sample, labels, decisions)
+	gold, open, err := mergeLabels(sample, labels, tiebreak, decisions)
 	if err != nil {
 		return fail(err)
 	}
@@ -171,11 +187,12 @@ func runGoldMerge(args []string) int {
 }
 
 // mergeLabels pairs each sample posting's two labels. Role and seniority come
-// from agreement or the owner's decision. Specializations and skills keep the
+// from agreement, then from a tie-break label that sides with one labeler (two
+// of three), then from the owner's decision, which overrides both. Specializations and skills keep the
 // labels both labelers gave (the agreed set, for recall) and the labels
 // either gave (for precision), rather than asking the owner to settle every
 // tag.
-func mergeLabels(sample []sampleLine, labels []labelLine, decisions map[int64]decision) ([]goldLine, []disagreement, error) {
+func mergeLabels(sample []sampleLine, labels []labelLine, tiebreak map[int64]labelLine, decisions map[int64]decision) ([]goldLine, []disagreement, error) {
 	byPosting := map[int64][]labelLine{}
 	for _, l := range labels {
 		byPosting[l.PostingID] = append(byPosting[l.PostingID], l)
@@ -196,19 +213,28 @@ func mergeLabels(sample []sampleLine, labels []labelLine, decisions map[int64]de
 			Specializations: intersect(a.Specializations, b.Specializations), SpecializationsAny: union(a.Specializations, b.Specializations),
 			Skills: intersect(a.Skills, b.Skills), SkillsAny: union(a.Skills, b.Skills)}
 		role, sen := a.roleKey(), a.Seniority
-		if !roleAgreed || !seniorityAgreed {
-			d, ok := decisions[s.PostingID]
-			if !ok || (!roleAgreed && d.Role == "") || (!seniorityAgreed && d.Seniority == "") {
-				open = append(open, disagreement{PostingID: s.PostingID, MaskedDescription: s.MaskedDescription,
-					Role: !roleAgreed, Seniority: !seniorityAgreed, Labels: [2]labelLine{a, b}})
-				continue
+		roleSettled, senSettled := roleAgreed, seniorityAgreed
+		if t, ok := tiebreak[s.PostingID]; ok {
+			if !roleSettled && (t.roleKey() == a.roleKey() || t.roleKey() == b.roleKey()) {
+				role, roleSettled = t.roleKey(), true
 			}
-			if !roleAgreed {
-				role = d.Role
+			if !senSettled && (t.Seniority == a.Seniority || t.Seniority == b.Seniority) {
+				sen, senSettled = t.Seniority, true
 			}
-			if !seniorityAgreed {
-				sen = d.Seniority
+		}
+		if d, ok := decisions[s.PostingID]; ok {
+			if d.Role != "" {
+				role, roleSettled = d.Role, true
+				g.RoleAny = d.RoleAny
 			}
+			if d.Seniority != "" {
+				sen, senSettled = d.Seniority, true
+			}
+		}
+		if !roleSettled || !senSettled {
+			open = append(open, disagreement{PostingID: s.PostingID, MaskedDescription: s.MaskedDescription,
+				Role: !roleSettled, Seniority: !senSettled, Labels: [2]labelLine{a, b}})
+			continue
 		}
 		if role == noneFit {
 			g.RoleUncovered = true

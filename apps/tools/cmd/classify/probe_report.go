@@ -19,7 +19,9 @@ import (
 // the title hidden. Role is a live role's slug; RoleUncovered marks a posting
 // whose job no live role fits, where deferring is the right answer.
 // RoleAgreed records whether the two labelers agreed on the role before the
-// owner settled it; its mean is the gold set's own agreement.
+// owner settled it; its mean is the gold set's own agreement. RoleAny lists
+// further answers (slugs, or none_fit) that are equally right, for a posting
+// that fits several roles.
 //
 // Specializations and Skills are the labels both labelers gave, and recall is
 // scored against them; the Any sets are the labels either gave, and precision
@@ -29,12 +31,22 @@ type goldLine struct {
 	PostingID          int64    `json:"posting_id"`
 	Role               string   `json:"role"`
 	RoleUncovered      bool     `json:"role_uncovered"`
+	RoleAny            []string `json:"role_any,omitempty"`
 	Specializations    []string `json:"specializations"`
 	SpecializationsAny []string `json:"specializations_any,omitempty"`
 	Skills             []string `json:"skills"`
 	SkillsAny          []string `json:"skills_any,omitempty"`
 	Seniority          string   `json:"seniority"`
 	RoleAgreed         *bool    `json:"role_agreed"`
+}
+
+// acceptsRole reports whether a role answer, a slug or none_fit, is right.
+func (g goldLine) acceptsRole(answer string) bool {
+	want := g.Role
+	if g.RoleUncovered {
+		want = noneFit
+	}
+	return answer == want || slices.Contains(g.RoleAny, answer)
 }
 
 // anyOr returns the either-labeler set when the gold file carries one.
@@ -135,14 +147,14 @@ func topRole(r postingResult) string {
 	return r.RoleDistribution[0].Slug
 }
 
-// correctRole scores the run's decision: the written role must be gold's, and
-// a deferral is right only when gold says no live role fits.
+// correctRole scores the run's decision: the written role must be one gold
+// accepts, and a deferral is right only when gold accepts none_fit.
 func correctRole(r postingResult, g goldLine) bool {
 	switch r.Outcome {
 	case outcomeWouldWrite:
-		return r.Role != nil && !g.RoleUncovered && r.Role.Slug == g.Role
+		return r.Role != nil && r.Role.Slug != noneFit && g.acceptsRole(r.Role.Slug)
 	case outcomeDeferred:
-		return g.RoleUncovered
+		return g.acceptsRole(noneFit)
 	}
 	return false
 }
@@ -188,18 +200,14 @@ func scoreProbe(in probeInputs) (probeReport, error) {
 		if !g.RoleUncovered && len(r.RoleDistribution) > 0 {
 			rep.Top3.Of++
 			for _, d := range r.RoleDistribution[:min(3, len(r.RoleDistribution))] {
-				if d.Slug == g.Role {
+				if g.acceptsRole(d.Slug) {
 					rep.Top3.Hit++
 					break
 				}
 			}
 		}
 		if len(r.RoleDistribution) > 0 {
-			want := g.Role
-			if g.RoleUncovered {
-				want = noneFit
-			}
-			confs = append(confs, conf{p: max(r.RoleDistribution[0].Probability, r.NoneFit), ok: topRole(r) == want})
+			confs = append(confs, conf{p: max(r.RoleDistribution[0].Probability, r.NoneFit), ok: g.acceptsRole(topRole(r))})
 		}
 		if s, ok := in.sample[id]; ok && len(strings.Fields(seniority.StripLevelWords(s.Title))) == 1 {
 			rep.SingleWordTitles.Of++

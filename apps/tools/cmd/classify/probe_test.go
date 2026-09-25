@@ -189,7 +189,7 @@ func TestGoldMerge(t *testing.T) {
 		l(3, "opus", "", "mid"), l(3, "sonnet", "", "senior"),
 	}
 
-	gold, open, err := mergeLabels(sample, labels, nil)
+	gold, open, err := mergeLabels(sample, labels, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestGoldMerge(t *testing.T) {
 		t.Errorf("agreed gold = %+v", g)
 	}
 
-	gold, open, _ = mergeLabels(sample, labels, map[int64]decision{
+	gold, open, _ = mergeLabels(sample, labels, nil, map[int64]decision{
 		2: {PostingID: 2, Role: "engineer"},
 		3: {PostingID: 3, Seniority: "mid"},
 	})
@@ -218,7 +218,44 @@ func TestGoldMerge(t *testing.T) {
 		t.Errorf("agreed-uncovered, settled seniority = %+v", gold[2])
 	}
 
-	if _, _, err := mergeLabels(sample, labels[:5], nil); err == nil {
+	// A tie-break that sides with one labeler settles the split; one that sides
+	// with neither leaves it open.
+	tb := map[int64]labelLine{2: l(2, "fable", "engineer", "unknown"), 3: l(3, "fable", "", "lead")}
+	gold, open, _ = mergeLabels(sample, labels, tb, nil)
+	if len(open) != 1 || open[0].PostingID != 3 || len(gold) != 2 || gold[1].Role != "engineer" {
+		t.Fatalf("tie-break: gold %+v, open %+v", gold, open)
+	}
+	// The owner's decision overrides a tie-break and can accept several roles.
+	gold, open, _ = mergeLabels(sample, labels, tb, map[int64]decision{
+		2: {PostingID: 2, Role: "analyst", RoleAny: []string{"engineer", noneFit}},
+		3: {PostingID: 3, Seniority: "senior"},
+	})
+	if len(open) != 0 || gold[1].Role != "analyst" || !gold[1].acceptsRole(noneFit) || gold[1].acceptsRole("designer") {
+		t.Errorf("decision over tie-break = %+v", gold[1])
+	}
+
+	if _, _, err := mergeLabels(sample, labels[:5], nil, nil); err == nil {
 		t.Error("merged a posting with one label")
+	}
+}
+
+func TestCorrectRoleAcceptsRoleAny(t *testing.T) {
+	g := goldLine{Role: "analyst", RoleAny: []string{"engineer", noneFit}}
+	cases := []struct {
+		r    postingResult
+		want bool
+	}{
+		{postingResult{Outcome: outcomeWouldWrite, Role: &label{Slug: "analyst"}}, true},
+		{postingResult{Outcome: outcomeWouldWrite, Role: &label{Slug: "engineer"}}, true},
+		{postingResult{Outcome: outcomeWouldWrite, Role: &label{Slug: "designer"}}, false},
+		{postingResult{Outcome: outcomeDeferred}, true},
+	}
+	for _, c := range cases {
+		if got := correctRole(c.r, g); got != c.want {
+			t.Errorf("correctRole(%+v) = %v, want %v", c.r, got, c.want)
+		}
+	}
+	if correctRole(postingResult{Outcome: outcomeDeferred}, goldLine{Role: "analyst"}) {
+		t.Error("a deferral scored right against a live-role gold")
 	}
 }

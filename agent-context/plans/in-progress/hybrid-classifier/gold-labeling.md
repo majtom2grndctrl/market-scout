@@ -15,8 +15,10 @@ Every path below is under `apps/tools/agent-output/classify/probe/`, which is gi
 3. `labeler-input.jsonl` is split into `chunks/chunk-NN.jsonl`, 10 postings each.
 4. Two labelers label every chunk independently: Sonnet 5 as `sonnet`, Opus 5.5 as `opus`. Each writes `labels/<labeler>-chunk-NN.jsonl`.
 5. `go run ./cmd/classify gold-merge` writes `disagreements.json`: postings where the labelers split on role or seniority.
-6. The owner settles those on a review page. Decisions are saved as `decisions.json`, a JSON array of `{posting_id, role, seniority}`, with `none_fit` as the role when no live role fits.
-7. `go run ./cmd/classify gold-merge --decisions decisions.json` writes `gold.jsonl`.
+6. A third labeler, Fable, labels the split postings blind, from `tiebreak/chunk-NN.jsonl` to `tiebreak/fable-chunk-NN.jsonl`, under the same instructions. It never reads `labels/` or `disagreements.json`. The chunk files are concatenated into `tiebreak/fable.jsonl`.
+7. `gold-merge --tiebreak tiebreak/fable.jsonl` settles every split where Fable agrees with one labeler, and rewrites `disagreements.json` with the rest: the three-way splits.
+8. The owner settles those. Decisions are saved as `decisions.json`, a JSON array of `{posting_id, role, role_any, seniority}`: `role` is a slug, or `none_fit` when no live role fits; `role_any` lists further roles that are equally right. A decision overrides the tie-break.
+9. `gold-merge --tiebreak tiebreak/fable.jsonl --decisions decisions.json` writes `gold.jsonl`.
 
 ## Labeler instructions
 
