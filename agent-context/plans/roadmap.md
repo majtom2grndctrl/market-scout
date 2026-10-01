@@ -105,7 +105,7 @@ Surfaced while designing `chart-primitives`. Each is a vocabulary or encoding ex
 
 ## Epic: Profile-Led Exploration
 
-Goal: A person onboards with a résumé, discovers roles related to their experience — including ones they have never heard named — pins the ones worth watching, and reads a dashboard that adapts to what is changing for those roles. Primary surface ahead of chat. Decisions: `../lib/project.md` §Settled architecture (profile, pins, dashboard). Items are in build order. Every item reading canonical roles or skills waits on current enrichment coverage: `hybrid-classifier`, then `lineage-aware-measures`.
+Goal: A person onboards with a résumé, discovers roles related to their experience — including ones they have never heard named — pins the ones worth watching, and reads a dashboard that adapts to what is changing for those roles. Primary surface ahead of chat. Decisions: `../lib/project.md` §Settled architecture (profile, pins, dashboard). Items are in build order. Every item reading canonical roles or skills waits on current enrichment coverage from the `batch-enrich` skill.
 
 ### Milestone: Foundations
 
@@ -142,14 +142,10 @@ Goal: A person onboards with a résumé, discovers roles related to their experi
 
 ## Epic: Job Classification
 
+Enrichment runs through the `batch-enrich` skill, which writes only through `mcp.save_enrichment`. The Go runner, `apps/tools/cmd/batch-enrich`, is not ready for use: it writes taxonomy and classification rows directly, outside that action's gates.
+
 - [x] `hybrid-classifier`
-  Stopped on 2026-10-01 after the probe. Jev role choice came in at the kill bar, and Jev skill and specialization tagging failed (18% and about 50% precision); lexical skill matching worked. v9 stays the enrichment path. Findings: `plans/done/hybrid-classifier/plan.md` §Outcome. Code: tag `archive/hybrid-classifier`, unmerged.
-
-- [ ] `lineage-aware-measures`
-  Show each classification's lineage in the read model, and teach the measure engine that a skill a classifier cannot reach is absent, not zero. Then reclassify the recent window. Gates enrichment coverage for Profile-Led Exploration; `role-fit-measure` and skill adjacency are most exposed to capped skill reach.
-
-- [ ] `taxonomy-growth`
-  Seed newly minted skills into the classifier's reach, and mint new skills and specializations on postings whose role is already covered. `hybrid-classifier` routes only role misfits to the minting skills.
+  Stopped after the probe. A decision model chose roles near the accuracy bar but could not tag skills or specializations; lexical skill matching worked. Findings: `plans/done/hybrid-classifier/plan.md` §Outcome. Code: tag `archive/hybrid-classifier`, unmerged.
 
 - [x] `codex-batch-enrich-runner`
-  Done. Batch enrichment now defaults to a constrained, subscription-authenticated Codex runner. Claude remains an explicit fallback; Go retains selection, validation, writeback, provenance, and reporting.
+  Done. Added a subscription-authenticated Codex runner to the Go `batch-enrich` tool, with Claude as an explicit fallback.
