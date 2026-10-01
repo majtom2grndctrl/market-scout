@@ -1,8 +1,8 @@
 ---
 name: fix-findings
 description: >
-  Acts on review panel findings by dispatching concurrent Sonnet agents for
-  small-blast-radius items (one per file), then an Opus agent for remaining
+  Acts on review panel findings by dispatching concurrent Sonnet 5.5 agents for
+  small-blast-radius items (one per file), then an Opus 5.5 agent for remaining
   issues with knock-on effects. All agents read relevant agent-context files.
   Use after /review-panel produces findings.
 allowed-tools: Read, Glob, Grep, Bash, Agent
@@ -40,13 +40,13 @@ Scope: red and yellow findings, code and comment-drift both — unless the calle
 
 Classify each confirmed finding:
 
-**Small blast radius** — Sonnet, concurrent:
+**Small blast radius** — Sonnet 5.5, concurrent:
 - Confined to a single file
 - No interface or contract changes
 - No knock-on effects in other packages
 - Examples: missing error handling, nit, stale comment, dead code
 
-**Everything else** — Opus, sequential:
+**Everything else** — Opus 5.5, sequential:
 - Crosses file or package boundaries
 - Interface, contract, or exported type changes
 - Knock-on effects likely
@@ -54,7 +54,7 @@ Classify each confirmed finding:
 
 Group small findings by file. Each file gets one agent.
 
-### 3. Sonnet agents (parallel)
+### 3. Sonnet 5.5 agents (parallel)
 
 Spawn one agent per file in a single message. Provide the agent brief above.
 
@@ -62,7 +62,7 @@ Spawn one agent per file in a single message. Provide the agent brief above.
 
 Review outputs. Note unresolved findings.
 
-### 5. Opus agents (sequential)
+### 5. Opus 5.5 agents (sequential)
 
 Spawn 1–2 agents, one at a time. Provide the agent brief, plus an enumeration of likely knock-on targets.
 

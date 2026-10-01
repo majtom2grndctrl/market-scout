@@ -561,8 +561,8 @@ is the surest way to stop pins being bumped.
 **Historical rows are not relabelled.** Storage is append-only and these rows
 are the only evidence the drift happened. Queries that split by
 `prompt_version` must treat these cohorts as unresolved: four written before
-2026-09-21 cannot be attributed to a single writer, and one carries a label
-whose contract it predates:
+2026-09-21 cannot be attributed to a single writer, one carries a label whose
+contract it predates, and one names the wrong model:
 
 | `prompt_version` | Model | Rows | Ambiguity |
 |---|---|---:|---|
@@ -571,6 +571,7 @@ whose contract it predates:
 | `batch-enrich-v6` | `claude-sonnet-5` | 66 | No pin in any writer names this model. Origin unidentified. |
 | `mcp-save-enrichment-v1` | `mcp-agent` | 231 | The removed `save_enrichment` default. Records only that provenance was omitted; the real contract and model are unrecoverable. |
 | `batch-enrich-v10`, ids 8027–8033 | `gpt-5.6-luna` | 5 | Saved on 2026-09-26 before the save action checked seniority evidence; each carries the literal placeholder `seniority[allowed-tag]`. A later v10 row supersedes each one. |
+| `batch-enrich-v10`, ids 8765–8768 | `claude-sonnet-5` | 4 | Written by `claude-sonnet-5-5`: the skill pinned `claude-sonnet-5` while the `sonnet` agent alias resolved to Sonnet 5.5. The agent transcript is the evidence; the rows cannot show it. |
 
 ### 6.3 Where logs come from
 

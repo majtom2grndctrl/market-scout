@@ -59,27 +59,27 @@ git switch -c feat/<plan-name>
 
 For each phase in the sequencing section:
 
-**Sizing.** Set `model:` on every Agent call. Omitting it inherits the session model — Opus spent on plumbing, or contract work handed to Sonnet.
+**Sizing.** Set `model:` on every Agent call. Omitting it inherits the session model — Opus 5.5 spent on plumbing, or contract work handed to Sonnet 5.5.
 
-**Opus** when the task touches:
+**Opus 5.5** when the task touches:
 - Migrations, views, or anything other consumers read from the schema
 - Write paths — snapshots, fetch runs, classifications, `mcp` action functions
 - MCP tool shapes, envelopes, and role boundaries
 - Cross-package data flow: adapter ↔ fetcher, SQL ↔ generated Go ↔ JSON, view ↔ web read
 - Ambiguous acceptance criteria; design choices resolved by reading code
 
-**Sonnet** for:
+**Sonnet 5.5** for:
 - Localized implementation with a clear package or component home
 - Focused tests for already specified behavior
 - Components and pages against a pinned view or type
 - Mechanical propagation across call sites
 - Small review fixes, low blast radius
 
-**Split on contract risk, not task size.** Settled contract → Sonnet, whatever the size. The contract itself is the work → Opus. Sonnet lands localized features and tests near Opus quality; Opus on a bounded task costs more and widens scope past the acceptance criteria. Haiku is not an implementation agent here.
+**Split on contract risk, not task size.** Settled contract → Sonnet 5.5, whatever the size. The contract itself is the work → Opus 5.5. Sonnet 5.5 lands localized features and tests near Opus 5.5 quality; Opus 5.5 on a bounded task costs more and widens scope past the acceptance criteria. Haiku is not an implementation agent here.
 
-**One local contract is the Sonnet boundary.** Another package, a view consumer, or an agent-facing surface consuming the output means Opus — or split the task so the seam is its own Opus task.
+**One local contract is the Sonnet 5.5 boundary.** Another package, a view consumer, or an agent-facing surface consuming the output means Opus 5.5 — or split the task so the seam is its own Opus 5.5 task.
 
-**Briefing Opus on contract tasks.** Name what stays fixed: column names and nullability, migration numbers, JSON keys, envelope shape, role grants. Require a test that fails when a hand-mirrored shape drifts — a struct tag against a view column, a fixture against an envelope. Don't ask it to double-check its work; that buys over-verification, not coverage.
+**Briefing Opus 5.5 on contract tasks.** Name what stays fixed: column names and nullability, migration numbers, JSON keys, envelope shape, role grants. Require a test that fails when a hand-mirrored shape drifts — a struct tag against a view column, a fixture against an envelope. Don't ask it to double-check its work; that buys over-verification, not coverage.
 
 **Sequential:** One agent at a time on `feat/<plan-name>`. Wait for completion before starting the next.
 

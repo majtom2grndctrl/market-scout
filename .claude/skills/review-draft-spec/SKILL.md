@@ -4,7 +4,7 @@ description: >
   Multi-agent review of a draft spec in `agent-context/plans/drafts/`. Spawns
   two parallel reviewers — a broad reviewer and a codebase-anchor
   reviewer that fact-checks every named identifier against source.
-  Auto-applies mechanical fixes via a Sonnet sub-agent unless
+  Auto-applies mechanical fixes via a Sonnet 5.5 sub-agent unless
   --no-auto-apply is set. Recommends apply / re-review / promote.
   Use after a draft session, or when a human wants to validate before
   promoting to ready/.
@@ -34,7 +34,7 @@ Read the full spec yourself before delegating. Decisions about which reviewers t
 
 One message, two `Agent` tool calls. No sequential rounds.
 
-#### Broad reviewer (Opus)
+#### Broad reviewer (Opus 5.5)
 
 Receives:
 - Full spec content inline
@@ -51,7 +51,7 @@ Receives:
 
 Output: list of `{ location, problem, fix }` triples. "No issues found" if clean. No padding, no praise.
 
-#### Codebase-anchor reviewer (Opus)
+#### Codebase-anchor reviewer (Opus 5.5)
 
 Receives:
 - Full spec content inline
@@ -75,7 +75,7 @@ Then split into two buckets:
 
 | Bucket | Examples | Default action |
 |---|---|---|
-| Mechanical | Casing fix, missing AC bullet, wire-format pin, deletion of stale phrase, decomposing a multi-constraint sentence into bullets | Auto-apply via Sonnet (unless `--no-auto-apply`) |
+| Mechanical | Casing fix, missing AC bullet, wire-format pin, deletion of stale phrase, decomposing a multi-constraint sentence into bullets | Auto-apply via Sonnet 5.5 (unless `--no-auto-apply`) |
 | Architectural | Reshape a contract, decide between two paths, change scope | Surface to caller; do not auto-apply |
 
 Triage is a 30-second judgment, not a heuristic. Make the call inline. Don't delegate it to a sub-agent.
@@ -84,7 +84,7 @@ Triage is a 30-second judgment, not a heuristic. Make the call inline. Don't del
 
 If any mechanical findings exist and `--no-auto-apply` is not set:
 
-Spawn one Sonnet agent with a numbered list of `{ location, problem, fix }` items. One Edit per item. Match the existing prose voice — terse, direct, no rewrites of surrounding paragraphs.
+Spawn one Sonnet 5.5 agent with a numbered list of `{ location, problem, fix }` items. One Edit per item. Match the existing prose voice — terse, direct, no rewrites of surrounding paragraphs.
 
 After the agent reports back, re-read the spec to confirm edits landed.
 

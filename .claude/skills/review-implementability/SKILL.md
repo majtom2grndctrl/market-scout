@@ -12,7 +12,7 @@ argument-hint: "[plan-name]"
 
 # Review Implementability
 
-One Opus agent, one lens: execution. Not a general spec review — run it only after the spec is structurally sound (no contradictions, no AC ↔ task gaps, scope settled). Implementability findings key to specific task sections; structural rework invalidates them, so sequencing matters.
+One Opus 5.5 agent, one lens: execution. Not a general spec review — run it only after the spec is structurally sound (no contradictions, no AC ↔ task gaps, scope settled). Implementability findings key to specific task sections; structural rework invalidates them, so sequencing matters.
 
 ## Premise
 
@@ -26,7 +26,7 @@ The contract is defined normatively in `/build-spec`. If the two disagree, `/bui
 
 Argument is a plan folder name; look in `drafts/` first, then `ready/`. Read the full spec yourself before delegating.
 
-### 2. Spawn one reviewer (Opus, read-only)
+### 2. Spawn one reviewer (Opus 5.5, read-only)
 
 Inline the full spec content in the prompt — paths drift. Also pass: decisions the user has locked (do-not-relitigate), the relevant `agent-context/lib/` docs, and the key source files the spec touches. Instruct: report findings only, make no edits.
 

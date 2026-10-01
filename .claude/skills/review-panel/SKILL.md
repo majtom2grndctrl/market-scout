@@ -22,7 +22,7 @@ A lens is a way of reviewing, not a region of code. The workflow (`.claude/workf
 - **Contract verifier** (depth) — checks one changed surface for agreement across every layer: migration, SQL, generated Go, struct tags, JSON envelope, doc, runtime.
 - **Adversarial tester** (depth) — concrete edge-case sequences: empty batches, NULL translation, cancellation mid-run.
 - **Data-integrity reviewer** (depth) — dispatched when a slice writes rows. Append-only violations, atomicity, provenance. A code bug costs a rerun; a write-path bug corrupts history that cannot be refetched.
-- **Hygiene + drift** (breadth, always Sonnet) — checklist pass plus comment integrity.
+- **Hygiene + drift** (breadth, always Sonnet 5.5) — checklist pass plus comment integrity.
 
 One agent per depth lens; one agent for the whole breadth cluster. Mechanical slices get the breadth pass alone — the panel scales down on small diffs.
 

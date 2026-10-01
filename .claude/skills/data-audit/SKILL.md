@@ -20,7 +20,7 @@ Read `agent-context/lib/developer-guide.md` §6.2 first. It names the inspection
 
 - Sample: 20 classifications (`sample:N` to override)
 - Window: last 14 days (`since:` to override)
-- Judges: Sonnet, one agent per ~5 sampled items
+- Judges: Sonnet 5.5, one agent per ~5 sampled items
 
 ## Process
 
@@ -30,7 +30,7 @@ Pull N recent classifications joined to their postings, via read-only SQL agains
 
 Stratify the sample: mix companies and ATS sources. Include emergent taxonomy entries when the window has any (`created_at` distinguishes emergent from seeded — §6.2).
 
-### 2. Judge (parallel Sonnet agents)
+### 2. Judge (parallel Sonnet 5.5 agents)
 
 Each judge receives its items inline — description plus assigned classification. Judges never see each other's items. One verdict per item:
 
