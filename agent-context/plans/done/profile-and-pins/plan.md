@@ -1,7 +1,7 @@
 # profile-and-pins — plan of record
 
 mode: compact
-status: active
+status: done
 read at: 2da46d6
 
 Built in worktree `../market-scout-profile-and-pins` on `feat/profile-and-pins`, rebased onto `main` at 8bf6eac. Migrations and role scripts go to the shared `market_scout` and `market_scout_test` (owner decision, 2026-10-01).
@@ -57,47 +57,49 @@ Panel 1 (56 agents, four slices): 82 findings and 28 comment-drift items, 1 refu
 
 All automated rows run under `pnpm test:db` against `market_scout_test`. A skip is not a pass.
 
-| AC | Proof | Status |
-|---|---|---|
-| G1 App role CRUD on each profile table; SELECT on named taxonomy | `lib/db/profile-grants.db.test.ts` | achievable as stated |
-| G2 App role refused writes outside `app`; refused EXECUTE on repair/undo | `profile-grants.db.test.ts` (catalog over every table, plus a real refused write) | achievable as stated |
-| G3 Later `app` table grants nothing; no membership, owns nothing (P14) | `profile-grants.db.test.ts` (owner creates a table in a rolled-back tx) | achievable as stated |
-| G4 Read-only role refused all on profile tables and EXECUTE on repair/undo | `profile-grants.db.test.ts` | achievable as stated |
-| G5 Profile read via app role, taxonomy search via read-only, both return fixture rows | `lib/db/profile.db.test.ts` | achievable as stated |
-| V1 No selectable view depends on `app` (catalog) | `profile-privacy.db.test.ts` | achievable as stated |
-| V2 No executable function names `app` in its body | `profile-privacy.db.test.ts` | achievable as stated |
-| C1 RESTRICT on role and skill delete | `profile-constraints.db.test.ts` | achievable as stated |
-| C2 Pin uniqueness | `profile-constraints.db.test.ts` | achievable as stated |
-| C3 Claimed-skill text and skill rules | `profile-constraints.db.test.ts` | achievable as stated |
-| C4 Past-title seniority and text rules | `profile-constraints.db.test.ts` | achievable as stated |
-| M1 Role merge moves link, dimension, past title, pin; deletes role; records slug | `taxonomy-repair.db.test.ts` | achievable as stated |
-| M2 Both pinned / both claimed / only merged claimed | `taxonomy-repair.db.test.ts` | achievable as stated |
-| M3 Specialization merge | `taxonomy-repair.db.test.ts` | achievable as stated |
-| M4 Role retire and skill retire | `taxonomy-repair.db.test.ts` | achievable as stated |
-| ~~M5 `hybrid-classifier` candidate and seed rows~~ | dropped by owner, 2026-10-01 | n/a |
-| M6 `save_enrichment` refuses a retired slug after merge and retire | `taxonomy-repair.db.test.ts` (owner calls `mcp.save_enrichment`) | achievable as stated |
-| M7 Absent term recorded, nothing else changes; absent survivor changes nothing (P12) | `taxonomy-repair.db.test.ts` | achievable as stated |
-| M8 Chained map and self-merge refused | `taxonomy-repair.db.test.ts` | achievable as stated |
-| M9 Save racing a merge (P10) | `taxonomy-repair.db.test.ts` (two connections, uncommitted save) | achievable as stated |
-| M10 FK census lists and exercises every reference | `taxonomy-repair.db.test.ts` | achievable as stated |
-| U1 Merge then undo vs snapshot; profile rows stay (P3) | `taxonomy-undo.db.test.ts` | achievable as stated |
-| U2 Retire then undo (P6) | `taxonomy-undo.db.test.ts` | achievable as stated |
-| U3 Merge, undo, merge, undo (P4) | `taxonomy-undo.db.test.ts` | achievable as stated |
-| U4 Chain undone in reverse; out-of-order undo refused (P5) | `taxonomy-undo.db.test.ts` | achievable as stated |
-| U5 Post-merge survivor link survives undo (P8) | `taxonomy-undo.db.test.ts` | achievable as stated |
-| U6 Undo refused on re-mint; second undo no-op | `taxonomy-undo.db.test.ts` | achievable as stated |
-| W1 Idempotent pin, unpin, claim | `profile.db.test.ts` | achievable as stated |
-| W2 Concurrent double pin (P1) | `profile.db.test.ts` (two app connections) | achievable as stated |
-| W3 Pin of a vanished role (P2) | `profile.db.test.ts` | achievable as stated |
-| Manual: empty state on a fresh test install | owner, `pnpm dev` against test DSNs | manual |
-| Manual: add skills, title, two pins; reload | owner | manual |
-| Manual: unpin persists | owner | manual |
-| Manual: submit disabled while pending | owner | manual |
-| Manual: retired pin renders with pinned-at name | owner, after `taxonomy_retire` on a fixture role | manual |
-| Manual: keyboard and focus | owner | manual |
-| Manual: MCP `query` refused on a profile table | owner, MCP session | manual |
-| Manual: parity on both databases (P13) | integrating executor runs, owner confirms | manual — run 2026-10-01: identical |
-| Manual: `pnpm preflight` | integrating executor | manual |
+| AC | Proof | Status | Result |
+|---|---|---|---|
+| G1 App role CRUD on each profile table; SELECT on named taxonomy | `lib/db/profile-grants.db.test.ts` | achievable as stated | pass |
+| G2 App role refused writes outside `app`; refused EXECUTE on repair/undo | `profile-grants.db.test.ts` (catalog over every table, column, sequence, schema, function; real refused write) | achievable as stated | pass |
+| G3 Later `app` table grants nothing; no membership, owns nothing (P14) | `profile-grants.db.test.ts` | achievable as stated | pass |
+| G4 Read-only role refused all on profile tables and EXECUTE on repair/undo | `profile-grants.db.test.ts` | achievable as stated | pass |
+| G5 Profile read via app role, taxonomy search via read-only, both return fixture rows | `profile.db.test.ts` | achievable as stated | pass |
+| V1 No selectable view depends on `app` (catalog) | `profile-privacy.db.test.ts` (transitive, column grants; planted leaks caught) | achievable as stated | pass |
+| V2 No executable function names `app` in its body | `profile-privacy.db.test.ts` (body, search_path, dependency; planted leaks caught) | achievable as stated | pass |
+| C1 RESTRICT on role and skill delete | `profile-constraints.db.test.ts` | achievable as stated | pass |
+| C2 Pin uniqueness | `profile-constraints.db.test.ts` | achievable as stated | pass |
+| C3 Claimed-skill text and skill rules | `profile-constraints.db.test.ts` | achievable as stated | pass |
+| C4 Past-title seniority and text rules | `profile-constraints.db.test.ts` | achievable as stated | pass |
+| M1 Role merge moves link, dimension, past title, pin; deletes role; records slug | `taxonomy-repair.db.test.ts` | achievable as stated | pass |
+| M2 Both pinned / both claimed / only merged claimed | `taxonomy-repair.db.test.ts` | achievable as stated | pass |
+| M3 Specialization merge | `taxonomy-repair.db.test.ts` | achievable as stated | pass |
+| M4 Role retire and skill retire | `taxonomy-repair.db.test.ts` | achievable as stated | pass |
+| ~~M5 `hybrid-classifier` candidate and seed rows~~ | dropped by owner, 2026-10-01 | n/a | n/a |
+| M6 `save_enrichment` refuses a retired slug after merge and retire | `taxonomy-repair.db.test.ts` | achievable as stated | pass |
+| M7 Absent term recorded, nothing else changes; absent survivor changes nothing (P12) | `taxonomy-repair.db.test.ts` | achievable as stated | pass |
+| M8 Chained map and self-merge refused | `taxonomy-repair.db.test.ts` | achievable as stated | pass |
+| M9 Save racing a merge (P10) | `taxonomy-repair.db.test.ts` (enrichment save and a direct writer, each proven blocked) | achievable as stated | pass |
+| M10 FK census lists and exercises every reference | `taxonomy-repair.db.test.ts` | achievable as stated | pass |
+| U1 Merge then undo vs snapshot; profile rows stay (P3) | `taxonomy-undo.db.test.ts` | achievable as stated | pass |
+| U2 Retire then undo (P6) | `taxonomy-undo.db.test.ts` | achievable as stated | pass |
+| U3 Merge, undo, merge, undo (P4) | `taxonomy-undo.db.test.ts` | achievable as stated | pass |
+| U4 Chain undone in reverse; out-of-order undo refused (P5) | `taxonomy-undo.db.test.ts` | achievable as stated | pass |
+| U5 Post-merge survivor link survives undo (P8) | `taxonomy-undo.db.test.ts` | achievable as stated | pass |
+| U6 Undo refused on re-mint; second undo no-op | `taxonomy-undo.db.test.ts` | achievable as stated | pass |
+| W1 Idempotent pin, unpin, claim | `profile.db.test.ts` | achievable as stated | pass |
+| W2 Concurrent double pin (P1) | `profile.db.test.ts` | achievable as stated | pass |
+| W3 Pin of a vanished role (P2) | `profile.db.test.ts` | achievable as stated | pass |
+| Manual: empty state on a fresh test install | owner, `pnpm dev` against test DSNs | manual | outstanding — owner; executor smoke-checked 2026-10-01 |
+| Manual: add skills, title, two pins; reload | owner | manual | outstanding — owner; executor smoke-checked |
+| Manual: unpin persists | owner | manual | outstanding — owner; executor smoke-checked |
+| Manual: submit disabled while pending | owner | manual | outstanding — owner; snapshots showed disabled submits, the pending window was too short to capture |
+| Manual: retired pin renders with pinned-at name | owner, after `taxonomy_retire` on a fixture role | manual | outstanding — owner; executor smoke-checked |
+| Manual: keyboard and focus | owner | manual | outstanding — owner; executor picked, pinned and submitted by keyboard |
+| Manual: MCP `query` refused on a profile table | owner, MCP session | manual | outstanding — owner; G4 asserts the same refusal on the read-only role |
+| Manual: parity on both databases (P13) | integrating executor runs, owner confirms | manual | pass — run after the final fix: version 44 clean on both, identical role surface |
+| Manual: `pnpm preflight` | integrating executor | manual | pass |
+
+Final gate, after the last fix: `pnpm preflight` pass; `pnpm test:db` 57 pass, none skipped; Go build, vet, test pass; `sqlc diff` clean; 000044 down→up round trip on the test database diffs clean. staticcheck not run (environment; see Review loop).
 
 ## Tasks
 
@@ -108,4 +110,4 @@ All automated rows run under `pnpm test:db` against `market_scout_test`. A skip 
 | 3 | `sqlc generate`; `go build ./... && go vet ./...`; apply to the development database; parity check (P13). | integrating executor | 2 | done: models regenerated; build, vet, `go test ./...` pass; down→up round trip on the test DB diffs clean; both databases at 44, clean, identical role surface |
 | 4 | Web data layer: app client, profile read and write cores, taxonomy search on the read-only client, latency check. Tests G5, W1–W3; DB-free guard that no client module imports the app client. | integrating executor | 1 | done: profile.db.test (4) and client-boundary.test (2) pass; search measured, see Delegated answers |
 | 5 | `/profile`: page, Server Actions, taxonomy combobox, nav entry, loading/empty/error states, stories. | integrating executor | 4 | done: `pnpm preflight` passes; smoke-tested in the browser against the test databases (pin, unmatched and matched skill, past title, retired pin, unpin, keyboard pick, 500px width); smoke rows removed |
-| 6 | Docs: `developer-guide.md` §2 (app role, DSNs, parity), `web-testing-guide.md` (app test DSN), `project.md` repair-function contract check. Preflight, review loop, landing. | integrating executor | 3, 5 | |
+| 6 | Docs: `developer-guide.md` §2 (app role, DSNs, parity), `web-testing-guide.md` (app test DSN), `project.md` repair-function contract check. Preflight, review loop, landing. | integrating executor | 3, 5 | done: four review passes (82 → 20 → 3 → 3 green findings), all gates pass |

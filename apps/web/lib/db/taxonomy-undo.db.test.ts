@@ -212,7 +212,7 @@ describe("taxonomy_undo", () => {
         const reminted = await merge(tx, "skills", [{ slug: `${m}-old`, into: `${m}-new` }]);
         await tx`SAVEPOINT reminted`;
         await insertTerm(tx, "skills", `${m}-old`, "Minted again");
-        await expect(undo(tx, reminted)).rejects.toThrow(/slugs minted again since repair/);
+        await expect(undo(tx, reminted)).rejects.toThrow(/slugs held again since repair/);
         await tx`ROLLBACK TO SAVEPOINT reminted`;
 
         await undo(tx, reminted);
@@ -354,6 +354,10 @@ describe("taxonomy_undo", () => {
           VALUES (${`${m}-shared`}, 'Shared (skill)', now() - interval '1 day')
         `;
         const legacy = await retire(tx, "skills", [{ slug: `${m}-shared`, reason: "Cleanup" }]);
+        const [{ also_in: alsoIn }] = await tx<{ also_in: string[] }[]>`
+          SELECT also_in FROM taxonomy_repair_terms WHERE repair_id = ${legacy}
+        `;
+        expect(alsoIn).toEqual(["specializations"]);
         await undo(tx, legacy);
         expect(await termId(tx, "skills", `${m}-shared`)).not.toBeNull();
 
@@ -363,7 +367,7 @@ describe("taxonomy_undo", () => {
         const repair = await merge(tx, "skills", [{ slug: `${m}-old`, into: `${m}-new` }]);
         await insertTerm(tx, "specializations", `${m}-old`);
         await tx`SAVEPOINT reminted`;
-        await expect(undo(tx, repair)).rejects.toThrow(/slugs minted again since repair/);
+        await expect(undo(tx, repair)).rejects.toThrow(/slugs held again since repair/);
         await tx`ROLLBACK TO SAVEPOINT reminted`;
       });
     } finally {
@@ -472,7 +476,7 @@ describe("taxonomy_undo", () => {
         // Different tables, so neither repair blocks the other's undo by term.
         await undo(tx, r0);
         await tx`SAVEPOINT second`;
-        await expect(undo(tx, r1)).rejects.toThrow(/slugs minted again since repair/);
+        await expect(undo(tx, r1)).rejects.toThrow(/slugs held again since repair/);
         await tx`ROLLBACK TO SAVEPOINT second`;
         expect(await termId(tx, "skills", `${m}-foo`)).toBeNull();
       });

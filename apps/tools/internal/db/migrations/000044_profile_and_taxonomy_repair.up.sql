@@ -114,8 +114,9 @@ CREATE TABLE taxonomy_repair_terms (
     survivor_slug  text,
     survivor_id    bigint,
     -- The other taxonomy tables that held the same slug when the term was
-    -- deleted. A legacy collision undo may restore; any other table holding
-    -- the slug at undo time means it was minted there since.
+    -- deleted. Undo restores a slug that already sat in these (a legacy
+    -- collision); any other table holding it at undo time means it was minted
+    -- or restored there since.
     also_in        text[]      NOT NULL DEFAULT '{}',
     reason         text        NOT NULL,
     PRIMARY KEY (repair_id, slug),
@@ -601,9 +602,10 @@ $$;
 -- survivor; a retired pin stays retired and can be pinned again.
 --
 -- Refuses rather than guesses: when a later repair that has not been undone
--- names any of the same terms, or when a deleted slug has been minted again --
--- in its own table, or in another table that did not hold it when the repair
--- ran. A slug that already sat in two tables is put back as found.
+-- names any of the same terms, or when a deleted slug is held again -- in its
+-- own table, or in another table that did not hold it when the repair ran,
+-- whether minted there or restored by another undo. A slug that already sat in
+-- two tables is put back as found.
 -- A second undo of the same repair raises a notice and changes nothing.
 -- ---------------------------------------------------------------------------
 
@@ -658,7 +660,7 @@ BEGIN
         v_repair.table_name)
     INTO v_bad USING p_repair_id, v_repair.table_name;
     IF v_bad IS NOT NULL THEN
-        RAISE EXCEPTION 'taxonomy_undo: slugs minted again since repair %: %', p_repair_id, v_bad;
+        RAISE EXCEPTION 'taxonomy_undo: slugs held again since repair % -- minted, or restored by another undo, in a table that did not hold them then: %', p_repair_id, v_bad;
     END IF;
 
     v_link_table := CASE v_repair.table_name
