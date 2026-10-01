@@ -28,7 +28,7 @@ before.
 
 `PROMPT_VERSION` names the **classifier contract**, not the model and not the
 harness: `model` is its own column, and the same contract runs under Luna and
-Sol here and under Haiku in `.claude/skills/batch-enrich/SKILL.md`. Bump it in
+Sol here and under Sonnet in `.claude/skills/batch-enrich/SKILL.md`. Bump it in
 the same commit as any change to classification discipline, grounding rules, the
 worker contract, or selection semantics — and bump it in both skills together,
 since both implement the one contract. An unbumped pin is not a paperwork gap:

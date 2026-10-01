@@ -545,7 +545,7 @@ else restates it as a literal.
 The two skills share one lineage and bump together: they run the same
 classification contract under different harnesses and models. The Go runner
 does not — different contract, different transport, and it can run the same
-Haiku model as the Claude skill, so a shared lineage would make its rows
+model as the Claude skill, so a shared lineage would make its rows
 indistinguishable.
 
 `mcp.save_enrichment` requires `provenance.model` and

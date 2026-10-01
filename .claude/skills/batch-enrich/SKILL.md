@@ -1,7 +1,7 @@
 ---
 name: batch-enrich
 description: >
-  Classifies unenriched job postings via parallel Haiku subagents — the
+  Classifies unenriched job postings via parallel Sonnet subagents — the
   subscription-covered bulk-enrichment path now that `claude -p` bills API
   dollars outside the Max plan. Each subagent is self-contained: it fetches its
   own posting descriptions, loads the taxonomy and cross-table slug-collision
@@ -18,7 +18,7 @@ argument-hint: "<count> [focus description] [--force] [--backlog] [--per-company
 
 ```classification-pins
 PROMPT_VERSION=batch-enrich-v10
-MODEL=claude-haiku-4-5-20251001
+MODEL=claude-sonnet-5
 ```
 
 This block is the only place these values are written. Read it once at
@@ -27,8 +27,8 @@ or `<MODEL>`. Never restate a version string as a literal — the Codex skill di
 and its workers wrote `batch-enrich-v6` for weeks under a `batch-enrich-v7` pin.
 
 `PROMPT_VERSION` names the **classifier contract**, not the model and not the
-harness. Model is its own column, and one contract runs under Haiku here and
-under GPT-5.6 Luna/Terra in `.agents/skills/batch-enrich/SKILL.md` — so the two
+harness. Model is its own column, and one contract runs under Sonnet here and
+under Luna and Sol in `.agents/skills/batch-enrich/SKILL.md` — so the two
 skills share one pin value and bump together. `apps/tools/cmd/batch-enrich` is a
 different contract on a different transport and carries its own `batch-enrich-go-v<n>`
 lineage; do not reuse this one there.
@@ -45,14 +45,14 @@ tell these runs apart.
 
 # Batch Enrich
 
-Enrich job postings into canonical roles, specializations, skills, and a structured summary. **You coordinate, you don't classify.** Select deduplicated work units, dispatch Haiku agents in parallel waves, aggregate their reports. Each agent is fully self-contained: it reads its own data, classifies, and writes its own results through `save_enrichment`. There is no JSON handoff back to the orchestrator.
+Enrich job postings into canonical roles, specializations, skills, and a structured summary. **You coordinate, you don't classify.** Select deduplicated work units, dispatch Sonnet agents in parallel waves, aggregate their reports. Each agent is fully self-contained: it reads its own data, classifies, and writes its own results through `save_enrichment`. There is no JSON handoff back to the orchestrator.
 
 ## Architecture at a glance
 
 | Role | Owns |
 |---|---|
 | Orchestrator (this skill) | Arg parsing, **deduplicated work-unit selection via `enrichment_preview`**, wave/chunk dispatch, report |
-| Agent (Haiku, per chunk) | Fetch the representative's description, load taxonomy + collision list, classify once, `save_enrichment` per sibling, retry on `ok:false` |
+| Agent (Sonnet, per chunk) | Fetch the representative's description, load taxonomy + collision list, classify once, `save_enrichment` per sibling, retry on `ok:false` |
 
 - Orchestrator selects **which work units** — nothing else, and it selects by calling `enrichment_preview`, not by writing SQL. It never loads taxonomy or collision data. Injecting that into every prompt double-pays: read once, then re-typed as input tokens per agent, and agents re-query it anyway.
 - Every agent reads taxonomy/collision state fresh, itself, every time.
@@ -218,7 +218,7 @@ Spread everything else (singles and pairs) as usual.
 
 Agent config per call:
 - `subagent_type`: `general-purpose`
-- `model`: `haiku`
+- `model`: `sonnet`
 - `description`: `Enrich chunk <first_id>…` (or list the IDs)
 
 **Cross-wave taxonomy visibility.** Agents in one wave each query the taxonomy once, at chunk start, so parallel agents cannot see each other's newly-minted slugs — a pre-existing property of parallel dispatch, not a new risk from chunking. Taxonomy created mid-wave becomes visible starting the *next* wave, when fresh agents query. Durability is unaffected by chunk size: `save_enrichment` commits per posting, so an interrupted chunk leaves reached postings committed and only the unreached ones re-select later.
