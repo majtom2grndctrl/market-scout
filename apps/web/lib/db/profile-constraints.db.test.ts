@@ -51,6 +51,15 @@ describe("profile constraints", () => {
           () => tx`DELETE FROM canonical_roles WHERE id = ${pinned}`,
           /violates foreign key constraint "pins_role_id_fkey"/,
         );
+        // RESTRICT, not the default NO ACTION, which a deferred check could let through.
+        const actions = await tx<{ conname: string; confdeltype: string }[]>`
+          SELECT conname, confdeltype FROM pg_constraint
+          WHERE conrelid IN ('app.pins'::regclass, 'app.past_titles'::regclass, 'app.claimed_skills'::regclass)
+            AND contype = 'f'
+          ORDER BY conname
+        `;
+        expect(actions.every((a) => a.confdeltype === "r")).toBe(true);
+        expect(actions.length).toBe(4);
         await expectRefused(
           tx,
           () => tx`DELETE FROM canonical_roles WHERE id = ${titled}`,
@@ -80,6 +89,12 @@ describe("profile constraints", () => {
 
         await expectRefused(tx, () => insertPin(tx, role, "A again"), /pins_role_unique/);
         await expect(insertPin(tx, other, "B")).resolves.toBeDefined();
+
+        // Retire leaves pins with no role, so several such pins must coexist.
+        await tx`INSERT INTO app.pins (role_id, pinned_name) VALUES (NULL, ${`${m} retired one`})`;
+        await expect(
+          tx`INSERT INTO app.pins (role_id, pinned_name) VALUES (NULL, ${`${m} retired two`})`,
+        ).resolves.toBeDefined();
       });
     } finally {
       await owner.end();

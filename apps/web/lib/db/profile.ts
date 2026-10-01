@@ -46,7 +46,7 @@ export interface Profile {
   pastTitles: PastTitle[];
   claimedSkills: ClaimedSkill[];
   pins: Pin[];
-  // The title-stated rank vocabulary a past title may take, highest last.
+  // The title-stated rank vocabulary a past title may take, ascending by rank.
   seniorities: Seniority[];
 }
 
@@ -130,7 +130,9 @@ function termRef(id: string | null, slug: string | null, name: string | null): T
 // the write is idempotent: repeating it succeeds and writes nothing.
 // ---------------------------------------------------------------------------
 
-const ID = /^[1-9][0-9]{0,18}$/;
+// Up to 18 digits, so every accepted id fits a bigint and a malformed one is a
+// field error rather than a Postgres range error.
+const ID = /^[1-9][0-9]{0,17}$/;
 
 // Postgres error codes the person can trigger. A foreign key violation means a
 // term vanished between render and submit -- merged or retired under the page.
@@ -198,13 +200,32 @@ export async function claimSkill(
   }
 
   try {
-    // One claim per matched skill and per text, so an existing claim of either
-    // makes this a no-op rather than an error.
-    await sql`
+    // One claim per matched skill and per text. Repeating a claim -- the same
+    // skill, or the same text with the same match -- is a no-op. A clash that
+    // would change what the person sees is reported instead: success there
+    // would silently drop the match they just picked.
+    const inserted = await sql`
       INSERT INTO app.claimed_skills (skill_text, skill_id)
       VALUES (${skillText}, ${input.skillId})
       ON CONFLICT DO NOTHING
+      RETURNING id
     `;
+    if (inserted.length > 0) {
+      return { ok: true };
+    }
+    const [sameText] = await sql<{ skill_text: string; skill_id: string | null }[]>`
+      SELECT skill_text, skill_id FROM app.claimed_skills
+      WHERE lower(btrim(skill_text)) = lower(btrim(${skillText}))
+    `;
+    if (sameText && sameText.skill_id !== input.skillId && input.skillId !== null) {
+      const [sameSkill] = await sql`SELECT 1 FROM app.claimed_skills WHERE skill_id = ${input.skillId}`;
+      if (!sameSkill) {
+        return {
+          ok: false,
+          error: `“${sameText.skill_text}” is already listed${sameText.skill_id === null ? " as unmatched" : " under another match"}. Remove it first to claim this match.`,
+        };
+      }
+    }
     return { ok: true };
   } catch (error) {
     if (pgCode(error) === FOREIGN_KEY_VIOLATION) {

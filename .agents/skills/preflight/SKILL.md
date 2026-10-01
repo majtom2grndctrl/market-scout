@@ -27,7 +27,7 @@ Run from `apps/web/`, in this order:
 
 1. `pnpm typecheck`
 2. `pnpm test`
-3. `pnpm test:db` — skip when `DATABASE_URL_TEST` or `DATABASE_URL_TEST_RO` is unset.
+3. `pnpm test:db` — skip when `DATABASE_URL_TEST` or `DATABASE_URL_TEST_RO` is unset. Without `DATABASE_URL_TEST_APP` the profile suites skip; report them as skipped.
 4. `pnpm build-storybook`
 5. `pnpm build`
 

@@ -35,6 +35,9 @@ function optional(formData: FormData, name: string): string | null {
   return value === "" ? null : value;
 }
 
+// Takes the whole write as one promise, client lookup included, so an unset
+// DATABASE_URL_APP or a refused connection becomes the same readable error as a
+// failed statement rather than an unhandled rejection.
 async function run(write: Promise<WriteResult>): Promise<ProfileActionState> {
   let result: WriteResult;
   try {
@@ -43,11 +46,10 @@ async function run(write: Promise<WriteResult>): Promise<ProfileActionState> {
     console.error("[profile] write failed", error);
     return { status: "error", error: "The profile could not be saved. Try again in a moment." };
   }
-  if (!result.ok) {
-    return { status: "error", error: result.error };
-  }
+  // Refreshed on a refusal too: the usual one is a term merged or retired
+  // under the page, and the page should stop offering it.
   revalidatePath(paths.profile);
-  return { status: "saved" };
+  return result.ok ? { status: "saved" } : { status: "error", error: result.error };
 }
 
 export async function pinRoleAction(_: ProfileActionState, formData: FormData) {
@@ -89,9 +91,13 @@ export async function removePastTitleAction(_: ProfileActionState, formData: For
   return run(getAppSql().then((sql) => removePastTitle(sql, field(formData, "id"))));
 }
 
-async function search(table: SearchableTable, term: string): Promise<TaxonomySearchResult> {
+async function search(table: SearchableTable, term: unknown): Promise<TaxonomySearchResult> {
+  // An action is a public endpoint; its argument is whatever the request sent.
+  if (typeof term !== "string") {
+    return { ok: false, error: "Search needs text." };
+  }
   try {
-    return { ok: true, matches: await searchTaxonomy(table, String(term)) };
+    return { ok: true, matches: await searchTaxonomy(table, term) };
   } catch (error) {
     console.error("[profile] taxonomy search failed", error);
     return { ok: false, error: "Search is unavailable right now." };

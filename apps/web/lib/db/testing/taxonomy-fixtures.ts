@@ -190,14 +190,32 @@ export async function postingSide(sql: ISql, table: TaxonomyTable, slugs: string
 // Thrown to roll a fixture transaction back once assertions have run.
 export const rollback = new Error("rollback fixture transaction");
 
+// Repeatable read pins one snapshot for the whole body, so a whole-table
+// comparison sees only the body's own writes, not another suite's commits.
 export async function inRolledBackTransaction(
   sql: Sql,
   body: (tx: ISql) => Promise<void>,
+  isolation: "read committed" | "repeatable read" = "read committed",
 ): Promise<void> {
-  await expectRollback(sql.begin(async (tx) => {
-    await body(tx);
-    throw rollback;
-  }));
+  await expectRollback(
+    sql.begin(`isolation level ${isolation}`, async (tx) => {
+      await body(tx);
+      throw rollback;
+    }),
+  );
+}
+
+// A repair's archive and retired-slug records, by the label it was made under.
+// For suites whose repairs commit.
+export async function deleteRepairsLabelled(sql: ISql, label: string): Promise<void> {
+  const repairs = await sql<{ id: string }[]>`SELECT id FROM taxonomy_repairs WHERE retired_by = ${label}`;
+  for (const { id } of repairs) {
+    await sql`DELETE FROM retired_slugs WHERE retired_by_repair = ${id}`;
+    await sql`DELETE FROM taxonomy_repair_links WHERE repair_id = ${id}`;
+    await sql`DELETE FROM taxonomy_repair_role_dimensions WHERE repair_id = ${id}`;
+    await sql`DELETE FROM taxonomy_repair_terms WHERE repair_id = ${id}`;
+    await sql`DELETE FROM taxonomy_repairs WHERE id = ${id}`;
+  }
 }
 
 async function expectRollback(run: Promise<unknown>): Promise<void> {

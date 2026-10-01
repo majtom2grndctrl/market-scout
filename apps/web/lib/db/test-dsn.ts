@@ -6,10 +6,11 @@ const TEST_DATABASE_SUFFIX = "_test";
 /**
  * DSNs for the `.db.test.ts` suites, resolved from the dedicated test database.
  *
- * There is deliberately no fallback to DATABASE_URL / DATABASE_URL_RO: fixture
- * rows written to the development database have leaked past best-effort
- * teardown, and every fixture company became a permanent fetcher target. A
- * suite with no test DSN skips rather than reaching the shared database.
+ * There is deliberately no fallback to DATABASE_URL / DATABASE_URL_RO /
+ * DATABASE_URL_APP: fixture rows written to the development database have
+ * leaked past best-effort teardown, and every fixture company became a
+ * permanent fetcher target. A suite with no test DSN skips rather than
+ * reaching the shared database.
  *
  * Unset and misconfigured are different conditions. Unset stays a skip, so a
  * developer who has not provisioned the test database is not blocked — the

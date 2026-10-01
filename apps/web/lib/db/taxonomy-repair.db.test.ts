@@ -2,6 +2,7 @@ import postgres, { type ISql } from "postgres";
 import { describe, expect, it } from "vitest";
 
 import {
+  deleteRepairsLabelled,
   inRolledBackTransaction,
   insertClassification,
   insertDimension,
@@ -20,16 +21,17 @@ import {
 import { testDsns } from "./test-dsn";
 
 // The repair functions are owner-only, so every statement here runs on the
-// owner DSN. Each case builds inside a transaction it rolls back, except the
-// race, which needs two connections to see each other's commits.
+// owner DSN. Each case builds inside a transaction it rolls back -- repeatable
+// read where it compares whole tables -- except the races, which need two
+// connections to see each other's commits and tear down by marker.
 
-function ownerOrSkip(context: { skip: () => void }) {
+function ownerOrSkip(context: { skip: () => void }, notices?: string[]) {
   const { ownerDsn } = testDsns();
   if (!ownerDsn) {
     context.skip();
     return undefined;
   }
-  return postgres(ownerDsn, { onnotice: () => {} });
+  return postgres(ownerDsn, { onnotice: (notice) => notices?.push(notice.message) });
 }
 
 // Every row a repair could touch, hashed per table. Compared inside one
@@ -289,6 +291,8 @@ describe("taxonomy_retire", () => {
 
         await retire(tx, "skills", [{ slug: `${m}-skill`, reason: "Umbrella skill." }]);
 
+        expect(await termId(tx, "skills", `${m}-skill`)).toBeNull();
+        expect(await retiredSlugRecords(tx, [`${m}-skill`])).toEqual([`${m}-skill|skills|vitest`]);
         const [row] = await tx`SELECT skill_id, skill_text FROM app.claimed_skills WHERE id = ${claimId}`;
         expect(row).toEqual({ skill_id: null, skill_text: `${m} Systems Knowledge` });
         expect(await linkSlugs(tx, "skills", [`${m}-skill`])).toEqual([]);
@@ -305,55 +309,62 @@ describe("taxonomy_retire", () => {
 
 describe("repairs across installs", () => {
   it("records an absent term's slug as retired and changes no taxonomy, posting, or profile row", async (context) => {
-    const { ownerDsn } = testDsns();
-    if (!ownerDsn) {
-      context.skip();
-      return;
-    }
-    const owner = postgres(ownerDsn, { onnotice: () => {} });
+    const notices: string[] = [];
+    const owner = ownerOrSkip(context, notices);
+    if (!owner) return;
     const m = newMarker("absent");
-    const rollbackError = new Error("rollback");
 
     try {
-      await owner
-        .begin("isolation level repeatable read", async (tx) => {
+      await inRolledBackTransaction(
+        owner,
+        async (tx) => {
+          // The fork case: the merge's survivor is present, the merged term is not.
+          const survivor = await insertTerm(tx, "canonical_roles", `${m}-survivor`);
+          await insertLink(tx, "canonical_roles", await insertClassification(tx, m), survivor);
+          await pin(tx, survivor, `${m} Survivor`);
           const before = await fingerprint(tx);
 
-          await retire(tx, "skills", [{ slug: `${m}-retired`, reason: "Absent here." }]);
+          await retire(tx, "skills", [{ slug: `${m}-retired`, reason: "Absent here" }]);
           await merge(tx, "canonical_roles", [{ slug: `${m}-merged`, into: `${m}-survivor` }]);
+          // Neither present: the merged slug is still recorded.
+          await merge(tx, "skills", [{ slug: `${m}-gone`, into: `${m}-also-gone` }]);
 
           const after = await fingerprint(tx);
           const { retired_slugs: retiredBefore, ...restBefore } = before;
           const { retired_slugs: retiredAfter, ...restAfter } = after;
           expect(restAfter).toEqual(restBefore);
           expect(retiredAfter).not.toEqual(retiredBefore);
-          expect(await retiredSlugRecords(tx, [`${m}-retired`, `${m}-merged`])).toEqual([
+          expect(
+            await retiredSlugRecords(tx, [`${m}-retired`, `${m}-merged`, `${m}-gone`]),
+          ).toEqual([
+            `${m}-gone|skills|vitest`,
             `${m}-merged|canonical_roles|vitest`,
             `${m}-retired|skills|vitest`,
           ]);
-          throw rollbackError;
-        })
-        .catch((error) => {
-          if (error !== rollbackError) throw error;
-        });
+          // Said aloud, so a mistyped slug does not pass silently.
+          expect(notices).toEqual(
+            expect.arrayContaining([
+              expect.stringMatching(new RegExp(`${m}-retired is not on this install`)),
+              expect.stringMatching(new RegExp(`${m}-merged is not on this install`)),
+            ]),
+          );
+        },
+        "repeatable read",
+      );
     } finally {
       await owner.end();
     }
   });
 
   it("changes no row when a merge's survivor is absent", async (context) => {
-    const { ownerDsn } = testDsns();
-    if (!ownerDsn) {
-      context.skip();
-      return;
-    }
-    const owner = postgres(ownerDsn, { onnotice: () => {} });
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
     const m = newMarker("no-survivor");
-    const rollbackError = new Error("rollback");
 
     try {
-      await owner
-        .begin("isolation level repeatable read", async (tx) => {
+      await inRolledBackTransaction(
+        owner,
+        async (tx) => {
           const role = await insertTerm(tx, "canonical_roles", `${m}-merged`);
           const classification = await insertClassification(tx, m);
           await insertLink(tx, "canonical_roles", classification, role);
@@ -362,11 +373,76 @@ describe("repairs across installs", () => {
           const before = await fingerprint(tx);
           await merge(tx, "canonical_roles", [{ slug: `${m}-merged`, into: `${m}-absent` }]);
           expect(await fingerprint(tx)).toEqual(before);
-          throw rollbackError;
-        })
-        .catch((error) => {
-          if (error !== rollbackError) throw error;
-        });
+        },
+        "repeatable read",
+      );
+    } finally {
+      await owner.end();
+    }
+  });
+
+  it("retires the present terms and records the absent ones in one call", async (context) => {
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
+    const m = newMarker("retire-mixed");
+
+    try {
+      await inRolledBackTransaction(owner, async (tx) => {
+        await insertTerm(tx, "specializations", `${m}-present`);
+        const repair = await retire(tx, "specializations", [
+          { slug: `${m}-present`, reason: "Names no domain" },
+          { slug: `${m}-absent`, reason: "Names no domain" },
+        ]);
+
+        expect(await termId(tx, "specializations", `${m}-present`)).toBeNull();
+        const outcomes = await tx<{ slug: string; outcome: string }[]>`
+          SELECT slug, outcome FROM taxonomy_repair_terms WHERE repair_id = ${repair} ORDER BY slug
+        `;
+        expect(outcomes).toEqual([
+          { slug: `${m}-absent`, outcome: "absent" },
+          { slug: `${m}-present`, outcome: "applied" },
+        ]);
+        expect(await retiredSlugRecords(tx, [`${m}-present`, `${m}-absent`])).toEqual([
+          `${m}-absent|specializations|vitest`,
+          `${m}-present|specializations|vitest`,
+        ]);
+      });
+    } finally {
+      await owner.end();
+    }
+  });
+
+  it("refuses malformed input before changing anything", async (context) => {
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
+    const m = newMarker("refuse");
+
+    try {
+      await inRolledBackTransaction(owner, async (tx) => {
+        await insertTerm(tx, "skills", `${m}-a`);
+        await insertTerm(tx, "skills", `${m}-b`);
+        const refusals: [string, () => Promise<unknown>, RegExp][] = [
+          ["unknown table", () => tx`SELECT public.taxonomy_retire('companies', '[{"slug":"x","reason":"r"}]', 'vitest')`, /unknown table companies/],
+          ["blank label", () => merge(tx, "skills", [{ slug: `${m}-a`, into: `${m}-b` }], "  "), /retired_by is required/],
+          ["empty map", () => tx`SELECT public.taxonomy_merge('skills', '[]', 'vitest')`, /non-empty JSON array/],
+          ["object map", () => tx`SELECT public.taxonomy_merge('skills', '{"slug":"a"}', 'vitest')`, /non-empty JSON array/],
+          ["missing into", () => tx`SELECT public.taxonomy_merge('skills', ${tx.json([{ slug: `${m}-a` }])}, 'vitest')`, /need both "slug" and "into"/],
+          ["missing reason", () => tx`SELECT public.taxonomy_retire('skills', ${tx.json([{ slug: `${m}-a` }])}, 'vitest')`, /need both "slug" and "reason"/],
+          ["duplicate after trim", () => retire(tx, "skills", [{ slug: `${m}-a`, reason: "r" }, { slug: ` ${m}-a `, reason: "r" }]), /named more than once/],
+          ["not a slug", () => retire(tx, "skills", [{ slug: `${m}-A`, reason: "r" }]), /not a slug/],
+          ["not a slug, survivor", () => merge(tx, "skills", [{ slug: `${m}-a`, into: "Go Lang" }]), /not a slug/],
+        ];
+        for (const [name, call, pattern] of refusals) {
+          await tx`SAVEPOINT refused`;
+          await expect(call(), name).rejects.toThrow(pattern);
+          await tx`ROLLBACK TO SAVEPOINT refused`;
+        }
+        expect(await termId(tx, "skills", `${m}-a`)).not.toBeNull();
+        const [{ count }] = await tx<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM taxonomy_repairs WHERE retired_by = 'vitest' AND performed_at = now()
+        `;
+        expect(count).toBe(0);
+      });
     } finally {
       await owner.end();
     }
@@ -502,21 +578,20 @@ describe("foreign-key census", () => {
   });
 });
 
-describe("a save racing a merge", () => {
+describe("writes racing a merge", () => {
+  // Both cases commit: two connections must see each other's writes. Fixtures
+  // and the repair are torn down by marker and label in finally.
+
   it("ends with the save's link on the survivor when the save commits while the merge waits", async (context) => {
     const owner = ownerOrSkip(context);
     if (!owner) return;
     const saver = postgres(testDsns().ownerDsn!, { max: 1, onnotice: () => {} });
     const m = newMarker("race");
-    let repairId: string | undefined;
 
     try {
-      const merged = await insertTerm(owner, "canonical_roles", `${m}-old`, "Race Old");
+      await insertTerm(owner, "canonical_roles", `${m}-old`, "Race Old");
       const survivor = await insertTerm(owner, "canonical_roles", `${m}-new`, "Race New");
-      const classification = await insertClassification(owner, m);
-      const [{ job_posting_id: postingId }] = await owner<{ job_posting_id: string }[]>`
-        SELECT job_posting_id FROM classifications WHERE id = ${classification}
-      `;
+      const postingId = await postingOf(owner, await insertClassification(owner, m));
 
       const payload = {
         posting_id: Number(postingId),
@@ -527,61 +602,124 @@ describe("a save racing a merge", () => {
       };
 
       // The save holds the enrichment lock, uncommitted, until released below.
-      let releaseSave!: () => void;
-      const saveHeld = new Promise<void>((resolve) => (releaseSave = resolve));
-      let saved!: (result: unknown) => void;
-      const saveRan = new Promise<unknown>((resolve) => (saved = resolve));
-      const save = saver.begin(async (tx) => {
+      const held = holdOpen(saver, async (tx) => {
         const [{ result }] = await tx<{ result: unknown }[]>`
           SELECT mcp.save_enrichment(${tx.json(payload)}, 'fixture-model', 'fixture') AS result
         `;
-        saved(result);
-        await saveHeld;
+        return result;
       });
 
       try {
-        expect(await saveRan).toMatchObject({ ok: true });
+        expect(await held.ran).toMatchObject({ ok: true });
         const mergeDone = merge(owner, "canonical_roles", [{ slug: `${m}-old`, into: `${m}-new` }], m);
-        // Give the merge time to block on the lock before the save commits.
-        await new Promise((resolve) => setTimeout(resolve, 300));
-        const [{ waiting }] = await owner<{ waiting: number }[]>`
-          SELECT count(*)::int AS waiting FROM pg_locks
-          WHERE locktype = 'advisory' AND classid = 734771 AND objid = 26 AND NOT granted
-        `;
-        expect(waiting).toBe(1);
-        releaseSave();
-        await save;
-        repairId = await mergeDone;
+        await waitForBlocked(owner, "advisory");
+        held.release();
+        await held.done;
+        await mergeDone;
       } finally {
-        releaseSave();
-        await save.catch(() => {});
+        held.release();
+        await held.done.catch(() => {});
       }
 
-      const links = await owner<{ role_id: string }[]>`
-        SELECT jpr.role_id FROM job_posting_roles jpr
-        JOIN classifications c ON c.id = jpr.classification_id
-        WHERE c.job_posting_id = ${postingId}
-      `;
-      expect(links.map((l) => l.role_id)).toEqual([survivor]);
+      expect(await rolesLinkedTo(owner, postingId)).toEqual([survivor]);
       expect(await termId(owner, "canonical_roles", `${m}-old`)).toBeNull();
-      void merged;
     } finally {
-      await cleanupCommitted(owner, m, repairId);
+      await cleanupCommitted(owner, m);
       await saver.end();
+      await owner.end();
+    }
+  }, 20_000);
+
+  // cmd/batch-enrich writes links directly, without the enrichment lock. The
+  // row lock the merge takes on its terms is what holds it off.
+  it("ends with a direct writer's link on the survivor when it commits while the merge waits", async (context) => {
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
+    const writer = postgres(testDsns().ownerDsn!, { max: 1, onnotice: () => {} });
+    const m = newMarker("race-direct");
+
+    try {
+      const merged = await insertTerm(owner, "canonical_roles", `${m}-old`);
+      const survivor = await insertTerm(owner, "canonical_roles", `${m}-new`);
+      const classification = await insertClassification(owner, m);
+      const postingId = await postingOf(owner, classification);
+
+      // The insert's foreign-key check holds FOR KEY SHARE on the merged role.
+      const held = holdOpen(writer, (tx) => insertLink(tx, "canonical_roles", classification, merged));
+
+      try {
+        await held.ran;
+        const mergeDone = merge(owner, "canonical_roles", [{ slug: `${m}-old`, into: `${m}-new` }], m);
+        await waitForBlocked(owner, "transactionid");
+        held.release();
+        await held.done;
+        await mergeDone;
+      } finally {
+        held.release();
+        await held.done.catch(() => {});
+      }
+
+      expect(await rolesLinkedTo(owner, postingId)).toEqual([survivor]);
+      expect(await termId(owner, "canonical_roles", `${m}-old`)).toBeNull();
+    } finally {
+      await cleanupCommitted(owner, m);
+      await writer.end();
       await owner.end();
     }
   }, 20_000);
 });
 
-// The race commits, so its fixtures need explicit teardown.
-async function cleanupCommitted(owner: ISql, m: string, repairId: string | undefined) {
-  if (repairId) {
-    await owner`DELETE FROM retired_slugs WHERE retired_by_repair = ${repairId}`;
-    await owner`DELETE FROM taxonomy_repair_links WHERE repair_id = ${repairId}`;
-    await owner`DELETE FROM taxonomy_repair_role_dimensions WHERE repair_id = ${repairId}`;
-    await owner`DELETE FROM taxonomy_repair_terms WHERE repair_id = ${repairId}`;
-    await owner`DELETE FROM taxonomy_repairs WHERE id = ${repairId}`;
+// Runs body in a transaction on its own connection and keeps it open, holding
+// whatever locks it took, until release() is called.
+function holdOpen<T>(sql: postgres.Sql, body: (tx: ISql) => Promise<T>) {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  let ran!: (value: T) => void;
+  const ranPromise = new Promise<T>((resolve) => (ran = resolve));
+  const done = sql.begin(async (tx) => {
+    ran(await body(tx));
+    await released;
+  });
+  // If body throws, ran never settles; surface the failure through it too.
+  const ranOrFailed = Promise.race([ranPromise, done.then(() => ranPromise)]);
+  return { ran: ranOrFailed, release, done };
+}
+
+// Polls until exactly one backend waits on a lock of the given type, rather
+// than sleeping for a guessed interval.
+async function waitForBlocked(owner: ISql, locktype: "advisory" | "transactionid") {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const [{ waiting }] = await owner<{ waiting: number }[]>`
+      SELECT count(*)::int AS waiting FROM pg_locks
+      WHERE locktype = ${locktype} AND NOT granted
+        AND (${locktype} <> 'advisory' OR (classid = 734771 AND objid = 26))
+    `;
+    if (waiting === 1) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  throw new Error(`no backend blocked on a ${locktype} lock after 5s`);
+}
+
+async function postingOf(sql: ISql, classificationId: string): Promise<string> {
+  const [{ job_posting_id: postingId }] = await sql<{ job_posting_id: string }[]>`
+    SELECT job_posting_id FROM classifications WHERE id = ${classificationId}
+  `;
+  return postingId;
+}
+
+async function rolesLinkedTo(sql: ISql, postingId: string): Promise<string[]> {
+  const rows = await sql<{ role_id: string }[]>`
+    SELECT DISTINCT jpr.role_id FROM job_posting_roles jpr
+    JOIN classifications c ON c.id = jpr.classification_id
+    WHERE c.job_posting_id = ${postingId}
+  `;
+  return rows.map((r) => r.role_id);
+}
+
+// Repairs are found by the marker they were labelled with, so a case that
+// fails before its merge returns still leaves nothing behind.
+async function cleanupCommitted(owner: ISql, m: string) {
+  await deleteRepairsLabelled(owner, m);
   const like = `${m}%`;
   await owner`
     DELETE FROM classifications WHERE job_posting_id IN (

@@ -227,4 +227,113 @@ describe("taxonomy_undo", () => {
       await owner.end();
     }
   });
+  it("restores the links whose classification survives when another was deleted since the repair", async (context) => {
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
+    const m = newMarker("undo-deleted");
+
+    try {
+      await inRolledBackTransaction(owner, async (tx) => {
+        const old = await insertTerm(tx, "skills", `${m}-old`);
+        await insertTerm(tx, "skills", `${m}-new`);
+        const kept = await insertClassification(tx, m);
+        const deleted = await insertClassification(tx, m);
+        await insertLink(tx, "skills", kept, old);
+        await insertLink(tx, "skills", deleted, old);
+
+        const repair = await merge(tx, "skills", [{ slug: `${m}-old`, into: `${m}-new` }]);
+        // Postings cascade to their classifications and links.
+        await tx`
+          DELETE FROM job_postings WHERE id = (SELECT job_posting_id FROM classifications WHERE id = ${deleted})
+        `;
+        await undo(tx, repair);
+
+        expect(await linkSlugs(tx, "skills", [`${m}-old`, `${m}-new`])).toEqual([`${kept}:${m}-old`]);
+      });
+    } finally {
+      await owner.end();
+    }
+  });
+
+  it("undoes a repair while a later repair on unrelated terms stands", async (context) => {
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
+    const m = newMarker("undo-unrelated");
+    const slugs = [`${m}-a`, `${m}-b`];
+
+    try {
+      await inRolledBackTransaction(owner, async (tx) => {
+        await insertTerm(tx, "skills", `${m}-a`);
+        await insertTerm(tx, "skills", `${m}-b`);
+        await insertTerm(tx, "skills", `${m}-x`);
+        await insertTerm(tx, "skills", `${m}-y`);
+
+        const before = await postingSide(tx, "skills", slugs);
+        const first = await merge(tx, "skills", [{ slug: `${m}-a`, into: `${m}-b` }]);
+        await merge(tx, "skills", [{ slug: `${m}-x`, into: `${m}-y` }]);
+        await undo(tx, first);
+
+        expect(await postingSide(tx, "skills", slugs)).toEqual(before);
+        expect(await termId(tx, "skills", `${m}-x`)).toBeNull();
+      });
+    } finally {
+      await owner.end();
+    }
+  });
+
+  it("undoes a specialization retire that also named an absent term, removing both retired-slug records", async (context) => {
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
+    const m = newMarker("undo-spec");
+    const slugs = [`${m}-domain`, `${m}-absent`];
+
+    try {
+      await inRolledBackTransaction(owner, async (tx) => {
+        const spec = await insertTerm(tx, "specializations", `${m}-domain`);
+        await insertLink(tx, "specializations", await insertClassification(tx, m), spec);
+
+        const before = await postingSide(tx, "specializations", slugs);
+        const repair = await retire(tx, "specializations", [
+          { slug: `${m}-domain`, reason: "Names no domain" },
+          { slug: `${m}-absent`, reason: "Names no domain" },
+        ]);
+        await undo(tx, repair);
+
+        expect(await postingSide(tx, "specializations", slugs)).toEqual(before);
+        expect(before.retired).toEqual([]);
+      });
+    } finally {
+      await owner.end();
+    }
+  });
+
+  it("undoes every standing repair a label made, newest first", async (context) => {
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
+    const m = newMarker("undo-label");
+    const slugs = [`${m}-a`, `${m}-b`, `${m}-c`];
+
+    try {
+      await inRolledBackTransaction(owner, async (tx) => {
+        const a = await insertTerm(tx, "canonical_roles", `${m}-a`);
+        await insertTerm(tx, "canonical_roles", `${m}-b`);
+        await insertTerm(tx, "canonical_roles", `${m}-c`);
+        await insertLink(tx, "canonical_roles", await insertClassification(tx, m), a);
+
+        const before = await postingSide(tx, "canonical_roles", slugs);
+        // A chain under one label: undoing oldest first would be refused.
+        await merge(tx, "canonical_roles", [{ slug: `${m}-a`, into: `${m}-b` }], m);
+        await merge(tx, "canonical_roles", [{ slug: `${m}-b`, into: `${m}-c` }], m);
+        await tx`SELECT public.taxonomy_undo_label(${m})`;
+
+        expect(await postingSide(tx, "canonical_roles", slugs)).toEqual(before);
+        const [{ standing }] = await tx<{ standing: number }[]>`
+          SELECT count(*)::int AS standing FROM taxonomy_repairs WHERE retired_by = ${m} AND undone_at IS NULL
+        `;
+        expect(standing).toBe(0);
+      });
+    } finally {
+      await owner.end();
+    }
+  });
 });

@@ -3,9 +3,11 @@ import type { ClaimedSkill, PastTitle, Pin } from "@/lib/db/profile";
 import type { ProfileFormAction } from "./action-state";
 import { RemoveButton } from "./profile-forms";
 
-// Read-only renderings of the profile, each row with its remove control. Every
-// row that lost or never had its taxonomy match says so in text -- unmatched
-// and retired are states the person should see, not gaps that look complete.
+// Read-only renderings of the profile, each row with its remove control. A row
+// with no taxonomy match says so in text, and a pin whose role was retired
+// says that -- states the person should see, not gaps that look complete. A
+// past title or skill whose match was retired reads as unmatched, like one that
+// never had a match: either way there is no term behind it now.
 
 function Row({ children, remove }: { children: React.ReactNode; remove: React.ReactNode }) {
   return (

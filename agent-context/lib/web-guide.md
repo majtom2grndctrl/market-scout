@@ -19,7 +19,7 @@ That guide is Go-first. Working in `apps/web`, read only:
 
 Skip the rest of §2, plus §3, §5, and §6 — Go setup, Go build, Go conventions, Go logging. §5.8 covers sqlc; nothing in `apps/web` is generated.
 
-Read [`web-testing-guide.md`](./web-testing-guide.md) before adding or changing web tests. `pnpm test` is DB-free. `pnpm test:db` runs only the Postgres view suite. Vitest transpiles without typechecking, so `pnpm typecheck` remains the type gate.
+Read [`web-testing-guide.md`](./web-testing-guide.md) before adding or changing web tests. `pnpm test` is DB-free. `pnpm test:db` runs only the Postgres suites. Vitest transpiles without typechecking, so `pnpm typecheck` remains the type gate.
 
 ## Layout
 
@@ -41,7 +41,7 @@ Server Components query Postgres directly with the read-only `DATABASE_URL_RO`, 
 
 Keep read queries in `lib/db/`. A query accepts a SQL client so DB tests can run the same read through the read-only role; the Server Component wrapper obtains that client. SQL views define derived state such as open postings. Consumers do not recreate those rules.
 
-Route handlers are reserved for streaming responses. A normal request-response read belongs in a Server Component. App-owned state — the profile — lives in the private `app` schema, which the read-only role cannot reach. It is read and written through a separate client on the app role; Server Actions write through it, and no Client Component imports it. Do not broaden the read-only connection, and do not read app-owned state through it.
+Route handlers are reserved for streaming responses. A normal request-response read belongs in a Server Component. App-owned state — the profile — lives in the private `app` schema, which the read-only role cannot reach. It is read and written through a separate client on the app role, `lib/db/app-client.ts`; Server Actions write through it, and no Client Component imports it — a DB-free test fails on one that does. Do not broaden the read-only connection, and do not read app-owned state through it.
 
 Raw location text is excluded from analytical groupings and filters. Curated `market` is the supported location dimension. It maps observed values through the read model and preserves `unmapped` as an explicit result. Compensation is excluded from the analytical vocabulary.
 
@@ -299,7 +299,7 @@ pnpm install --frozen-lockfile
 | `pnpm dev` | Next dev server. Link `../../.env.local` as `.env.local` first when the route reads Postgres. |
 | `pnpm typecheck` | `tsc --noEmit`. Covers `.storybook/` too. Run while iterating on types. |
 | `pnpm test` | DB-free Vitest suite. Never connects to Postgres. |
-| `pnpm test:db` | Optional view integration suite. Requires `DATABASE_URL_TEST` and `DATABASE_URL_TEST_RO` — see [Web Testing Guide](./web-testing-guide.md#database-tests) for the full contract; skipped tests are not verification. |
+| `pnpm test:db` | Optional Postgres integration suites. Requires `DATABASE_URL_TEST` and `DATABASE_URL_TEST_RO`; the profile suites also need `DATABASE_URL_TEST_APP` — see [Web Testing Guide](./web-testing-guide.md#database-tests) for the full contract; skipped tests are not verification. |
 | `pnpm storybook` | Dev server on port 6006. |
 | `pnpm build-storybook` | Compiles every story. Included in `pnpm preflight`. |
 | `pnpm build` | Production Next build. Included in `pnpm preflight`. |
@@ -316,4 +316,4 @@ Before handoff, a frontend change has the following. Sketches under `app/prototy
 - Honest data states. Show missing, partial, unmapped, and unavailable data rather than implying a complete answer.
 - Relevant Storybook states and theme review for reusable or themed components. Run the a11y addon where a story exists.
 
-Run `pnpm preflight`. Add `pnpm test:db` when a changed query, view contract, or read-only grant needs integration coverage and `DATABASE_URL_TEST`/`DATABASE_URL_TEST_RO` are available.
+Run `pnpm preflight`. Add `pnpm test:db` when a changed query, view contract, profile write, or role grant needs integration coverage and the test DSNs are available.

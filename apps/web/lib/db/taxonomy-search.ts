@@ -6,15 +6,17 @@ import { getSql } from "./client";
 // taxonomy is public, and the read-only role already holds EXECUTE on
 // similarity(text, text).
 //
-// The ranking is the MCP taxonomy_search tool's (apps/tools/cmd/mcp/
-// taxonomy_search.go): pg_trgm similarity against slug and name, then usage,
-// then id. Its clustering is left out -- that guards an agent against
-// attaching three spellings of one concept, and a person picking one term
-// does not need it. Drift between the two only reorders a picker.
+// The scoring is the MCP taxonomy_search tool's (apps/tools/cmd/mcp/
+// taxonomy_search.go): pg_trgm similarity against slug and name, ties broken
+// by usage, then id. Its clustering of near-identical slugs is left out -- that
+// guards an agent against attaching three spellings of one concept, and a
+// person picking one term does not need it. Drift between the two only
+// reorders a picker.
 //
 // One addition: a substring match qualifies a row even below the similarity
-// floor. Trigram similarity is built for whole concepts, and the first few
-// letters of one score too low to surface anything while the person types.
+// floor, and ranks by its (low) score like any other. Trigram similarity is
+// built for whole concepts, and the first few letters of one score too low to
+// surface anything while the person types.
 
 export type SearchableTable = "canonical_roles" | "skills";
 
@@ -27,7 +29,9 @@ export interface TaxonomyMatch {
 
 // pg_trgm's default threshold, as in the MCP tool.
 const MIN_SCORE = 0.3;
-const MIN_TERM_LENGTH = 2;
+// One character: the taxonomy holds single-letter skills (C, R), and an exact
+// match scores 1.0, so it still ranks first among the substring hits.
+const MIN_TERM_LENGTH = 1;
 const MAX_TERM_LENGTH = 120;
 const DEFAULT_LIMIT = 8;
 
@@ -50,9 +54,8 @@ export async function selectTaxonomyMatches(
   const pattern = `%${term.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
   // Usage is one grouped pass over the candidates' links. A correlated count
-  // per candidate seq-scans the link table each time -- no index leads on the
-  // term column -- and measured 300-570 ms over the full skill list on
-  // 2026-10-01; this shape measured 20-30 ms.
+  // per candidate seq-scans the link table each time, because no index leads
+  // on the term column -- an order of magnitude slower over the full skill list.
   const rows = await sql<{ id: string; slug: string; name: string; usage_count: number }[]>`
     WITH scored AS (
       SELECT t.id, t.slug, t.name,

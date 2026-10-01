@@ -14,16 +14,19 @@ import type { TaxonomyMatch } from "@/lib/db/taxonomy-search";
 
 import type { TaxonomySearch } from "./action-state";
 
-// Search-as-you-type over one taxonomy table. Results come from the server on
-// every input change; the latest request wins and earlier ones are dropped.
-// The selected term stays in the item list so it remains renderable while new
-// results arrive. Base UI's pattern for async search (single).
+// Search-as-you-type over one taxonomy table, after Base UI's async
+// single-select combobox example. The selected term stays in the item list so
+// it remains renderable while new results arrive.
+//
+// Searches are Server Actions, and Next runs a client's actions one at a time,
+// so a request per keystroke would queue -- and a save would wait behind the
+// queue. Typing is debounced, and only the latest search's result is applied.
 
-// Below this the server returns nothing, so the picker does not ask.
-const MIN_TERM_LENGTH = 2;
+const SEARCH_DELAY_MS = 200;
 
-// Input resets Base UI makes on its own when the popup closes, as opposed to
-// the person deleting the text or pressing clear.
+// Resets Base UI makes on its own when the popup closes with nothing selected,
+// as opposed to the person deleting the text ("input-change") or pressing the
+// clear button ("clear-press").
 const CLOSE_RESETS = new Set<string>(["focus-out", "outside-press", "escape-key", "input-clear"]);
 
 export function TaxonomyPicker({
@@ -49,32 +52,62 @@ export function TaxonomyPicker({
   disabled?: boolean;
   // "role" or "skill", for the status lines.
   noun: string;
-  // Keep unmatched text when the popup closes. Base UI otherwise resets an
-  // input with no selection on focus-out, outside press, or Escape -- which
-  // would make free-text entry impossible to submit.
+  // Keep unmatched text when the popup closes. Without it, typed text with no
+  // pick is cleared on close -- which would make free-text entry impossible.
   keepTypedText?: boolean;
 }) {
   const [results, setResults] = React.useState<TaxonomyMatch[]>([]);
   const [term, setTerm] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
-  const [isSearching, startSearch] = React.useTransition();
+  const [isSearching, setIsSearching] = React.useState(false);
+  // Identifies the latest search; a result tagged with an older one is dropped.
   const latest = React.useRef(0);
+  const timer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  React.useEffect(() => () => clearTimeout(timer.current), []);
 
   const items = React.useMemo(
     () => (value && !results.some((r) => r.id === value.id) ? [...results, value] : results),
     [results, value],
   );
 
+  function cancelSearch() {
+    latest.current += 1;
+    clearTimeout(timer.current);
+    setIsSearching(false);
+  }
+
+  function scheduleSearch(text: string) {
+    const request = ++latest.current;
+    clearTimeout(timer.current);
+    setIsSearching(true);
+    timer.current = setTimeout(async () => {
+      let next: { matches: TaxonomyMatch[]; error: string | null };
+      try {
+        const result = await search(text);
+        next = result.ok ? { matches: result.matches, error: null } : { matches: [], error: result.error };
+      } catch {
+        // A rejected action -- the server unreachable, say -- must not escape
+        // into the route's error boundary and take the whole page with it.
+        next = { matches: [], error: "Search is unavailable right now." };
+      }
+      if (request !== latest.current) {
+        return;
+      }
+      setResults(next.matches);
+      setError(next.error);
+      setIsSearching(false);
+    }, SEARCH_DELAY_MS);
+  }
+
   const trimmed = term.trim();
   const status = isSearching
     ? "Searching…"
     : error
       ? error
-      : trimmed.length > 0 && trimmed.length < MIN_TERM_LENGTH
-        ? "Keep typing to search."
-        : trimmed.length >= MIN_TERM_LENGTH && results.length === 0
-          ? `No ${noun} matches “${trimmed}”.`
-          : null;
+      : trimmed !== "" && results.length === 0 && value === null
+        ? `No ${noun} matches “${trimmed}”.`
+        : null;
 
   return (
     <div className="grid gap-1.5">
@@ -89,6 +122,8 @@ export function TaxonomyPicker({
         itemToStringLabel={(item) => item.name}
         isItemEqualToValue={(item, selected) => item.id === selected.id}
         onValueChange={(next) => {
+          // A pick settles the question; a search still in flight is moot.
+          cancelSearch();
           onValueChange(next);
           setError(null);
         }}
@@ -103,29 +138,20 @@ export function TaxonomyPicker({
           if (reason === "item-press") {
             return;
           }
-          if (next.trim().length < MIN_TERM_LENGTH) {
-            latest.current += 1;
+          // Typing away from a pick un-picks it, so the form never submits a
+          // match the text no longer shows.
+          if (reason === "input-change" && value !== null && next !== value.name) {
+            onValueChange(null);
+          }
+          if (next.trim() === "") {
+            cancelSearch();
             setResults([]);
             setError(null);
             return;
           }
-
-          const request = ++latest.current;
-          startSearch(async () => {
-            const result = await search(next);
-            if (request !== latest.current) {
-              return;
-            }
-            startSearch(() => {
-              if (result.ok) {
-                setResults(result.matches);
-                setError(null);
-              } else {
-                setResults([]);
-                setError(result.error);
-              }
-            });
-          });
+          if (reason === "input-change") {
+            scheduleSearch(next);
+          }
         }}
       >
         <ComboboxInput id={id} placeholder={placeholder} showClear={value !== null} disabled={disabled} />

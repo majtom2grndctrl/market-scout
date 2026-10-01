@@ -12,7 +12,7 @@
 -- reference a term has, on every install, and is tested once.
 --
 -- See: agent-context/lib/project.md §Settled architecture (profile and pins,
--- taxonomy repair) and agent-context/plans/*/profile-and-pins.
+-- taxonomy repair) and agent-context/plans/done/profile-and-pins.
 
 -- ---------------------------------------------------------------------------
 -- 1. The profile.
@@ -154,7 +154,9 @@ ALTER TABLE retired_slugs
 -- ---------------------------------------------------------------------------
 -- 3. The reference census.
 --
--- The functions are complete only while they know every reference a term has.
+-- The functions are complete only while they know every reference a term has:
+-- merge, retire, and undo each handle a reference, and this list is what makes
+-- forgetting one loud.
 -- This lists every foreign key into the three taxonomy tables that they do not
 -- handle; merge and retire refuse to run while it returns a row. A migration
 -- that adds a taxonomy reference therefore extends the functions and this list
@@ -202,11 +204,17 @@ $$;
 --
 -- The advisory lock is mcp.save_enrichment's own (000026), so a repair and a
 -- save never interleave: a save in flight finishes before the repair reads its
--- links. Writers that skip that lock -- cmd/batch-enrich writes directly -- are
--- held off by the FOR UPDATE each repair takes on its terms, which conflicts
--- with the FOR KEY SHARE a foreign-key check takes on the referenced row. The
--- precedent repairs copied links in one statement and deleted them in the
--- next, so a link committed between the two was deleted unrecorded.
+-- links. The precedent repairs copied links in one statement and deleted them
+-- in the next, so a link committed between the two was deleted unrecorded.
+--
+-- A writer that skips that lock -- cmd/batch-enrich writes directly -- meets
+-- the FOR UPDATE each repair takes on the terms it names, which conflicts with
+-- the FOR KEY SHARE a foreign-key check takes on the referenced row. A link it
+-- has in flight commits before the repair moves anything; one it starts later
+-- waits, then fails the foreign key. Only rows that exist can be locked, and
+-- that writer skips the retired-slug gate too, so it can still mint a slug a
+-- repair has just retired. It stays unused until it writes through
+-- mcp.save_enrichment.
 CREATE FUNCTION public.taxonomy_repair_begin(
     p_table      text,
     p_retired_by text,
@@ -265,8 +273,12 @@ $$;
 --
 -- A merged term absent from this install records the slug as retired and
 -- changes nothing else. A survivor absent from this install skips the pair
--- with a notice. A map that chains -- a survivor merged elsewhere in the same
--- map -- or merges a term into itself is refused whole.
+-- with a notice. Neither present: the merged slug is still recorded, since a
+-- fork may mint it later. A map is refused whole when it chains -- a survivor
+-- merged elsewhere in the same map -- merges a term into itself, names a slug
+-- twice, or names something that is not a slug.
+--
+-- Write the reason as a fragment; the stored text adds its own punctuation.
 -- ---------------------------------------------------------------------------
 
 CREATE FUNCTION public.taxonomy_merge(p_table text, p_map jsonb, p_retired_by text)
@@ -287,9 +299,11 @@ DECLARE
     v_reason        text;
 BEGIN
     IF jsonb_typeof(p_map) IS DISTINCT FROM 'array' OR jsonb_array_length(p_map) = 0 THEN
-        RAISE EXCEPTION 'taxonomy_merge: map must be a non-empty JSON array of {"slug", "into", "reason"} objects';
+        RAISE EXCEPTION 'taxonomy_merge: map must be a non-empty JSON array of {"slug", "into"} objects, each with an optional "reason"';
     END IF;
 
+    -- ON COMMIT DROP cleans up after an error; the explicit DROP at the end
+    -- lets a second call in the same transaction create the table again.
     CREATE TEMP TABLE taxonomy_merge_map ON COMMIT DROP AS
     SELECT e.ord, btrim(e.value ->> 'slug') AS slug, btrim(e.value ->> 'into') AS into_slug,
            nullif(btrim(e.value ->> 'reason'), '') AS reason
@@ -320,6 +334,13 @@ BEGIN
         RAISE EXCEPTION 'taxonomy_merge: map chains; survivor is itself merged in the same map: %', v_bad;
     END IF;
 
+    SELECT string_agg(x.s, ', ') INTO v_bad
+    FROM (SELECT slug AS s FROM taxonomy_merge_map UNION SELECT into_slug FROM taxonomy_merge_map) x
+    WHERE x.s !~ '^[a-z0-9]+(-[a-z0-9]+)*$';
+    IF v_bad IS NOT NULL THEN
+        RAISE EXCEPTION 'taxonomy_merge: not a slug (lowercase letters and digits, single hyphens): %', v_bad;
+    END IF;
+
     SELECT b.link_table, b.link_column INTO v_link_table, v_link_column
     FROM public.taxonomy_repair_begin(p_table, p_retired_by) b;
 
@@ -327,16 +348,18 @@ BEGIN
     VALUES ('merge', p_table, p_retired_by)
     RETURNING id INTO v_repair_id;
 
+    -- Every named term, locked in one statement in slug order, so a repair and
+    -- any other writer that locks terms always take them the same way round.
+    EXECUTE format(
+        'SELECT 1 FROM public.%I
+         WHERE slug IN (SELECT slug FROM taxonomy_merge_map UNION SELECT into_slug FROM taxonomy_merge_map)
+         ORDER BY slug FOR UPDATE', p_table);
+
     FOR v_pair IN SELECT * FROM taxonomy_merge_map ORDER BY ord LOOP
         v_reason := CASE
             WHEN v_pair.reason IS NULL THEN format('Merged into %L. Use %L.', v_pair.into_slug, v_pair.into_slug)
-            ELSE format('Merged into %L: %s. Use %L.', v_pair.into_slug, v_pair.reason, v_pair.into_slug)
+            ELSE format('Merged into %L: %s. Use %L.', v_pair.into_slug, rtrim(v_pair.reason, '.'), v_pair.into_slug)
         END;
-
-        -- Lock in slug order so two terms are always taken the same way round.
-        EXECUTE format('SELECT id, slug, name, created_at FROM public.%I
-                        WHERE slug IN ($1, $2) ORDER BY slug FOR UPDATE', p_table)
-        USING v_pair.slug, v_pair.into_slug;
 
         EXECUTE format('SELECT id, name, created_at FROM public.%I WHERE slug = $1', p_table)
         INTO v_term_id, v_term_name, v_term_created USING v_pair.slug;
@@ -344,6 +367,8 @@ BEGIN
         INTO v_survivor_id USING v_pair.into_slug;
 
         IF v_term_id IS NULL THEN
+            RAISE NOTICE 'taxonomy_merge: % % is not on this install; slug recorded as retired, nothing else changed',
+                p_table, v_pair.slug;
             INSERT INTO public.taxonomy_repair_terms (repair_id, slug, outcome, survivor_slug, reason)
             VALUES (v_repair_id, v_pair.slug, 'absent', v_pair.into_slug, v_reason);
             INSERT INTO public.retired_slugs (slug, table_name, retired_by_migration, reason, retired_by_repair)
@@ -361,7 +386,7 @@ BEGIN
         END IF;
 
         -- Posting links: archive, copy to the survivor, then remove. The term
-        -- row lock above keeps a new link from landing between the three.
+        -- row locks above keep a new link from landing between the three.
         EXECUTE format(
             'INSERT INTO public.taxonomy_repair_links (repair_id, term_id, classification_id, collided)
              SELECT $1, $2, j.classification_id,
@@ -456,6 +481,7 @@ BEGIN
         RAISE EXCEPTION 'taxonomy_retire: terms must be a non-empty JSON array of {"slug", "reason"} objects';
     END IF;
 
+    -- Same temp-table lifecycle as taxonomy_merge.
     CREATE TEMP TABLE taxonomy_retire_list ON COMMIT DROP AS
     SELECT e.ord, btrim(e.value ->> 'slug') AS slug, nullif(btrim(e.value ->> 'reason'), '') AS reason
     FROM jsonb_array_elements(p_terms) WITH ORDINALITY AS e(value, ord);
@@ -473,6 +499,12 @@ BEGIN
         RAISE EXCEPTION 'taxonomy_retire: slug named more than once: %', v_bad;
     END IF;
 
+    SELECT string_agg(slug, ', ') INTO v_bad
+    FROM taxonomy_retire_list WHERE slug !~ '^[a-z0-9]+(-[a-z0-9]+)*$';
+    IF v_bad IS NOT NULL THEN
+        RAISE EXCEPTION 'taxonomy_retire: not a slug (lowercase letters and digits, single hyphens): %', v_bad;
+    END IF;
+
     SELECT b.link_table, b.link_column INTO v_link_table, v_link_column
     FROM public.taxonomy_repair_begin(p_table, p_retired_by) b;
 
@@ -480,11 +512,19 @@ BEGIN
     VALUES ('retire', p_table, p_retired_by)
     RETURNING id INTO v_repair_id;
 
+    EXECUTE format(
+        'SELECT 1 FROM public.%I WHERE slug IN (SELECT slug FROM taxonomy_retire_list)
+         ORDER BY slug FOR UPDATE', p_table);
+
     FOR v_entry IN SELECT * FROM taxonomy_retire_list ORDER BY slug LOOP
-        EXECUTE format('SELECT id, name, created_at FROM public.%I WHERE slug = $1 FOR UPDATE', p_table)
+        EXECUTE format('SELECT id, name, created_at FROM public.%I WHERE slug = $1', p_table)
         INTO v_term_id, v_term_name, v_term_created USING v_entry.slug;
 
         IF v_term_id IS NULL THEN
+            -- Said aloud: a mistyped slug and a term this install never had
+            -- look the same in the record.
+            RAISE NOTICE 'taxonomy_retire: % % is not on this install; slug recorded as retired, nothing else changed',
+                p_table, v_entry.slug;
             INSERT INTO public.taxonomy_repair_terms (repair_id, slug, outcome, reason)
             VALUES (v_repair_id, v_entry.slug, 'absent', v_entry.reason);
         ELSE
@@ -581,11 +621,14 @@ BEGIN
         RAISE EXCEPTION 'taxonomy_undo: later repairs % touch the same terms; undo them first', v_bad;
     END IF;
 
-    EXECUTE format(
-        'SELECT string_agg(t.slug, '', '') FROM public.taxonomy_repair_terms t
-         WHERE t.repair_id = $1 AND t.outcome = ''applied''
-           AND EXISTS (SELECT 1 FROM public.%I x WHERE x.slug = t.slug)', v_repair.table_name)
-    INTO v_bad USING p_repair_id;
+    -- Any of the three tables: mcp.save_enrichment keeps a slug in one table
+    -- only, so restoring one that now lives elsewhere would break that rule.
+    SELECT string_agg(t.slug, ', ') INTO v_bad
+    FROM public.taxonomy_repair_terms t
+    WHERE t.repair_id = p_repair_id AND t.outcome = 'applied'
+      AND (EXISTS (SELECT 1 FROM public.canonical_roles x WHERE x.slug = t.slug)
+           OR EXISTS (SELECT 1 FROM public.specializations x WHERE x.slug = t.slug)
+           OR EXISTS (SELECT 1 FROM public.skills x WHERE x.slug = t.slug));
     IF v_bad IS NOT NULL THEN
         RAISE EXCEPTION 'taxonomy_undo: slugs minted again since repair %: %', p_repair_id, v_bad;
     END IF;
@@ -629,9 +672,11 @@ BEGIN
     USING p_repair_id;
 
     IF v_repair.table_name = 'canonical_roles' THEN
+        -- A dimension a later migration removed has nothing to come back to.
         INSERT INTO public.canonical_role_dimensions (canonical_role_id, dimension_id)
-        SELECT role_id, dimension_id FROM public.taxonomy_repair_role_dimensions
-        WHERE repair_id = p_repair_id
+        SELECT d.role_id, d.dimension_id FROM public.taxonomy_repair_role_dimensions d
+        WHERE d.repair_id = p_repair_id
+          AND EXISTS (SELECT 1 FROM public.role_dimensions rd WHERE rd.id = d.dimension_id)
         ON CONFLICT DO NOTHING;
 
         DELETE FROM public.canonical_role_dimensions crd
@@ -647,14 +692,47 @@ BEGIN
 END;
 $$;
 
+-- Undoes every standing repair a label made, newest first -- the order the
+-- later-repair refusal requires. A repair migration's down calls this with the
+-- same label its up passed as retired_by:
+--
+--   SELECT public.taxonomy_undo_label('000050_merge_go_aliases');
+--
+-- A label that names nothing raises a notice and changes nothing.
+CREATE FUNCTION public.taxonomy_undo_label(p_retired_by text)
+RETURNS void
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $$
+DECLARE
+    v_id bigint;
+    v_found boolean := false;
+BEGIN
+    PERFORM pg_advisory_xact_lock(734771, 26);
+    FOR v_id IN
+        SELECT id FROM public.taxonomy_repairs
+        WHERE retired_by = p_retired_by AND undone_at IS NULL
+        ORDER BY id DESC
+    LOOP
+        v_found := true;
+        PERFORM public.taxonomy_undo(v_id);
+    END LOOP;
+    IF NOT v_found THEN
+        RAISE NOTICE 'taxonomy_undo_label: no standing repair labelled %; nothing changed', p_retired_by;
+    END IF;
+END;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- 7. Owner only.
 --
 -- Postgres grants EXECUTE to PUBLIC on every new function, and every
 -- application role belongs to PUBLIC. readonly_role.sql's default privilege
 -- removes that grant only once the script has run; revoking here keeps a fresh
--- install closed before it does. These functions read `app`, so an application
--- role able to execute them would be a path around the schema boundary.
+-- install closed before it does. The functions run with invoker rights, so
+-- EXECUTE alone hands a caller nothing its own grants lack -- but they read and
+-- write `app` and the core taxonomy, and keeping them owner-only means that
+-- stays true whatever a later grant changes.
 -- ---------------------------------------------------------------------------
 
 REVOKE ALL ON FUNCTION public.taxonomy_repair_unhandled_references() FROM PUBLIC;
@@ -662,3 +740,4 @@ REVOKE ALL ON FUNCTION public.taxonomy_repair_begin(text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.taxonomy_merge(text, jsonb, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.taxonomy_retire(text, jsonb, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.taxonomy_undo(bigint) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.taxonomy_undo_label(text) FROM PUBLIC;

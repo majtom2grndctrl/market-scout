@@ -200,7 +200,7 @@ DATABASE_URL_ACTIONS=postgres://market_scout_actions:<password>@localhost:5432/m
 
 ### App role
 
-The web app's profile reads and Server Action writes use `DATABASE_URL_APP`. Its role, `market_scout_app`, is the only application role that reaches the private `app` schema: SELECT, INSERT, UPDATE, DELETE on each profile table by explicit grant, and SELECT on the taxonomy tables the profile names. It writes nothing outside `app` and executes no function.
+The web app's profile reads and Server Action writes use `DATABASE_URL_APP`. Its role, `market_scout_app`, is the only application role that reaches the private `app` schema: SELECT, INSERT, UPDATE, DELETE on each profile table by explicit grant, and SELECT on the taxonomy tables the profile names. It writes nothing outside `app` and executes no function in `public`, `mcp`, or `app`: the script revokes Postgres's implicit `PUBLIC` EXECUTE itself rather than relying on `readonly_role.sql`.
 
 Provision after migrations, with the same owner role used for migrations, against every database the web app or its tests read:
 
@@ -271,14 +271,18 @@ The third lists what the app role can reach, and must also match row for row:
 
 ```sql
 SELECT format('%I.%I', n.nspname, c.relname) AS relation,
-       has_table_privilege('market_scout_app', c.oid, 'INSERT') AS writable
+       concat_ws(',',
+         CASE WHEN has_table_privilege('market_scout_app', c.oid, 'SELECT') THEN 'select' END,
+         CASE WHEN has_table_privilege('market_scout_app', c.oid, 'INSERT') THEN 'insert' END,
+         CASE WHEN has_table_privilege('market_scout_app', c.oid, 'UPDATE') THEN 'update' END,
+         CASE WHEN has_table_privilege('market_scout_app', c.oid, 'DELETE') THEN 'delete' END) AS privileges
 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
   AND has_table_privilege('market_scout_app', c.oid, 'SELECT, INSERT, UPDATE, DELETE')
 ORDER BY 1;
 ```
 
-Expected: each `app` table writable, and each taxonomy table `app_role.sql` names read-only — nothing else.
+Expected: each `app` table with all four, and each taxonomy table `app_role.sql` names with `select` alone — nothing else.
 
 The expected function list is the per-function `GRANT EXECUTE` statements at the end of `readonly_role.sql`; read it rather than memorizing a count, and a commit that grants another function updates both sides at once. Signatures print in full, so a `timestamptz` argument in the script reads as `timestamp with time zone` here.
 
@@ -299,7 +303,7 @@ DATABASE_URL="$DATABASE_URL_TEST" go run ./cmd/migrate up
 
 When the migration adds a routine to `public`, re-run `readonly_role.sql` against both afterward. When it adds a table to `app`, add the table's grant to `app_role.sql` and re-run it against both. See §2 Test database.
 
-Taxonomy repair — merging or retiring a role, specialization, or skill — goes through the owner-only `taxonomy_merge` and `taxonomy_retire` functions (000044), called from a numbered migration; never hand-write the moves. Pass the migration's own name as the `retired_by` label; its down migration finds the repair by that label and calls `taxonomy_undo`, which refuses while a later repair still touches the same terms. A migration that adds a foreign key into a taxonomy table extends those functions and the handled list in `taxonomy_repair_unhandled_references()` in the same file: the functions refuse to run while any reference is unhandled.
+Taxonomy repair — merging or retiring a role, specialization, or skill — goes through the owner-only `taxonomy_merge` and `taxonomy_retire` functions (000044), called from a numbered migration; never hand-write the moves. Pass the migration's own name as the `retired_by` label; its down migration calls `taxonomy_undo_label` with the same label, which undoes that migration's repairs newest first and refuses while a later repair still touches the same terms. A migration that adds a foreign key into a taxonomy table extends merge, retire, and undo, and the handled list in `taxonomy_repair_unhandled_references()`, in the same file: merge and retire refuse to run while any reference is unhandled.
 
 `migrate` supports four verbs: `up`, `down`, `force <version>`, `version`. `version` prints the current version and the dirty flag (or reports no migrations on a fresh DB). `force <version>` pins the recorded version and clears the dirty flag.
 

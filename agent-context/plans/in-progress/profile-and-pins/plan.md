@@ -25,10 +25,25 @@ Built in worktree `../market-scout-profile-and-pins` on `feat/profile-and-pins`,
 - **App role script** `setup/app_role.sql`, shaped like `readonly_role.sql`: guards, CONNECT, USAGE on `app`, explicit per-table grants, SELECT on `canonical_roles`, `skills`, `title_seniority_seeds`. No default privileges. DSNs `DATABASE_URL_APP`, `DATABASE_URL_TEST_APP`.
 - **Unpin by pin id**, so a retired pin (no role) can be removed too.
 - **Combobox ported by hand from the shadcn registry**, not `shadcn add`. The CLI added an npm package named `cn` (a registry dependency our `cn()` already covers) and prompted to overwrite the forked `button` and `input`. Only the single-select pieces were kept; colours migrated per `web-guide.md` §Colour.
+- **`taxonomy_undo_label(retired_by)`** undoes a label's standing repairs newest first. A repair migration's down calls it with the label its up passed; a down cannot know the repair id its up returned. Added after review.
+- **A claim whose text is already listed under another match is reported, not swallowed.** Repeating a claim -- same skill, or same text with the same match -- stays a silent no-op. Added after review: an untargeted `ON CONFLICT` had turned the text clash into a success that dropped the picked match.
+- **One-character searches.** The taxonomy holds `C` and `R`; an exact match scores 1.0 and ranks first. 27 ms over the full skill list.
 - **Skill picker keeps typed text on close.** Base UI resets an unselected input on focus-out, outside press, and Escape, which made unmatched entry impossible to submit. Found in the smoke test; the picker now controls its input text.
 - **Taxonomy search latency: no index.** Measured on the development database (2,691 skills), 2026-10-01. The trigram scan was never the cost: a correlated usage count per candidate seq-scanned the link table, 300–570 ms. One grouped pass over the candidates' links runs 20–30 ms for skills, 4 ms for roles.
 - **Search also admits substring matches.** Ranking is the MCP tool's; a row whose slug or name contains the typed text qualifies below the 0.3 floor, because a few typed letters never clear it. Clustering is omitted: it guards an agent, not a person picking one term.
 - **The picker searches through a Server Action.** Route handlers are reserved for streaming, and a request-response read from a Client Component has no other server seam. The action calls the read-only client; it never touches the app client.
+
+## Review loop
+
+Panel 1 (56 agents, four slices): 82 findings and 28 comment-drift items, 1 refuted. Acted on every red and the yellows that held against intent; 000044 was edited in place and re-applied to both databases (unshipped; both profiles empty), round-trip and parity re-checked. Accepted, recorded here rather than changed:
+
+- Undo removes a survivor dimension a save asserted after the merge. Dimensions carry no provenance to tell the two apart; a role dimension changing between a merge and its undo is rare.
+- Retire scopes its retired-slug record to its own table, so a term retired for a reason that holds in every table can still be minted in the other two. The blanket form stays a hand-written record, as in 000031.
+- The down migration drops the repair archive; a repair an operator ran by hand loses its undo. Said in the down's header.
+- UPDATE is granted on whole profile tables, stamps included. No write core updates a row.
+- The profile read is four statements, not one snapshot; a repair landing mid-read gives one mixed render.
+- The client-boundary test sees direct imports only, not re-exports or dynamic `import()`.
+- staticcheck could not run: the installed binary predates Go 1.27's export data. Environment, not this change.
 
 ## AC-to-proof
 

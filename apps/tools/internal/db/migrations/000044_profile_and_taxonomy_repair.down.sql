@@ -7,8 +7,10 @@
 -- Retired-slug records a repair wrote stay, as ordinary records. A repair
 -- migration written after this one runs its own down, and so its undo, before
 -- this file runs; anything still standing was a repair whose term is gone, and
--- dropping its record would let the slug be minted again.
+-- dropping its record would let the slug be minted again. A repair an operator
+-- ran by hand loses its undo record here: undo it first if it may be wanted.
 
+DROP FUNCTION public.taxonomy_undo_label(text);
 DROP FUNCTION public.taxonomy_undo(bigint);
 DROP FUNCTION public.taxonomy_retire(text, jsonb, text);
 DROP FUNCTION public.taxonomy_merge(text, jsonb, text);

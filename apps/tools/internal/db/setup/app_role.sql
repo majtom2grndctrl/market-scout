@@ -48,8 +48,8 @@ END
 $$;
 
 -- Memberships or owned objects can preserve write paths beyond explicit
--- revokes. Ownership is checked across relations, routines, schemas, and types:
--- owning any of them carries privileges no revoke below can remove.
+-- revokes. Ownership is checked across relations, routines, schemas, types, and
+-- databases: owning any of them carries privileges no revoke below can remove.
 DO $$
 BEGIN
     IF EXISTS (
@@ -64,6 +64,7 @@ BEGIN
        OR EXISTS (SELECT 1 FROM pg_proc WHERE proowner = 'market_scout_app'::regrole)
        OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspowner = 'market_scout_app'::regrole)
        OR EXISTS (SELECT 1 FROM pg_type WHERE typowner = 'market_scout_app'::regrole)
+       OR EXISTS (SELECT 1 FROM pg_database WHERE datdba = 'market_scout_app'::regrole)
     THEN
         RAISE EXCEPTION 'market_scout_app owns database objects; transfer ownership before applying app grants';
     END IF;
@@ -103,10 +104,13 @@ REVOKE ALL PRIVILEGES ON SCHEMA app FROM market_scout_app;
 REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA app FROM market_scout_app;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA app FROM market_scout_app;
 
--- This role belongs to PUBLIC, so a function that kept Postgres's implicit
--- PUBLIC EXECUTE would be callable by it. Identical to the rule in
--- readonly_role.sql and action_role.sql; ALTER DEFAULT PRIVILEGES is
--- idempotent, so the database ends up with one row however many scripts ran.
+-- This role belongs to PUBLIC, so a routine that kept Postgres's implicit
+-- PUBLIC EXECUTE would be callable by it. Both statements repeat
+-- readonly_role.sql's, so "executes no function" does not depend on that
+-- script having run: the first strips the grant from routines already in
+-- `public` (pg_trgm's and pgvector's included), the second from routines the
+-- owner creates later. Both are idempotent.
+REVOKE EXECUTE ON ALL ROUTINES IN SCHEMA public FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 

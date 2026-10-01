@@ -7,8 +7,10 @@ import { testDsns } from "./test-dsn";
 // The grant boundary, asserted in both directions. The other db suites fail
 // only on a privilege that went missing; a grant that got wider leaves every
 // one of them green. So the refusals here are checked directly: through the
-// catalog over every table and function, and with a real statement the role
-// must have refused.
+// catalog over every table, column, sequence, schema, and function, and with a
+// real statement the role must have refused. Each DSN's identity is checked
+// first -- a DSN carrying owner credentials would pass the grants case and make
+// every refusal probe a real write.
 
 const APP = "market_scout_app";
 const READ_ONLY = "market_scout_readonly";
@@ -20,6 +22,7 @@ const REPAIR_FUNCTIONS = [
   "public.taxonomy_merge(text, jsonb, text)",
   "public.taxonomy_retire(text, jsonb, text)",
   "public.taxonomy_undo(bigint)",
+  "public.taxonomy_undo_label(text)",
 ];
 
 function dsnsOrSkip(context: { skip: () => void }) {
@@ -29,6 +32,11 @@ function dsnsOrSkip(context: { skip: () => void }) {
     return undefined;
   }
   return { ownerDsn, readOnlyDsn, appDsn };
+}
+
+async function expectRole(sql: ISql, role: string) {
+  const [{ current_user: user }] = await sql<{ current_user: string }[]>`SELECT current_user`;
+  expect(user).toBe(role);
 }
 
 async function executable(sql: ISql, role: string): Promise<string[]> {
@@ -46,6 +54,7 @@ describe("market_scout_app", () => {
     const app = postgres(dsns.appDsn);
 
     try {
+      await expectRole(app, APP);
       await inRolledBackTransaction(app, async (tx) => {
         const [role] = await tx<{ id: string; name: string }[]>`
           SELECT id, name FROM canonical_roles ORDER BY id LIMIT 1
@@ -94,6 +103,7 @@ describe("market_scout_app", () => {
     const app = postgres(dsns.appDsn);
 
     try {
+      await expectRole(app, APP);
       const writable = await owner<{ relation: string; privilege: string }[]>`
         SELECT format('%I.%I', n.nspname, c.relname) AS relation, p.privilege
         FROM pg_class c
@@ -105,6 +115,29 @@ describe("market_scout_app", () => {
           AND has_table_privilege(${APP}, c.oid, p.privilege)
       `;
       expect(writable).toEqual([]);
+
+      // Column-level grants are invisible to has_table_privilege.
+      const columnWritable = await owner<{ relation: string }[]>`
+        SELECT format('%I.%I', n.nspname, c.relname) AS relation
+        FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
+          AND n.nspname NOT IN ('app', 'pg_catalog', 'information_schema')
+          AND n.nspname NOT LIKE 'pg_toast%'
+          AND has_any_column_privilege(${APP}, c.oid, 'INSERT, UPDATE')
+      `;
+      expect(columnWritable).toEqual([]);
+
+      const [elsewhere] = await owner<{ sequences: number; schemas: number; database: boolean }[]>`
+        SELECT
+          (SELECT count(*)::int FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+           WHERE c.relkind = 'S' AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+             -- CASE, because AND does not stop the planner calling this on a table.
+             AND CASE WHEN c.relkind = 'S' THEN has_sequence_privilege(${APP}, c.oid, 'USAGE, UPDATE') END) AS sequences,
+          (SELECT count(*)::int FROM pg_namespace
+           WHERE has_schema_privilege(${APP}, oid, 'CREATE')) AS schemas,
+          has_database_privilege(${APP}, current_database(), 'CREATE, TEMPORARY') AS database
+      `;
+      expect(elsewhere).toEqual({ sequences: 0, schemas: 0, database: false });
       const [{ tables }] = await owner<{ tables: number }[]>`
         SELECT count(*)::int AS tables FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE c.relkind = 'r' AND n.nspname = 'public'
@@ -112,6 +145,13 @@ describe("market_scout_app", () => {
       expect(tables).toBeGreaterThan(10);
 
       expect(await executable(owner, APP)).toEqual([]);
+      const anyFunction = await owner<{ fn: string }[]>`
+        SELECT p.oid::regprocedure::text AS fn
+        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND has_function_privilege(${APP}, p.oid, 'EXECUTE')
+      `;
+      expect(anyFunction).toEqual([]);
 
       await expect(
         app`INSERT INTO canonical_roles (slug, name) VALUES ('grant-check', 'Grant check')`,
@@ -166,6 +206,7 @@ describe("market_scout_readonly", () => {
     const readOnly = postgres(dsns.readOnlyDsn);
 
     try {
+      await expectRole(readOnly, READ_ONLY);
       const granted = await owner<{ relation: string }[]>`
         SELECT relation FROM unnest(${PROFILE_TABLES}::text[]) AS relation
         WHERE has_table_privilege(${READ_ONLY}, relation, 'SELECT, INSERT, UPDATE, DELETE')
