@@ -549,15 +549,20 @@ Haiku model as the Claude skill, so a shared lineage would make its rows
 indistinguishable.
 
 `mcp.save_enrichment` requires `provenance.model` and
-`provenance.prompt_version` and rejects a call omitting either. It does not
+`provenance.prompt_version` and rejects a call omitting either. It records the
+model the caller names; nothing checks that against the model that ran. A
+coordinator passes its workers the model it dispatched them on, so a silent
+fallback in the dispatch tool would go unrecorded. Reasoning effort is not
+recorded at all. It does not
 check the value against a list of known versions: an allowlist in the server
 would force a rebuild and restart before a bumped pin could be written, which
 is the surest way to stop pins being bumped.
 
 **Historical rows are not relabelled.** Storage is append-only and these rows
-are the only evidence the drift happened. Four cohorts written before 2026-09-21
-cannot be attributed to a single writer, and queries that split by
-`prompt_version` must treat them as unresolved:
+are the only evidence the drift happened. Queries that split by
+`prompt_version` must treat these cohorts as unresolved: four written before
+2026-09-21 cannot be attributed to a single writer, and one carries a label
+whose contract it predates:
 
 | `prompt_version` | Model | Rows | Ambiguity |
 |---|---|---:|---|
@@ -565,6 +570,7 @@ cannot be attributed to a single writer, and queries that split by
 | `batch-enrich-v5` | `claude-haiku-4-5-20251001` | 561 | v5 was specified for the Codex path; these Haiku rows carry it too. Same label, different contract from the rows below. |
 | `batch-enrich-v6` | `claude-sonnet-5` | 66 | No pin in any writer names this model. Origin unidentified. |
 | `mcp-save-enrichment-v1` | `mcp-agent` | 231 | The removed `save_enrichment` default. Records only that provenance was omitted; the real contract and model are unrecoverable. |
+| `batch-enrich-v10`, ids 8027–8033 | `gpt-5.6-luna` | 5 | Saved on 2026-09-26 before the save action checked seniority evidence; each carries the literal placeholder `seniority[allowed-tag]`. A later v10 row supersedes each one. |
 
 ### 6.3 Where logs come from
 

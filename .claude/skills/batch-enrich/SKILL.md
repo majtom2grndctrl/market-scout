@@ -90,7 +90,11 @@ bounded to 500 unique positive IDs, preserves their order, treats every posting
 as its own work unit, and never expands dedup siblings. It is mutually exclusive
 with count, focus, force, sort, and max_per_company. A missing posting or one
 without a latest description rejects the whole request rather than returning a
-partial repair cohort.
+partial repair cohort. The error names the missing IDs. List every dedup sibling of a posting
+you repair, and give siblings one classification: a sibling left off the list
+keeps its old row, and siblings classified separately can disagree, the defect
+work units exist to prevent. An empty `posting_ids` list is rejected; when the
+review query returns no rows, there is nothing to repair.
 
 **Why newest-first is the default.** Oldest-first drained the queue in arrival order, which structurally guaranteed the classified set lagged the market: on 2026-09-21 only 4 of 1,946 classified postings had been first seen in the preceding three weeks, against 1,108 of 2,712 unclassified ones. The project's question is which job titles are *emerging*; a classified set months behind the market cannot answer it.
 
@@ -339,7 +343,7 @@ Summaries are **not** persisted (storage deferred per `project.md` non-goals), s
 - `canonical_roles` is an array. Blended roles are first-class; a posting may map to multiple roles (e.g. design-engineering hybrids).
 - Emit at least one canonical role for every posting. For a non-specific talent-community or general-interest posting, use `general-application`; an empty role array is invalid.
 - Always emit `seniority`. If it cannot be determined, emit `"seniority": "unknown"` — never omit the field. Allowed values: `intern`, `junior`, `mid`, `senior`, `staff`, `principal`, `lead`, `director`, `unknown`.
-- `notes` is optional. Omit the key or emit `null` when there are none. Whitespace-only is treated as null.
+- `notes` carries the seniority evidence line whenever seniority is not `unknown`, and may add freeform notes on other lines. With `unknown` and nothing else to say, omit the key or emit `null`. Whitespace-only is treated as null.
 - `dimensions` is a **closed set** (`role_dimensions`). Pick only slugs from that list. Never invent dimension slugs.
 - Every emitted canonical_role — new or existing — must carry a non-empty `dimensions` array.
 
@@ -479,6 +483,8 @@ Summaries are **not** persisted (storage deferred per `project.md` non-goals), s
   | `step2-manages` | Step 2, class (b) |
   | `step2-align` | Step 2, class (c) |
 
+  `save_enrichment` rejects a step-2 tag on a rung that step cannot produce: `step2-org` goes with `director` only, `step2-manages` and `step2-align` with `senior` only.
+
   `unknown` carries no seniority note. There is no quote to record, and a note saying what the posting lacks is a gloss, not evidence. The tag lets analyses separate seniority the employer stated (Step 1) from seniority this contract inferred (Step 2), the same split `title_head_source` makes for titles. The phrase itself is persisted so the evidence sits next to the value rather than only in a chunk report that may never be saved. Eight of 72 agents in the 2026-09-21 run dropped their reports entirely; the reasoning behind those calls is unrecoverable.
 
 - **Every non-`unknown` seniority needs a `grounding_phrase`: text copied verbatim from the title or the description.** Not your paraphrase of it, not your inference from it. "Senior Staff Product Designer" is a grounding phrase; "small, gritty team indicates mid-level responsibility" is not — that is your gloss, and a gloss cannot be checked. If you cannot find a phrase in the posting that carries the level, the level is `unknown`.
@@ -496,7 +502,7 @@ Summaries are **not** persisted (storage deferred per `project.md` non-goals), s
   "posting_id": <int>,
   "classification": {
     "seniority": "intern|junior|mid|senior|staff|principal|lead|director|unknown",
-    "notes": "<optional freeform or null>"
+    "notes": "<seniority[<tag>]: \"<verbatim phrase>\"> when seniority is not unknown, plus optional freeform lines; null otherwise>"
   },
   "canonical_roles": [
     {"slug": "<existing or new>", "name": "<human-readable>", "dimensions": ["design", "engineering"]}
@@ -513,7 +519,7 @@ Write `agent-output/batch-enrich/<YYYY-MM-DD-HHMM>.md`. Create the directory if 
 
 Aggregate from agent reports (the orchestrator holds no classification data of its own):
 
-- Run params (count, focus, force, backlog, per_company)
+- Run params (count, focus, force, backlog, per_company), or the requested posting IDs for a repair cohort
 - Counts: work units selected, postings selected (incl. siblings), siblings riding along beyond `count`, dispatched, enriched, failed, skipped-no-description, re-enriched (when force)
 - New-slug counts taken from `created_at >= <run start>` on the three taxonomy tables, not from agent reports
 - Failure breakdown by reason (from agent reports — e.g. `slug_collision unresolved after retries`)
@@ -522,7 +528,7 @@ Aggregate from agent reports (the orchestrator holds no classification data of i
   - TODO: add a rotation strategy for `failures.jsonl` — scanned in full every run with no size bound.
 - Per-posting summaries (`posting_id`, title, summary text)
 
-Note in the report that failed postings are not written and will be re-selected on the next non-`--force` run.
+Note in the report that failed postings are not written and will be re-selected on the next non-`--force` run. For a repair cohort, say instead that failed postings keep their earlier classification and need another exact-ID run.
 
 After writing, print a one-line summary to the user: counts + report path.
 

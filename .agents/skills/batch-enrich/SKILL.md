@@ -54,7 +54,11 @@ bounded to 500 unique positive IDs, preserves their order, treats every posting
 as its own work unit, and never expands dedup siblings. Do not combine it with
 count, focus, force, sort, or max_per_company. A partial result is an error: a
 missing posting or missing latest description stops the repair rather than
-silently shrinking it.
+silently shrinking it. The error names the missing IDs. List every dedup sibling of a posting
+you repair, and give siblings one classification: a sibling left off the list
+keeps its old row, and siblings classified separately can disagree, the defect
+work units exist to prevent. An empty `posting_ids` list is rejected; when the
+review query returns no rows, there is nothing to repair.
 
 - Strip exact, whitespace-delimited `--force`, `--backlog`, and `--per-company <N>` tokens first. A word such as `forceful` remains focus text. `--per-company` consumes the following token as its integer value.
 - The first remaining token is `count`. If it is absent, non-numeric, zero, or negative, use `10`.
@@ -159,7 +163,7 @@ If this query returns no row, or its `description_text` is null or empty, return
 
 - Treat `canonical_roles` as an array. Blended roles may have multiple roles.
 - Always emit `classification.seniority`: `intern`, `junior`, `mid`, `senior`, `staff`, `principal`, `lead`, `director`, or `unknown`. Use `unknown` when evidence is insufficient.
-- `notes` is optional. Omit it or use `null` when there are none.
+- `notes` carries the seniority evidence line whenever seniority is not `unknown`, and may add freeform notes on other lines. With `unknown` and nothing else to say, omit it or use `null`.
 - Every canonical role has a non-empty `dimensions` array drawn only from the live `role_dimensions` set. Never mint a dimension.
 - Prefer an existing taxonomy slug. New slugs are ASCII kebab-case and stable across reruns. Avoid every live cross-table collision slug.
 - Before tagging a skill, call `taxonomy_search` with `tables: ["skills"]` for the concepts you're about to use — pass the concept as you'd name it ("continuous integration"), not a substring, and batch up to 10 concepts from the posting in one call. `canonical_roles` and `specializations` already loaded wholesale in Setup; search those in-context instead of calling the tool for them.
@@ -185,7 +189,7 @@ If this query returns no row, or its `description_text` is null or empty, return
 - People management and organizational ownership are step 2 signal classes, not a separate axis. Where the title already says "Head of X", "VP of X" or General Manager, step 1 resolves it to `director` and step 2 is never reached.
 - **Years of experience is corroboration, never a basis.** A years figure may confirm a rung steps 1–2 already produced; it may never produce one. "5+ years" on a title with no level word is `unknown`, not `senior`.
 - Never read a level off subject matter, company stage, team adjectives ("a small, gritty team"), compensation, or inclusive-sourcing blurbs ("experience can come from student clubs or side projects").
-- Every non-`unknown` seniority needs a grounding phrase copied verbatim from the title or description — not a paraphrase or inference. Write it into `classification.notes`, on its own line, as `seniority[<tag>]: "<verbatim phrase>"` — for example `seniority[step1-title]: "Senior Staff Product Designer"`. The tag names the step that produced the rung, from a closed set: `step1-title`, `step1-body`, `step2-org`, `step2-manages`, `step2-align`. `unknown` carries no seniority note: there is no quote, and a note saying what the posting lacks is a gloss, not evidence. The tag lets analyses separate seniority the employer stated (step 1) from seniority this contract inferred (step 2), the same split `title_head_source` makes for titles. No verbatim phrase carrying the level → `unknown`.
+- Every non-`unknown` seniority needs a grounding phrase copied verbatim from the title or description — not a paraphrase or inference. Write it into `classification.notes`, on its own line, as `seniority[<tag>]: "<verbatim phrase>"` — for example `seniority[step1-title]: "Senior Staff Product Designer"`. The tag names the step that produced the rung, from a closed set: `step1-title`, `step1-body`, `step2-org`, `step2-manages`, `step2-align`. `save_enrichment` rejects a step-2 tag on a rung that step cannot produce: `step2-org` goes with `director` only, `step2-manages` and `step2-align` with `senior` only. `unknown` carries no seniority note: there is no quote, and a note saying what the posting lacks is a gloss, not evidence. The tag lets analyses separate seniority the employer stated (step 1) from seniority this contract inferred (step 2), the same split `title_head_source` makes for titles. No verbatim phrase carrying the level → `unknown`.
 - The word must function as a level, not sit inside a compound noun: "Chief of Staff", "Staff Accountant", and "Member of Technical Staff" carry no staff level.
 - A band needs an explicit separator (`/`, `+`, `or`, `to`): "Senior/Staff Engineer", "Mid-Senior" — take the lower bound. Two adjacent level words are one compound level and resolve to the more senior component: "Senior Staff" is `staff`, "Senior Director" is `director`, "Senior Principal" is `principal`.
 - Write a 100–200 token summary: role, seniority, required and preferred skills, domain, and role type. Avoid marketing and company framing. The tool echoes it for the report but does not persist it.
@@ -203,7 +207,7 @@ For each posting, call `save_enrichment` with the complete classifier payload an
   },
   "classification": {
     "seniority": "senior",
-    "notes": null
+    "notes": "seniority[step1-title]: \"Senior Software Engineer\""
   },
   "canonical_roles": [
     {
@@ -292,9 +296,9 @@ After all Luna and Sol reports and reconciliations, the coordinator alone create
 
 The report includes:
 
-- normalized count, focus, `force`, `backlog`, and `per_company`;
+- normalized count, focus, `force`, `backlog`, and `per_company`, or the requested posting IDs for a repair cohort;
 - selected, dispatched, saved, Luna-escalated, Sol-saved, failed, and re-enriched counts;
-- failure breakdown and a note that unsaved postings reselect on a later non-force run;
+- failure breakdown and a note that unsaved postings reselect on a later non-force run; for a repair cohort, say instead that failed postings keep their earlier classification and need another exact-ID run;
 - new roles, specializations, and skills, deduplicated by slug and name;
 - per-posting saved summaries with ID and title;
 - the read-only Sol audit, if run;

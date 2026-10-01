@@ -340,7 +340,7 @@ func TestSaveEnrichmentHandler_ActionRoleAppendsWithoutMutatingHistory(t *testin
 		return newCallToolRequest(map[string]any{
 			"posting_id":     postingID,
 			"provenance":     map[string]any{"model": "mcp-test", "prompt_version": "mcp-test-v1"},
-			"classification": map[string]any{"seniority": "senior", "notes": notes},
+			"classification": map[string]any{"seniority": "senior", "notes": notes + "\nseniority[step1-title]: \"Senior Software Engineer\""},
 			"canonical_roles": []any{
 				map[string]any{"slug": "software-engineer", "name": "Software Engineer", "dimensions": []any{"engineering"}},
 			},

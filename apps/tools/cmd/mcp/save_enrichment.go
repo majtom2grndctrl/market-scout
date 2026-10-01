@@ -28,8 +28,9 @@ import (
 )
 
 // Save-enrichment action error codes beyond the validation codes the shared
-// classifier rules emit. invalid_provenance and posting_not_found are checked
-// here; codeDBError (add_company.go) covers unexpected DB faults.
+// classifier rules emit. invalid_provenance, posting_not_found,
+// missing_canonical_role, and invalid_seniority_evidence are checked here;
+// codeDBError (add_company.go) covers unexpected DB faults.
 // codeNameCollision is raised by the function, not here — it is named so the
 // mapping below can attach that error's structured detail.
 const (
@@ -44,7 +45,20 @@ const (
 // shape so provenance values are safe audit keys.
 var provenancePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
-var seniorityEvidencePattern = regexp.MustCompile(`(?m)^seniority\[(step1-title|step1-body|step2-org|step2-manages|step2-align)\]: "[^"\r\n]+"$`)
+// seniorityEvidencePattern matches one evidence line in classification.notes:
+// a tag from the skill's closed set and a quoted phrase with at least one
+// non-space character, alone on its line.
+var seniorityEvidencePattern = regexp.MustCompile(`(?m)^seniority\[(step1-title|step1-body|step2-org|step2-manages|step2-align)\]: "[^"\r\n]*[^"\s][^"\r\n]*"$`)
+
+// step2Rungs is the only rung each step-2 tag may carry. Step 2 of the
+// skill's seniority ladder produces director for organizational ownership and
+// senior for managing or aligning; a step-1 tag quotes the employer's own
+// level word and may carry any rung.
+var step2Rungs = map[string]string{
+	"step2-org":     "director",
+	"step2-manages": "senior",
+	"step2-align":   "senior",
+}
 
 // saveEnrichmentRequest is the MCP tool DTO. It wraps the classifier
 // AgentResponse shape and adds MCP-only provenance. JSON keys are the wire
@@ -358,23 +372,36 @@ func validateProvenance(model, promptVersion string) []saveEnrichmentError {
 // intentionally stricter than the legacy Go batch runner's separate prompt
 // lineage. It blocks the two silent failure shapes observed in production:
 // classifications with no job function and seniority values without auditable
-// tagged evidence.
+// tagged evidence. It checks the evidence line's shape and its tag against the
+// rung, not that the phrase appears in the posting. A seniority outside the
+// closed set is left to the shared rules, so it reports one error, not two.
 func validateMCPEnrichmentContract(req saveEnrichmentRequest) []saveEnrichmentError {
 	var errs []saveEnrichmentError
 	if len(req.CanonicalRoles) == 0 {
 		errs = append(errs, saveErr(actionError{Path: "canonical_roles", Code: codeMissingCanonicalRole,
 			Message: "at least one canonical role is required; use general-application for a non-specific talent-community posting"}))
 	}
-	validEvidence := seniorityEvidencePattern.FindAllString(req.Classification.Notes, -1)
+	seniority := req.Classification.Seniority
+	if !classify.IsValidSeniority(seniority) {
+		return errs
+	}
+	validEvidence := seniorityEvidencePattern.FindAllStringSubmatch(req.Classification.Notes, -1)
 	evidenceMarkers := strings.Count(req.Classification.Notes, "seniority[")
-	if req.Classification.Seniority == "unknown" {
+	switch {
+	case seniority == "unknown":
 		if evidenceMarkers != 0 {
 			errs = append(errs, saveErr(actionError{Path: "classification.notes", Code: codeInvalidSeniorityEvidence,
 				Message: "unknown seniority must not carry a seniority evidence line"}))
 		}
-	} else if strings.TrimSpace(req.Classification.Seniority) != "" && (len(validEvidence) != 1 || evidenceMarkers != 1) {
+	case len(validEvidence) != 1 || evidenceMarkers != 1:
 		errs = append(errs, saveErr(actionError{Path: "classification.notes", Code: codeInvalidSeniorityEvidence,
 			Message: "non-unknown seniority requires exactly one line formatted as seniority[step1-title|step1-body|step2-org|step2-manages|step2-align]: \"verbatim phrase\""}))
+	default:
+		tag := validEvidence[0][1]
+		if rung, ok := step2Rungs[tag]; ok && rung != seniority {
+			errs = append(errs, saveErr(actionError{Path: "classification.notes", Code: codeInvalidSeniorityEvidence,
+				Message: fmt.Sprintf("seniority[%s] evidence supports only %s, not %s; step 2 produces director for organizational ownership and senior for managing or aligning", tag, rung, seniority)}))
+		}
 	}
 	return errs
 }

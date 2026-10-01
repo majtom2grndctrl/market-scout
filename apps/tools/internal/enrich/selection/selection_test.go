@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/db"
@@ -88,8 +89,9 @@ func TestSelectIDsWith_PreservesExactRows(t *testing.T) {
 func TestSelectIDsWith_RejectsPartialCohort(t *testing.T) {
 	q := &fakeQuerier{byIDs: []db.ListPostingsByIDsRow{{PostingID: 9}}}
 	_, _, err := SelectIDsWith(t.Context(), q, []int64{9, 4})
-	if err == nil {
-		t.Fatal("SelectIDsWith returned nil error for partial cohort")
+	var missing *MissingPostingsError
+	if !errors.As(err, &missing) || !slices.Equal(missing.IDs, []int64{4}) {
+		t.Fatalf("partial cohort error = %v, want MissingPostingsError naming [4]", err)
 	}
 }
 

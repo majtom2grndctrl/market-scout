@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/selection"
@@ -51,7 +52,7 @@ func TestRunEnrichmentPreview_ExactIDs(t *testing.T) {
 		},
 		classified: []int64{4, 9},
 	}
-	env := runEnrichmentPreview(t.Context(), previewRequest{PostingIDs: []int64{9, 4}}, sel)
+	env := runEnrichmentPreview(t.Context(), previewRequest{PostingIDs: idsPtr(9, 4)}, sel)
 	if !env.Ok || !sel.calledIDs || sel.called {
 		t.Fatalf("exact preview = %+v, called=%v calledIDs=%v", env, sel.called, sel.calledIDs)
 	}
@@ -63,6 +64,25 @@ func TestRunEnrichmentPreview_ExactIDs(t *testing.T) {
 	}
 }
 
+// idsPtr builds the posting_ids argument, which is a pointer so an explicit
+// empty list is distinguishable from an omitted one.
+func idsPtr(ids ...int64) *[]int64 { return &ids }
+
+func TestRunEnrichmentPreview_ExactIDsEchoesOnlyWhatApplies(t *testing.T) {
+	env := runEnrichmentPreview(t.Context(), previewRequest{PostingIDs: idsPtr(9)}, &fakeSelector{})
+	if env.Input.Sort != "" || env.Input.MaxPerCompany != 0 || env.Input.Count != 1 {
+		t.Errorf("exact-ID echo = %+v, want count 1 and no sort or max_per_company", env.Input)
+	}
+}
+
+func TestRunEnrichmentPreview_ExactIDsMissingPostingsIsInputError(t *testing.T) {
+	sel := &fakeSelector{err: &selection.MissingPostingsError{IDs: []int64{4}}}
+	env := runEnrichmentPreview(t.Context(), previewRequest{PostingIDs: idsPtr(9, 4)}, sel)
+	if env.Ok || !hasError(env.Errors, "posting_ids", codeInvalidPostingIDs) || !strings.Contains(env.Errors[0].Message, "[4]") {
+		t.Fatalf("missing postings envelope = %+v, want invalid_posting_ids naming [4]", env)
+	}
+}
+
 func TestRunEnrichmentPreview_ExactIDsValidation(t *testing.T) {
 	tests := []struct {
 		name string
@@ -70,10 +90,12 @@ func TestRunEnrichmentPreview_ExactIDsValidation(t *testing.T) {
 		path string
 		code string
 	}{
-		{"duplicate", previewRequest{PostingIDs: []int64{7, 7}}, "posting_ids[1]", codeInvalidPostingIDs},
-		{"non-positive", previewRequest{PostingIDs: []int64{0}}, "posting_ids[0]", codeInvalidPostingIDs},
-		{"conflicting count", previewRequest{PostingIDs: []int64{7}, Count: intPtr(1)}, "posting_ids", codeConflictingSelection},
-		{"conflicting force", previewRequest{PostingIDs: []int64{7}, Force: true}, "posting_ids", codeConflictingSelection},
+		{"empty", previewRequest{PostingIDs: idsPtr()}, "posting_ids", codeInvalidPostingIDs},
+		{"empty with force", previewRequest{PostingIDs: idsPtr(), Force: true}, "posting_ids", codeInvalidPostingIDs},
+		{"duplicate", previewRequest{PostingIDs: idsPtr(7, 7)}, "posting_ids[1]", codeInvalidPostingIDs},
+		{"non-positive", previewRequest{PostingIDs: idsPtr(0)}, "posting_ids[0]", codeInvalidPostingIDs},
+		{"conflicting count", previewRequest{PostingIDs: idsPtr(7), Count: intPtr(1)}, "posting_ids", codeConflictingSelection},
+		{"conflicting force", previewRequest{PostingIDs: idsPtr(7), Force: true}, "posting_ids", codeConflictingSelection},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

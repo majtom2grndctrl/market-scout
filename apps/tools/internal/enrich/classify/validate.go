@@ -62,6 +62,12 @@ var validSeniorities = map[string]struct{}{
 	"unknown":   {},
 }
 
+// IsValidSeniority reports whether s is in the closed seniority set.
+func IsValidSeniority(s string) bool {
+	_, ok := validSeniorities[s]
+	return ok
+}
+
 // SeniorityList returns the closed seniority set in contract order, for use in
 // operator-facing messages.
 func SeniorityList() string {

@@ -257,6 +257,14 @@ func TestRunSaveEnrichment_ValidationCodesFromSharedRules(t *testing.T) {
 			r.Classification.Notes += "\nseniority[step1-body]: \"senior engineers\""
 		}, "classification.notes", codeInvalidSeniorityEvidence},
 		{"unknown seniority with evidence", func(r *saveEnrichmentRequest) { r.Classification.Seniority = "unknown" }, "classification.notes", codeInvalidSeniorityEvidence},
+		{"blank evidence phrase", func(r *saveEnrichmentRequest) { r.Classification.Notes = "seniority[step1-body]: \" \"" }, "classification.notes", codeInvalidSeniorityEvidence},
+		{"org tag with senior", func(r *saveEnrichmentRequest) {
+			r.Classification.Notes = "seniority[step2-org]: \"5+ years of professional software engineering experience\""
+		}, "classification.notes", codeInvalidSeniorityEvidence},
+		{"manages tag with director", func(r *saveEnrichmentRequest) {
+			r.Classification.Seniority = "director"
+			r.Classification.Notes = "seniority[step2-manages]: \"lead a team of five engineers\""
+		}, "classification.notes", codeInvalidSeniorityEvidence},
 		{"invalid slug", func(r *saveEnrichmentRequest) { r.CanonicalRoles[0].Slug = "Bad_Slug" }, "canonical_roles[0].slug", string(classify.CodeInvalidSlug)},
 		{"unknown dimension", func(r *saveEnrichmentRequest) { r.CanonicalRoles[0].Dimensions = []string{"moonshot"} }, "canonical_roles[0].dimensions[0]", string(classify.CodeUnknownDimension)},
 		{"empty dimensions", func(r *saveEnrichmentRequest) { r.CanonicalRoles[0].Dimensions = nil }, "canonical_roles[0].dimensions", string(classify.CodeEmptyDimensions)},
@@ -529,5 +537,23 @@ func TestRunSaveEnrichment_NonCollisionErrorCarriesNoDetail(t *testing.T) {
 
 	if env.Errors[0].Collision != nil {
 		t.Fatalf("collision = %+v, want nil on a non-collision code", env.Errors[0].Collision)
+	}
+}
+
+func TestRunSaveEnrichment_SeniorityEvidenceTagMatchesRung(t *testing.T) {
+	tests := []struct{ seniority, notes string }{
+		{"director", `seniority[step2-org]: "lead our Finance organization"`},
+		{"senior", `seniority[step2-manages]: "lead a team of five engineers"`},
+		{"senior", `seniority[step2-align]: "align Sales and Legal on discount policy"`},
+		{"staff", `seniority[step1-body]: "a Staff-level role"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.seniority+"/"+tc.notes[:20], func(t *testing.T) {
+			req := validSaveRequest()
+			req.Classification.Seniority, req.Classification.Notes = tc.seniority, tc.notes
+			if errs := validateMCPEnrichmentContract(req); len(errs) != 0 {
+				t.Errorf("errors = %+v, want none", errs)
+			}
+		})
 	}
 }

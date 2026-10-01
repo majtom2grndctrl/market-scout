@@ -157,6 +157,17 @@ func SelectWith(ctx context.Context, q Querier, crit Criteria) (postings []Posti
 	return postings, alreadyClassified, nil
 }
 
+// MissingPostingsError names the requested postings an exact-ID selection
+// could not return: the posting does not exist, or its latest snapshot has no
+// description text. It is an input error, not a database fault.
+type MissingPostingsError struct {
+	IDs []int64
+}
+
+func (e *MissingPostingsError) Error() string {
+	return fmt.Sprintf("%d requested postings are missing or have no latest description: %v", len(e.IDs), e.IDs)
+}
+
 // SelectIDs returns exactly the requested postings, in request order, without
 // deduplication or sibling expansion. It is for reviewed repair cohorts rather
 // than ordinary backlog selection. A missing posting or one whose latest
@@ -173,7 +184,17 @@ func SelectIDsWith(ctx context.Context, q Querier, ids []int64) ([]Posting, []in
 		return nil, nil, fmt.Errorf("listing postings by id: %w", err)
 	}
 	if len(rows) != len(ids) {
-		return nil, nil, fmt.Errorf("exact-id selection returned %d of %d requested postings; a posting is missing or has no latest description", len(rows), len(ids))
+		found := make(map[int64]bool, len(rows))
+		for _, r := range rows {
+			found[r.PostingID] = true
+		}
+		var missing []int64
+		for _, id := range ids {
+			if !found[id] {
+				missing = append(missing, id)
+			}
+		}
+		return nil, nil, &MissingPostingsError{IDs: missing}
 	}
 
 	postings := make([]Posting, 0, len(rows))
