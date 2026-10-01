@@ -5,6 +5,10 @@ description: Fix confirmed review findings by delegating independent edits first
 
 # Fix Findings
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Sol at `high` for coordination and cross-cutting fixes. Use Luna at `low` for isolated mechanical edits; move contract changes to Sol.
+
 Coordinate fixes. Do not start from unverified reviewer claims.
 
 ## Verify

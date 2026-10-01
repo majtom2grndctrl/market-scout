@@ -8,6 +8,10 @@ description: >
 
 # Draft Plan
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Sol at `high`; use Astra at `high` for difficult architecture or conflicting requirements.
+
 Explore scope, write specs. Output lives in `agent-context/plans/drafts/<feature-name>/index.md`.
 
 A drafting session may produce 0, 1, or N plans. Scope often shifts during planning — let it. Don't lock a feature name before scope settles.

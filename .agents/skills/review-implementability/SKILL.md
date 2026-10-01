@@ -5,6 +5,10 @@ description: Review a plan through an implementer's task-by-task lens. Use after
 
 # Review Implementability
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Sol at `high` for the reviewer; use Astra at `high` for unresolved implementability questions.
+
 Check whether a task agent, given only its task, the Goal, plan-level acceptance criteria, relevant context slices, and source access, can build the right thing.
 
 ## Process

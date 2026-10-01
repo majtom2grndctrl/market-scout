@@ -5,6 +5,10 @@ description: Create or update a project-local Codex skill in `.agents/skills/`. 
 
 # Create Skill
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Sol at `medium`; increase to `high` for complex delegation or mutation boundaries.
+
 Create one focused Codex skill in `.agents/skills/<name>/`.
 
 ## Process

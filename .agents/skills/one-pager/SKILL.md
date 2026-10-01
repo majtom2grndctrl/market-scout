@@ -5,6 +5,10 @@ description: Write a lightweight frontend build brief for direct, human-steered 
 
 # One Pager
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Sol at `medium`; increase to `high` for complex interaction or design decisions.
+
 Write a frontend brief at `agent-context/plans/in-progress/<feature-name>/index.md`.
 
 Use this light lane only when the work touches no schema, agent-facing contract, or data-write path. Use `draft-plan` when it needs agent coordination or full acceptance criteria.

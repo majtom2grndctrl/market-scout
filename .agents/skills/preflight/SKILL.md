@@ -5,6 +5,10 @@ description: Run the applicable quality gates for changed Go and web surfaces, f
 
 # Preflight
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Luna at `low`. Report non-mechanical failures for a Sol implementation task; keep this skill within its mechanical-fix scope.
+
 Detect changed code surfaces from the working tree. Run every applicable gate. A batch-enrich `SKILL.md` is a surface on its own. Docs-only changes have no code gate; report that and stop.
 
 ## Tools gate
@@ -33,7 +37,7 @@ No web formatter is configured. Do not introduce one as part of preflight.
 
 Runs when the change touches `.agents/skills/batch-enrich/SKILL.md` or `.claude/skills/batch-enrich/SKILL.md`. The `PROMPT_VERSION` pin in each file's `classification-pins` block is the only thing that lets a later query separate classification cohorts. It sat unchanged for four months in 2026 while five materially different prompts shipped under it; those cohorts are unrecoverable.
 
-1. **Pin moved with the change.** Diff each touched file; fail when the diff contains no `PROMPT_VERSION=` line. The check cannot tell a classification-affecting edit from a cosmetic one, so every unbumped change is suspect.
+1. **Pin moved with the contract.** Diff each touched file; require a `PROMPT_VERSION=` change when classification discipline, grounding, inputs, worker classification behavior, or selection semantics changed. Model identifiers, reasoning effort, coordinator report labels, and prose-only edits may preserve the pin after verifying those rules are unchanged. Record the exemption and actual-model provenance requirement; model choice is a separate lineage field.
 2. **Pins agree.** Both files must carry the same `PROMPT_VERSION` value. One classifier contract, two harnesses, one pin value.
 3. **No restated literal.** `grep 'batch-enrich-v[0-9]'` in either file outside its `PROMPT_VERSION=` line. A version restated in an example or a SQL snippet is how workers wrote `batch-enrich-v6` under a `batch-enrich-v7` pin. Prose naming a past version as history is fine; anything a worker would copy into a `save_enrichment` call is not.
 

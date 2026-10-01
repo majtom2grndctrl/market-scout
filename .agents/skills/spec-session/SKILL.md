@@ -8,6 +8,10 @@ description: >
 
 # Spec Session
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Sol at `high`; use Astra at `high` for difficult architecture or conflicting requirements.
+
 ## Before you write
 
 Read these skills and files before drafting:

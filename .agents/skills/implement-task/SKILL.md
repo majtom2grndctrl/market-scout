@@ -5,6 +5,10 @@ description: Implement one focused plan task or ad-hoc change with source-ground
 
 # Implement Task
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Sol at `medium`; increase to `high` for cross-package contracts or subtle lifecycle changes. Use Astra at `high` for unresolved defects.
+
 Implement one task. Do not commit unless the user explicitly asks.
 
 ## Load context

@@ -45,6 +45,7 @@ Take your side, plus **Either side**. Skip the other.
 
 **Either side**
 
+- **Codex skill model choice, reasoning effort, delegation defaults** → `agent-context/lib/model-guide.md`
 - **Project purpose, goals, audience** → `agent-context/lib/project.md`
 - **Repo layout (`apps/`, `research/`)** → `agent-context/lib/project.md` §Repo layout
 - **Settled architecture decisions** → `agent-context/lib/project.md` §Settled architecture

@@ -5,6 +5,10 @@ description: Run a source-grounded, multi-agent review panel with specialist len
 
 # Review Panel
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Luna at `low` for triage and mechanical hygiene. Use Sol at `high` for semantic comment drift, specialist lenses, seam traces, and refutation; use Astra at `high` for disputed high-impact findings.
+
 Review the diff through separate lenses. Do not review it yourself before delegation.
 
 ## Scope

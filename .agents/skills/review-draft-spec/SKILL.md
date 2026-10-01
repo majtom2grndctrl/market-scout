@@ -5,6 +5,10 @@ description: Review a draft plan with parallel broad and source-anchored lenses,
 
 # Review Draft Spec
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Sol at `high` for both independent reviewers; use Astra at `high` for unresolved architectural questions.
+
 Run two reviewers in parallel. One checks the spec itself; one verifies every named identifier against source.
 
 ## Process

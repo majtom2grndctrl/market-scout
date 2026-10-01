@@ -5,6 +5,10 @@ description: Turn a source into validated, fetcher-ready companies through Marke
 
 # Discovery Run
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Sol at `medium`; use Astra at `medium` for ambiguous company identity or browser evidence.
+
 Turn one source into fetcher candidates. The MCP tools own deduplication, ATS detection, and writes. The browser only gathers URL evidence.
 
 ## Start

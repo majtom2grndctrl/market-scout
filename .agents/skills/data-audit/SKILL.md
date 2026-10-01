@@ -5,6 +5,10 @@ description: Audit Market Scout classification quality and taxonomy drift withou
 
 # Data Audit
 
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md) for identifiers, availability, and effort controls. Use Sol at `high` for the coordinator and independent reviewers; use Astra at `high` for disputed taxonomy or evidence.
+
 Audit agent-written enrichment data. Read-only: never reclassify, merge, or write rows.
 
 ## Start
