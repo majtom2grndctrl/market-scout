@@ -24,7 +24,9 @@ Built in worktree `../market-scout-profile-and-pins` on `feat/profile-and-pins`,
 - **Census guard in SQL.** The repair functions refuse to run while any foreign key references a taxonomy table outside their handled list. The handled list lives once, in the migration.
 - **App role script** `setup/app_role.sql`, shaped like `readonly_role.sql`: guards, CONNECT, USAGE on `app`, explicit per-table grants, SELECT on `canonical_roles`, `skills`, `title_seniority_seeds`. No default privileges. DSNs `DATABASE_URL_APP`, `DATABASE_URL_TEST_APP`.
 - **Unpin by pin id**, so a retired pin (no role) can be removed too.
-- **Taxonomy search latency** — measured in task 4 against the development database before deciding on an index.
+- **Taxonomy search latency: no index.** Measured on the development database (2,691 skills), 2026-10-01. The trigram scan was never the cost: a correlated usage count per candidate seq-scanned the link table, 300–570 ms. One grouped pass over the candidates' links runs 20–30 ms for skills, 4 ms for roles.
+- **Search also admits substring matches.** Ranking is the MCP tool's; a row whose slug or name contains the typed text qualifies below the 0.3 floor, because a few typed letters never clear it. Clustering is omitted: it guards an agent, not a person picking one term.
+- **The picker searches through a Server Action.** Route handlers are reserved for streaming, and a request-response read from a Client Component has no other server seam. The action calls the read-only client; it never touches the app client.
 
 ## AC-to-proof
 
@@ -79,6 +81,6 @@ All automated rows run under `pnpm test:db` against `market_scout_test`. A skip 
 | 1 | **Riskiest slice.** Migration 000044: `app` schema and tables, archive, `retired_slugs.retired_by_repair`, merge/retire/undo functions with census guard. `setup/app_role.sql`. Apply to the test database. App test DSN. Grant, privacy, constraint, merge and retire tests (G1–G4, V1–V2, C1–C4, M1–M4, M6–M10). | integrating executor | — | |
 | 2 | Undo tests (U1–U6); fix what they find. | integrating executor | 1 | done: 6 tests pass (taxonomy-undo); no fixes needed |
 | 3 | `sqlc generate`; `go build ./... && go vet ./...`; apply to the development database; parity check (P13). | integrating executor | 2 | done: models regenerated; build, vet, `go test ./...` pass; down→up round trip on the test DB diffs clean; both databases at 44, clean, identical role surface |
-| 4 | Web data layer: app client, profile read and write cores, taxonomy search on the read-only client, latency check. Tests G5, W1–W3; DB-free guard that no client module imports the app client. | integrating executor | 1 | |
+| 4 | Web data layer: app client, profile read and write cores, taxonomy search on the read-only client, latency check. Tests G5, W1–W3; DB-free guard that no client module imports the app client. | integrating executor | 1 | done: profile.db.test (4) and client-boundary.test (2) pass; search measured, see Delegated answers |
 | 5 | `/profile`: page, Server Actions, taxonomy combobox, nav entry, loading/empty/error states, stories. | integrating executor | 4 | |
 | 6 | Docs: `developer-guide.md` §2 (app role, DSNs, parity), `web-testing-guide.md` (app test DSN), `project.md` repair-function contract check. Preflight, review loop, landing. | integrating executor | 3, 5 | |
