@@ -26,7 +26,7 @@ Built in worktree `../market-scout-profile-and-pins` on `feat/profile-and-pins`,
 - **Unpin by pin id**, so a retired pin (no role) can be removed too.
 - **Combobox ported by hand from the shadcn registry**, not `shadcn add`. The CLI added an npm package named `cn` (a registry dependency our `cn()` already covers) and prompted to overwrite the forked `button` and `input`. Only the single-select pieces were kept; colours migrated per `web-guide.md` §Colour.
 - **`taxonomy_undo_label(retired_by)`** undoes a label's standing repairs newest first. A repair migration's down calls it with the label its up passed; a down cannot know the repair id its up returned. It refuses a blank label or one no repair ever carried, so a mistyped down cannot record itself as done. Added after review.
-- **Undo's re-mint check:** the repair's own table at any time, the other two only for rows created since the repair. A slug in two tables before the repair -- the dev database holds two such legacy collisions -- is not the repair's doing, and undo restores it.
+- **Undo's re-mint check compares against the repair's own record.** Each deleted term records which other taxonomy tables held its slug at repair time; undo refuses when its own table holds the slug, or another table holds it that did not then. A slug already in two tables before the repair -- the dev database holds two such legacy collisions -- is put back as found. Timestamps were tried first and failed: another repair's undo restores rows with their original `created_at`.
 - **Picking a match for text already listed under a different match (or unmatched) is reported, not swallowed.** Repeating a claim -- the same skill under any text, or the same text with no new match picked -- stays a silent no-op. A picked skill that vanished under the page gets the vanished message even when its text clashes. Added after review: an untargeted `ON CONFLICT` had turned the clash into a success that dropped the picked match.
 - **One-character searches.** The taxonomy holds `C` and `R`; an exact match scores 1.0 and ranks first. 27 ms over the full skill list.
 - **Skill picker keeps typed text on close.** Base UI resets an unselected input on focus-out, outside press, and Escape, which made unmatched entry impossible to submit. Found in the smoke test; the picker now controls its input text.
@@ -35,6 +35,8 @@ Built in worktree `../market-scout-profile-and-pins` on `feat/profile-and-pins`,
 - **The picker searches through a Server Action.** Route handlers are reserved for streaming, and a request-response read from a Client Component has no other server seam. The action calls the read-only client; it never touches the app client.
 
 ## Review loop
+
+Panel 3 (5 agents, the second fix commit): 3 findings and 3 drift, none refuted. One yellow -- undoing two repairs of one slug in different tables, older first, could still leave it in both, because the timestamp heuristic could not see a row another undo had restored -- fixed by recording the other tables at repair time, with the reviewer's sequence as a test.
 
 Panel 2 (18 agents, the fix commit): 20 findings and 8 drift, none refuted. One red introduced by panel 1's fixes -- the cross-table re-mint check would refuse to undo a repair of a legacy collision -- fixed with tests; undo-label input, race-probe isolation, the vanished-skill clash message, and app_role.sql's closing boundary check also fixed.
 

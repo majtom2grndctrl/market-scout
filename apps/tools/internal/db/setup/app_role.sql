@@ -143,7 +143,9 @@ GRANT SELECT ON public.title_seniority_seeds TO market_scout_app;
 -- The boundary, checked rather than assumed: no routine in `public`, `app`, or
 -- `mcp` may be executable by this role, whoever owns it. A routine the REVOKE
 -- above could not reach -- an extension's, installed under another role --
--- must lose its PUBLIC grant from its owner first.
+-- must lose its PUBLIC grant from its owner first. `mcp` and `app` are covered
+-- by the default-privilege revoke only for routines created after it ran, so
+-- this is also what catches one that predates it.
 DO $$
 DECLARE
     v_executable text;

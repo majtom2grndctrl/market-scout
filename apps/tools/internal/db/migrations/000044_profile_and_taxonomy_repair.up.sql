@@ -113,6 +113,10 @@ CREATE TABLE taxonomy_repair_terms (
     term_created   timestamptz,
     survivor_slug  text,
     survivor_id    bigint,
+    -- The other taxonomy tables that held the same slug when the term was
+    -- deleted. A legacy collision undo may restore; any other table holding
+    -- the slug at undo time means it was minted there since.
+    also_in        text[]      NOT NULL DEFAULT '{}',
     reason         text        NOT NULL,
     PRIMARY KEY (repair_id, slug),
     CONSTRAINT taxonomy_repair_terms_outcome_check
@@ -197,6 +201,23 @@ AS $$
                   ('app',    'claimed_skills',              'skill_id',          'skills'))
       )
     ORDER BY 1;
+$$;
+
+-- The taxonomy tables other than p_table that hold p_slug right now.
+CREATE FUNCTION public.taxonomy_repair_also_in(p_table text, p_slug text)
+RETURNS text[]
+LANGUAGE sql
+STABLE
+SET search_path = pg_catalog
+AS $$
+    SELECT coalesce(array_agg(t ORDER BY t), '{}')
+    FROM unnest(ARRAY['canonical_roles', 'specializations', 'skills']) AS t
+    WHERE t <> p_table
+      AND CASE t
+            WHEN 'canonical_roles' THEN EXISTS (SELECT 1 FROM public.canonical_roles x WHERE x.slug = p_slug)
+            WHEN 'specializations' THEN EXISTS (SELECT 1 FROM public.specializations x WHERE x.slug = p_slug)
+            ELSE EXISTS (SELECT 1 FROM public.skills x WHERE x.slug = p_slug)
+          END;
 $$;
 
 -- Shared preamble for merge and retire: argument checks, the census, and the
@@ -432,9 +453,10 @@ BEGIN
 
         INSERT INTO public.taxonomy_repair_terms (
             repair_id, slug, outcome, term_id, term_name, term_created,
-            survivor_slug, survivor_id, reason)
+            survivor_slug, survivor_id, also_in, reason)
         VALUES (v_repair_id, v_pair.slug, 'applied', v_term_id, v_term_name, v_term_created,
-                v_pair.into_slug, v_survivor_id, v_reason);
+                v_pair.into_slug, v_survivor_id,
+                public.taxonomy_repair_also_in(p_table, v_pair.slug), v_reason);
 
         EXECUTE format('DELETE FROM public.%I WHERE id = $1', p_table) USING v_term_id;
 
@@ -549,9 +571,9 @@ BEGIN
             END IF;
 
             INSERT INTO public.taxonomy_repair_terms (
-                repair_id, slug, outcome, term_id, term_name, term_created, reason)
+                repair_id, slug, outcome, term_id, term_name, term_created, also_in, reason)
             VALUES (v_repair_id, v_entry.slug, 'applied', v_term_id, v_term_name, v_term_created,
-                    v_entry.reason);
+                    public.taxonomy_repair_also_in(p_table, v_entry.slug), v_entry.reason);
 
             EXECUTE format('DELETE FROM public.%I WHERE id = $1', p_table) USING v_term_id;
         END IF;
@@ -579,7 +601,9 @@ $$;
 -- survivor; a retired pin stays retired and can be pinned again.
 --
 -- Refuses rather than guesses: when a later repair that has not been undone
--- names any of the same terms, or when a deleted slug has been minted again.
+-- names any of the same terms, or when a deleted slug has been minted again --
+-- in its own table, or in another table that did not hold it when the repair
+-- ran. A slug that already sat in two tables is put back as found.
 -- A second undo of the same repair raises a notice and changes nothing.
 -- ---------------------------------------------------------------------------
 
@@ -621,25 +645,18 @@ BEGIN
         RAISE EXCEPTION 'taxonomy_undo: later repairs % touch the same terms; undo them first', v_bad;
     END IF;
 
-    -- Its own table at any time; the other two only for a row created since
-    -- the repair. mcp.save_enrichment keeps a new slug in one table, so a mint
-    -- elsewhere after the repair would break that rule on restore. A slug that
-    -- already sat in two tables before the repair is a legacy collision the
-    -- repair did not cause, and undo puts back exactly what it found.
-    -- performed_at is the repair transaction's now(), so >= also catches a
-    -- re-mint in that same transaction.
+    -- Its own table holding the slug means it was minted again. Another table
+    -- holding it now that did not at repair time means the same: restoring
+    -- would put one slug in two tables, which mcp.save_enrichment never mints.
+    -- Compared against the repair's own record, not timestamps -- another
+    -- repair's undo restores rows with their original created_at.
     EXECUTE format(
         'SELECT string_agg(t.slug, '', '') FROM public.taxonomy_repair_terms t
          WHERE t.repair_id = $1 AND t.outcome = ''applied''
            AND (EXISTS (SELECT 1 FROM public.%I x WHERE x.slug = t.slug)
-                OR EXISTS (SELECT 1 FROM public.canonical_roles x
-                           WHERE x.slug = t.slug AND x.created_at >= $2)
-                OR EXISTS (SELECT 1 FROM public.specializations x
-                           WHERE x.slug = t.slug AND x.created_at >= $2)
-                OR EXISTS (SELECT 1 FROM public.skills x
-                           WHERE x.slug = t.slug AND x.created_at >= $2))',
+                OR NOT (public.taxonomy_repair_also_in($2, t.slug) <@ t.also_in))',
         v_repair.table_name)
-    INTO v_bad USING p_repair_id, v_repair.performed_at;
+    INTO v_bad USING p_repair_id, v_repair.table_name;
     IF v_bad IS NOT NULL THEN
         RAISE EXCEPTION 'taxonomy_undo: slugs minted again since repair %: %', p_repair_id, v_bad;
     END IF;
@@ -760,6 +777,7 @@ $$;
 -- ---------------------------------------------------------------------------
 
 REVOKE ALL ON FUNCTION public.taxonomy_repair_unhandled_references() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.taxonomy_repair_also_in(text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.taxonomy_repair_begin(text, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.taxonomy_merge(text, jsonb, text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.taxonomy_retire(text, jsonb, text) FROM PUBLIC;

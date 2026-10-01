@@ -422,17 +422,27 @@ describe("taxonomy_undo", () => {
         for (const slug of ["a", "b", "c", "x", "y"]) {
           await insertTerm(tx, "skills", `${m}-${slug}`);
         }
-        await merge(tx, "skills", [{ slug: `${m}-a`, into: `${m}-b` }], m);
+        const first = await merge(tx, "skills", [{ slug: `${m}-a`, into: `${m}-b` }], m);
         const unrelated = await merge(tx, "skills", [{ slug: `${m}-x`, into: `${m}-y` }], m);
         // Another migration's repair builds on the first one.
-        await merge(tx, "skills", [{ slug: `${m}-b`, into: `${m}-c` }], other);
+        const later = await merge(tx, "skills", [{ slug: `${m}-b`, into: `${m}-c` }], other);
 
-        // Newest first: the unrelated repair undoes, then the first is refused.
-        await refused(m, new RegExp(`touch the same terms`));
-        const [{ undone_at: undoneAt }] = await tx<{ undone_at: Date | null }[]>`
-          SELECT undone_at FROM taxonomy_repairs WHERE id = ${unrelated}
+        // Newest first: undoing `unrelated` succeeds, then `first` is refused,
+        // naming the later repair and its label.
+        await tx`SAVEPOINT partway`;
+        let refusal = "";
+        try {
+          await tx`SELECT public.taxonomy_undo_label(${m})`;
+        } catch (error) {
+          refusal = String(error);
+        }
+        await tx`ROLLBACK TO SAVEPOINT partway`;
+        expect(refusal).toContain(`later repairs ${later} (${other}) touch the same terms`);
+        // The refused call took its earlier undo of `unrelated` with it.
+        const standing = await tx<{ id: string }[]>`
+          SELECT id FROM taxonomy_repairs WHERE retired_by = ${m} AND undone_at IS NULL ORDER BY id
         `;
-        expect(undoneAt).toBeNull();
+        expect(standing.map((r) => r.id)).toEqual([first, unrelated]);
 
         await tx`SELECT public.taxonomy_undo_label(${other})`;
         await tx`SELECT public.taxonomy_undo_label(${m})`;
@@ -440,6 +450,31 @@ describe("taxonomy_undo", () => {
         expect(notices).toEqual(
           expect.arrayContaining([expect.stringMatching(new RegExp(`every repair labelled ${m} is already undone`))]),
         );
+      });
+    } finally {
+      await owner.end();
+    }
+  });
+
+  it("refuses an undo that would put a slug in a second table it did not share at repair time, even when restored by another undo", async (context) => {
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
+    const m = newMarker("undo-order");
+
+    try {
+      await inRolledBackTransaction(owner, async (tx) => {
+        await insertTerm(tx, "specializations", `${m}-foo`);
+        const r0 = await retire(tx, "specializations", [{ slug: `${m}-foo`, reason: "First pass" }]);
+        // Minted in skills while specializations no longer held it.
+        await insertTerm(tx, "skills", `${m}-foo`);
+        const r1 = await retire(tx, "skills", [{ slug: `${m}-foo`, reason: "Second pass" }]);
+
+        // Different tables, so neither repair blocks the other's undo by term.
+        await undo(tx, r0);
+        await tx`SAVEPOINT second`;
+        await expect(undo(tx, r1)).rejects.toThrow(/slugs minted again since repair/);
+        await tx`ROLLBACK TO SAVEPOINT second`;
+        expect(await termId(tx, "skills", `${m}-foo`)).toBeNull();
       });
     } finally {
       await owner.end();

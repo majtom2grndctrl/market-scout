@@ -10,9 +10,9 @@ import { getSql } from "./client";
 // taxonomy_search.go): pg_trgm similarity against slug and name, ties broken
 // by usage, then id. Its clustering of near-identical slugs is left out -- that
 // guards an agent against attaching three spellings of one concept, and a
-// person picking one term does not need it, and it searches from one
-// character where the tool asks for a concept. Drift between the two only
-// reorders a picker.
+// person picking one term does not need it. This search also starts from one
+// character (MIN_TERM_LENGTH) where the tool asks for a concept. Drift between
+// the two only reorders a picker.
 //
 // One addition: a substring match qualifies a row even below the similarity
 // floor, and ranks by its (low) score like any other. Trigram similarity is

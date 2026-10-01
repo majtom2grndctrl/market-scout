@@ -19,6 +19,7 @@ const PROFILE_TABLES = ["app.past_titles", "app.claimed_skills", "app.pins"];
 const REPAIR_FUNCTIONS = [
   "public.taxonomy_repair_unhandled_references()",
   "public.taxonomy_repair_begin(text, text)",
+  "public.taxonomy_repair_also_in(text, text)",
   "public.taxonomy_merge(text, jsonb, text)",
   "public.taxonomy_retire(text, jsonb, text)",
   "public.taxonomy_undo(bigint)",

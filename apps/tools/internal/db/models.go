@@ -321,6 +321,7 @@ type TaxonomyRepairTerm struct {
 	TermCreated  sql.NullTime
 	SurvivorSlug sql.NullString
 	SurvivorID   sql.NullInt64
+	AlsoIn       []string
 	Reason       string
 }
 

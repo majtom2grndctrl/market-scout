@@ -15,6 +15,7 @@ DROP FUNCTION public.taxonomy_undo(bigint);
 DROP FUNCTION public.taxonomy_retire(text, jsonb, text);
 DROP FUNCTION public.taxonomy_merge(text, jsonb, text);
 DROP FUNCTION public.taxonomy_repair_begin(text, text);
+DROP FUNCTION public.taxonomy_repair_also_in(text, text);
 DROP FUNCTION public.taxonomy_repair_unhandled_references();
 
 ALTER TABLE retired_slugs DROP COLUMN retired_by_repair;
