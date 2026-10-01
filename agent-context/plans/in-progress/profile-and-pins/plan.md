@@ -69,7 +69,7 @@ All automated rows run under `pnpm test:db` against `market_scout_test`. A skip 
 | Manual: retired pin renders with pinned-at name | owner, after `taxonomy_retire` on a fixture role | manual |
 | Manual: keyboard and focus | owner | manual |
 | Manual: MCP `query` refused on a profile table | owner, MCP session | manual |
-| Manual: parity on both databases (P13) | integrating executor runs, owner confirms | manual |
+| Manual: parity on both databases (P13) | integrating executor runs, owner confirms | manual — run 2026-10-01: identical |
 | Manual: `pnpm preflight` | integrating executor | manual |
 
 ## Tasks
@@ -77,8 +77,8 @@ All automated rows run under `pnpm test:db` against `market_scout_test`. A skip 
 | # | Task | Owner | Depends on | Status |
 |---|---|---|---|---|
 | 1 | **Riskiest slice.** Migration 000044: `app` schema and tables, archive, `retired_slugs.retired_by_repair`, merge/retire/undo functions with census guard. `setup/app_role.sql`. Apply to the test database. App test DSN. Grant, privacy, constraint, merge and retire tests (G1–G4, V1–V2, C1–C4, M1–M4, M6–M10). | integrating executor | — | |
-| 2 | Undo tests (U1–U6); fix what they find. | integrating executor | 1 | |
-| 3 | `sqlc generate`; `go build ./... && go vet ./...`; apply to the development database; parity check (P13). | integrating executor | 2 | |
+| 2 | Undo tests (U1–U6); fix what they find. | integrating executor | 1 | done: 6 tests pass (taxonomy-undo); no fixes needed |
+| 3 | `sqlc generate`; `go build ./... && go vet ./...`; apply to the development database; parity check (P13). | integrating executor | 2 | done: models regenerated; build, vet, `go test ./...` pass; down→up round trip on the test DB diffs clean; both databases at 44, clean, identical role surface |
 | 4 | Web data layer: app client, profile read and write cores, taxonomy search on the read-only client, latency check. Tests G5, W1–W3; DB-free guard that no client module imports the app client. | integrating executor | 1 | |
 | 5 | `/profile`: page, Server Actions, taxonomy combobox, nav entry, loading/empty/error states, stories. | integrating executor | 4 | |
 | 6 | Docs: `developer-guide.md` §2 (app role, DSNs, parity), `web-testing-guide.md` (app test DSN), `project.md` repair-function contract check. Preflight, review loop, landing. | integrating executor | 3, 5 | |

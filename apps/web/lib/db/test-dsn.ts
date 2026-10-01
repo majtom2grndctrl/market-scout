@@ -19,10 +19,11 @@ const TEST_DATABASE_SUFFIX = "_test";
  * reproduces exactly the leak above while every suite still passes, because
  * assertions here are marker-scoped or delta-based and cannot see it.
  */
-export function testDsns(): { ownerDsn?: string; readOnlyDsn?: string } {
+export function testDsns(): { ownerDsn?: string; readOnlyDsn?: string; appDsn?: string } {
   return {
     ownerDsn: testDsn("DATABASE_URL_TEST", process.env.DATABASE_URL_TEST),
     readOnlyDsn: testDsn("DATABASE_URL_TEST_RO", process.env.DATABASE_URL_TEST_RO),
+    appDsn: testDsn("DATABASE_URL_TEST_APP", process.env.DATABASE_URL_TEST_APP),
   };
 }
 
