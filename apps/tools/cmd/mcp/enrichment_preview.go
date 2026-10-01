@@ -62,6 +62,11 @@ const codeInvalidSort = "invalid_sort"
 // outside [1, 500].
 const codeInvalidMaxPerCompany = "invalid_max_per_company"
 
+const (
+	codeInvalidPostingIDs    = "invalid_posting_ids"
+	codeConflictingSelection = "conflicting_selection"
+)
+
 // previewRequest is the MCP tool DTO. Count is a pointer so an omitted value
 // (default 10) is distinguishable from an explicit 0, which is out of range.
 // Sort is a plain string because its own zero value ("") is unambiguous: it
@@ -75,17 +80,19 @@ type previewRequest struct {
 	// MaxPerCompany is a pointer for the same reason Count is: an omitted
 	// value takes selection.DefaultMaxPerCompany, while an explicit 0 is out
 	// of range and must be rejected rather than silently read as "unset".
-	MaxPerCompany *int `json:"max_per_company"`
+	MaxPerCompany *int    `json:"max_per_company"`
+	PostingIDs    []int64 `json:"posting_ids"`
 }
 
 // previewEcho mirrors the resolved inputs back to the caller so the agent can
 // confirm what the server actually ran with after defaults were applied.
 type previewEcho struct {
-	Count         int    `json:"count"`
-	Focus         string `json:"focus"`
-	Force         bool   `json:"force"`
-	Sort          string `json:"sort"`
-	MaxPerCompany int    `json:"max_per_company"`
+	Count         int     `json:"count"`
+	Focus         string  `json:"focus"`
+	Force         bool    `json:"force"`
+	Sort          string  `json:"sort"`
+	MaxPerCompany int     `json:"max_per_company"`
+	PostingIDs    []int64 `json:"posting_ids,omitempty"`
 }
 
 // previewSampleRow is one row of the capped sample: posting id, company id,
@@ -135,6 +142,7 @@ type previewEnvelope struct {
 // without a database.
 type previewSelector interface {
 	Select(ctx context.Context, crit selection.Criteria) ([]selection.Posting, []int64, error)
+	SelectIDs(ctx context.Context, ids []int64) ([]selection.Posting, []int64, error)
 }
 
 // poolSelector adapts selection.Select to the previewSelector seam, binding the
@@ -145,6 +153,10 @@ type poolSelector struct {
 
 func (s poolSelector) Select(ctx context.Context, crit selection.Criteria) ([]selection.Posting, []int64, error) {
 	return selection.Select(ctx, s.pool, crit)
+}
+
+func (s poolSelector) SelectIDs(ctx context.Context, ids []int64) ([]selection.Posting, []int64, error) {
+	return selection.SelectIDs(ctx, s.pool, ids)
 }
 
 // enrichmentPreviewHandler wires the tool to the read-only pool. Preview never
@@ -198,6 +210,36 @@ func runEnrichmentPreview(ctx context.Context, req previewRequest, sel previewSe
 		Force:         req.Force,
 		Sort:          sort,
 		MaxPerCompany: maxPerCompany,
+		PostingIDs:    req.PostingIDs,
+	}
+
+	if len(req.PostingIDs) > 0 {
+		echo.Count = len(req.PostingIDs)
+		if req.Count != nil || req.Focus != "" || req.Force || req.Sort != "" || req.MaxPerCompany != nil {
+			return previewFailure(echo, "posting_ids", codeConflictingSelection,
+				"posting_ids is mutually exclusive with count, focus, force, sort, and max_per_company")
+		}
+		seen := make(map[int64]struct{}, len(req.PostingIDs))
+		for i, id := range req.PostingIDs {
+			if id <= 0 {
+				return previewFailure(echo, fmt.Sprintf("posting_ids[%d]", i), codeInvalidPostingIDs,
+					"posting ids must be positive integers")
+			}
+			if _, duplicate := seen[id]; duplicate {
+				return previewFailure(echo, fmt.Sprintf("posting_ids[%d]", i), codeInvalidPostingIDs,
+					fmt.Sprintf("posting id %d appears more than once", id))
+			}
+			seen[id] = struct{}{}
+		}
+		if len(req.PostingIDs) > previewMaxCount {
+			return previewFailure(echo, "posting_ids", codeInvalidPostingIDs,
+				fmt.Sprintf("posting_ids must contain at most %d ids", previewMaxCount))
+		}
+		postings, alreadyClassified, err := sel.SelectIDs(ctx, req.PostingIDs)
+		if err != nil {
+			return previewFailure(echo, "db", codeDBError, err.Error())
+		}
+		return buildPreviewEnvelope(echo, postings, alreadyClassified)
 	}
 
 	if count < previewMinCount || count > previewMaxCount {
@@ -272,6 +314,14 @@ func runEnrichmentPreview(ctx context.Context, req previewRequest, sel previewSe
 		}
 	}
 
+	return buildPreviewEnvelope(echo, postings, alreadyClassified)
+}
+
+func previewFailure(input previewEcho, path, code, message string) previewEnvelope {
+	return previewEnvelope{Ok: false, Input: input, Errors: []actionError{{Path: path, Code: code, Message: message}}, Sample: []previewSampleRow{}, Postings: []previewPostingRow{}}
+}
+
+func buildPreviewEnvelope(echo previewEcho, postings []selection.Posting, alreadyClassified []int64) previewEnvelope {
 	sample := make([]previewSampleRow, 0, min(len(postings), previewSampleCap))
 	selected := make([]previewPostingRow, 0, len(postings))
 	workUnits := 0

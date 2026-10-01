@@ -33,14 +33,18 @@ import (
 // codeNameCollision is raised by the function, not here — it is named so the
 // mapping below can attach that error's structured detail.
 const (
-	codeInvalidProvenance = "invalid_provenance"
-	codePostingNotFound   = "posting_not_found"
-	codeNameCollision     = "name_collision"
+	codeInvalidProvenance        = "invalid_provenance"
+	codePostingNotFound          = "posting_not_found"
+	codeNameCollision            = "name_collision"
+	codeMissingCanonicalRole     = "missing_canonical_role"
+	codeInvalidSeniorityEvidence = "invalid_seniority_evidence"
 )
 
 // provenancePattern constrains model and prompt_version to a stable identifier
 // shape so provenance values are safe audit keys.
 var provenancePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+var seniorityEvidencePattern = regexp.MustCompile(`(?m)^seniority\[(step1-title|step1-body|step2-org|step2-manages|step2-align)\]: "[^"\r\n]+"$`)
 
 // saveEnrichmentRequest is the MCP tool DTO. It wraps the classifier
 // AgentResponse shape and adds MCP-only provenance. JSON keys are the wire
@@ -350,6 +354,31 @@ func validateProvenance(model, promptVersion string) []saveEnrichmentError {
 	return errs
 }
 
+// validateMCPEnrichmentContract applies the direct-agent contract that is
+// intentionally stricter than the legacy Go batch runner's separate prompt
+// lineage. It blocks the two silent failure shapes observed in production:
+// classifications with no job function and seniority values without auditable
+// tagged evidence.
+func validateMCPEnrichmentContract(req saveEnrichmentRequest) []saveEnrichmentError {
+	var errs []saveEnrichmentError
+	if len(req.CanonicalRoles) == 0 {
+		errs = append(errs, saveErr(actionError{Path: "canonical_roles", Code: codeMissingCanonicalRole,
+			Message: "at least one canonical role is required; use general-application for a non-specific talent-community posting"}))
+	}
+	validEvidence := seniorityEvidencePattern.FindAllString(req.Classification.Notes, -1)
+	evidenceMarkers := strings.Count(req.Classification.Notes, "seniority[")
+	if req.Classification.Seniority == "unknown" {
+		if evidenceMarkers != 0 {
+			errs = append(errs, saveErr(actionError{Path: "classification.notes", Code: codeInvalidSeniorityEvidence,
+				Message: "unknown seniority must not carry a seniority evidence line"}))
+		}
+	} else if strings.TrimSpace(req.Classification.Seniority) != "" && (len(validEvidence) != 1 || evidenceMarkers != 1) {
+		errs = append(errs, saveErr(actionError{Path: "classification.notes", Code: codeInvalidSeniorityEvidence,
+			Message: "non-unknown seniority requires exactly one line formatted as seniority[step1-title|step1-body|step2-org|step2-manages|step2-align]: \"verbatim phrase\""}))
+	}
+	return errs
+}
+
 // runSaveEnrichment validates provenance and the classifier payload (loading
 // taxonomy and confirming the posting via the read-only source), then calls the
 // approved function through the saver. Every failure mode returns an ok=false
@@ -359,6 +388,7 @@ func runSaveEnrichment(ctx context.Context, req saveEnrichmentRequest, tax taxon
 	promptVersion := strings.TrimSpace(req.Provenance.PromptVersion)
 
 	errs := validateProvenance(model, promptVersion)
+	errs = append(errs, validateMCPEnrichmentContract(req)...)
 
 	// Load taxonomy for the shared validation. A load failure is a DB fault, not
 	// a validation rejection — surface it as db_error.

@@ -17,7 +17,7 @@ argument-hint: "<count> [focus description] [--force] [--backlog] [--per-company
 > **Status:** previously deprecated in favor of `cmd/batch-enrich` — back in play as of 2026-07. `claude -p` is no longer covered by the Max subscription, so the Go binary bills API dollars per posting while this skill runs on session tokens. Path forward (skill revival, hook adaptation) is undecided. As of 2026-09-21, this skill and `cmd/batch-enrich` are separate classification-contract lineages, not a shared one to keep in sync: the `classification-pins` block below anchors this skill's contract only, and the Go runner pins its own separately, in `apps/tools/cmd/batch-enrich/config.go`. See developer-guide §6.2 for why they split.
 
 ```classification-pins
-PROMPT_VERSION=batch-enrich-v9
+PROMPT_VERSION=batch-enrich-v10
 MODEL=claude-haiku-4-5-20251001
 ```
 
@@ -83,6 +83,14 @@ A wave's total work units = (agents per wave) × (chunk size). Postings touched 
 | `--per-company` | `--per-company 3` | Max work units one company may contribute to this wave. Defaults to 5. Takes the next token as its integer value; may appear anywhere in args. |
 
 If focus is empty: select the newest unenriched work, no agent guidance beyond the schema.
+
+For a reviewed repair cohort, the orchestrator may instead call
+`enrichment_preview` with only `posting_ids: [<id>, ...]`. Exact-ID selection is
+bounded to 500 unique positive IDs, preserves their order, treats every posting
+as its own work unit, and never expands dedup siblings. It is mutually exclusive
+with count, focus, force, sort, and max_per_company. A missing posting or one
+without a latest description rejects the whole request rather than returning a
+partial repair cohort.
 
 **Why newest-first is the default.** Oldest-first drained the queue in arrival order, which structurally guaranteed the classified set lagged the market: on 2026-09-21 only 4 of 1,946 classified postings had been first seen in the preceding three weeks, against 1,108 of 2,712 unclassified ones. The project's question is which job titles are *emerging*; a classified set months behind the market cannot answer it.
 
@@ -329,6 +337,7 @@ Summaries are **not** persisted (storage deferred per `project.md` non-goals), s
 ### 7. Classification discipline (in agent prompt)
 
 - `canonical_roles` is an array. Blended roles are first-class; a posting may map to multiple roles (e.g. design-engineering hybrids).
+- Emit at least one canonical role for every posting. For a non-specific talent-community or general-interest posting, use `general-application`; an empty role array is invalid.
 - Always emit `seniority`. If it cannot be determined, emit `"seniority": "unknown"` — never omit the field. Allowed values: `intern`, `junior`, `mid`, `senior`, `staff`, `principal`, `lead`, `director`, `unknown`.
 - `notes` is optional. Omit the key or emit `null` when there are none. Whitespace-only is treated as null.
 - `dimensions` is a **closed set** (`role_dimensions`). Pick only slugs from that list. Never invent dimension slugs.

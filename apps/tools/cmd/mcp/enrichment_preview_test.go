@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/majtom2grndctrl/market-scout/apps/tools/internal/enrich/selection"
@@ -18,6 +19,17 @@ type fakeSelector struct {
 	err        error
 	called     bool
 	gotCrit    selection.Criteria
+	gotIDs     []int64
+	calledIDs  bool
+}
+
+func (f *fakeSelector) SelectIDs(ctx context.Context, ids []int64) ([]selection.Posting, []int64, error) {
+	f.calledIDs = true
+	f.gotIDs = ids
+	if f.err != nil {
+		return nil, nil, f.err
+	}
+	return f.postings, f.classified, nil
 }
 
 func (f *fakeSelector) Select(ctx context.Context, crit selection.Criteria) ([]selection.Posting, []int64, error) {
@@ -30,6 +42,49 @@ func (f *fakeSelector) Select(ctx context.Context, crit selection.Criteria) ([]s
 }
 
 func intPtr(i int) *int { return &i }
+
+func TestRunEnrichmentPreview_ExactIDs(t *testing.T) {
+	sel := &fakeSelector{
+		postings: []selection.Posting{
+			{PostingID: 9, CompanyID: 2, CompanyName: "Beta", Title: "Nine", DedupKey: "posting:9", IsRepresentative: true},
+			{PostingID: 4, CompanyID: 1, CompanyName: "Acme", Title: "Four", DedupKey: "posting:4", IsRepresentative: true},
+		},
+		classified: []int64{4, 9},
+	}
+	env := runEnrichmentPreview(t.Context(), previewRequest{PostingIDs: []int64{9, 4}}, sel)
+	if !env.Ok || !sel.calledIDs || sel.called {
+		t.Fatalf("exact preview = %+v, called=%v calledIDs=%v", env, sel.called, sel.calledIDs)
+	}
+	if len(sel.gotIDs) != 2 || sel.gotIDs[0] != 9 || sel.gotIDs[1] != 4 {
+		t.Fatalf("ids = %v, want [9 4]", sel.gotIDs)
+	}
+	if env.SelectedCount != 2 || env.WorkUnitCount != 2 || env.AlreadyClassifiedCount != 2 || env.Input.Count != 2 {
+		t.Fatalf("exact preview counts = %+v", env)
+	}
+}
+
+func TestRunEnrichmentPreview_ExactIDsValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		req  previewRequest
+		path string
+		code string
+	}{
+		{"duplicate", previewRequest{PostingIDs: []int64{7, 7}}, "posting_ids[1]", codeInvalidPostingIDs},
+		{"non-positive", previewRequest{PostingIDs: []int64{0}}, "posting_ids[0]", codeInvalidPostingIDs},
+		{"conflicting count", previewRequest{PostingIDs: []int64{7}, Count: intPtr(1)}, "posting_ids", codeConflictingSelection},
+		{"conflicting force", previewRequest{PostingIDs: []int64{7}, Force: true}, "posting_ids", codeConflictingSelection},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sel := &fakeSelector{}
+			env := runEnrichmentPreview(t.Context(), tc.req, sel)
+			if env.Ok || sel.called || sel.calledIDs || !hasError(env.Errors, tc.path, tc.code) {
+				t.Fatalf("env=%+v selector=%+v", env, sel)
+			}
+		})
+	}
+}
 
 func TestRunEnrichmentPreview_CountBoundValidation(t *testing.T) {
 	tests := []struct {
@@ -112,7 +167,7 @@ func TestRunEnrichmentPreview_PassesInputsToSelector(t *testing.T) {
 		Sort:          previewSortOldestFirst,
 		MaxPerCompany: selection.DefaultMaxPerCompany,
 	}
-	if env.Input != wantEcho {
+	if !reflect.DeepEqual(env.Input, wantEcho) {
 		t.Fatalf("input echo = %+v, want %+v", env.Input, wantEcho)
 	}
 }

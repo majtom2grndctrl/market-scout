@@ -72,7 +72,7 @@ func validSaveRequest() saveEnrichmentRequest {
 	return saveEnrichmentRequest{
 		PostingID:      42,
 		Provenance:     provenanceInput{Model: "claude-haiku-4-5-20251001", PromptVersion: "batch-enrich-v7"},
-		Classification: classify.AgentClassification{Seniority: "senior", Notes: "hybrid"},
+		Classification: classify.AgentClassification{Seniority: "senior", Notes: "hybrid\nseniority[step1-title]: \"Senior Software Engineer\""},
 		CanonicalRoles: []classify.AgentCanonicalRole{
 			{Slug: "software-engineer", Name: "Software Engineer", Dimensions: []string{"ic", "engineering"}},
 		},
@@ -251,6 +251,12 @@ func TestRunSaveEnrichment_ValidationCodesFromSharedRules(t *testing.T) {
 	}{
 		{"missing seniority", func(r *saveEnrichmentRequest) { r.Classification.Seniority = "" }, "classification.seniority", string(classify.CodeMissingSeniority)},
 		{"invalid seniority", func(r *saveEnrichmentRequest) { r.Classification.Seniority = "ultra" }, "classification.seniority", string(classify.CodeInvalidSeniority)},
+		{"missing role", func(r *saveEnrichmentRequest) { r.CanonicalRoles = nil }, "canonical_roles", codeMissingCanonicalRole},
+		{"bad seniority evidence", func(r *saveEnrichmentRequest) { r.Classification.Notes = "8+ years" }, "classification.notes", codeInvalidSeniorityEvidence},
+		{"two seniority evidence lines", func(r *saveEnrichmentRequest) {
+			r.Classification.Notes += "\nseniority[step1-body]: \"senior engineers\""
+		}, "classification.notes", codeInvalidSeniorityEvidence},
+		{"unknown seniority with evidence", func(r *saveEnrichmentRequest) { r.Classification.Seniority = "unknown" }, "classification.notes", codeInvalidSeniorityEvidence},
 		{"invalid slug", func(r *saveEnrichmentRequest) { r.CanonicalRoles[0].Slug = "Bad_Slug" }, "canonical_roles[0].slug", string(classify.CodeInvalidSlug)},
 		{"unknown dimension", func(r *saveEnrichmentRequest) { r.CanonicalRoles[0].Dimensions = []string{"moonshot"} }, "canonical_roles[0].dimensions[0]", string(classify.CodeUnknownDimension)},
 		{"empty dimensions", func(r *saveEnrichmentRequest) { r.CanonicalRoles[0].Dimensions = nil }, "canonical_roles[0].dimensions", string(classify.CodeEmptyDimensions)},

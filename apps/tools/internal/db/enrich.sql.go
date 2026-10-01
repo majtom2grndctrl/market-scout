@@ -79,6 +79,67 @@ func (q *Queries) ListClassifiedAmong(ctx context.Context, ids []int64) ([]int64
 	return items, nil
 }
 
+const listPostingsByIDs = `-- name: ListPostingsByIDs :many
+SELECT jp.id AS posting_id,
+       jp.company_id,
+       c.name AS company_name,
+       latest.title,
+       latest.description_text
+FROM unnest($1::bigint[]) WITH ORDINALITY AS requested(posting_id, ordinal)
+JOIN job_postings jp ON jp.id = requested.posting_id
+JOIN companies c ON c.id = jp.company_id
+JOIN LATERAL (
+    SELECT ps.title, ps.description_text
+    FROM posting_snapshots ps
+    WHERE ps.job_posting_id = jp.id
+    ORDER BY ps.fetched_at DESC, ps.id DESC
+    LIMIT 1
+) latest ON latest.description_text IS NOT NULL
+ORDER BY requested.ordinal
+`
+
+type ListPostingsByIDsRow struct {
+	PostingID       int64
+	CompanyID       int64
+	CompanyName     string
+	Title           sql.NullString
+	DescriptionText sql.NullString
+}
+
+// Exact-ID repair selection. Unlike the ordinary cohort selector this neither
+// deduplicates nor expands siblings: every requested posting is one work unit,
+// and WITH ORDINALITY preserves the caller's reviewed order. The latest
+// snapshot must carry description text because a classifier cannot ground a
+// repair without source text.
+func (q *Queries) ListPostingsByIDs(ctx context.Context, ids []int64) ([]ListPostingsByIDsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPostingsByIDs, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPostingsByIDsRow
+	for rows.Next() {
+		var i ListPostingsByIDsRow
+		if err := rows.Scan(
+			&i.PostingID,
+			&i.CompanyID,
+			&i.CompanyName,
+			&i.Title,
+			&i.DescriptionText,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRoleDimensions = `-- name: ListRoleDimensions :many
 SELECT id, slug, name FROM role_dimensions ORDER BY slug
 `

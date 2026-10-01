@@ -24,6 +24,9 @@ type fakeQuerier struct {
 	classifiedAmongIDs []int64
 	gotUnclassifiedArg db.ListUnclassifiedPostingsParams
 	gotForcedArg       db.ListUnclassifiedPostingsForcedParams
+	byIDs              []db.ListPostingsByIDsRow
+	byIDsErr           error
+	gotIDs             []int64
 }
 
 func (f *fakeQuerier) ListUnclassifiedPostings(ctx context.Context, arg db.ListUnclassifiedPostingsParams) ([]db.ListUnclassifiedPostingsRow, error) {
@@ -52,7 +55,43 @@ func (f *fakeQuerier) ListClassifiedAmong(ctx context.Context, ids []int64) ([]i
 	return f.classified, nil
 }
 
+func (f *fakeQuerier) ListPostingsByIDs(ctx context.Context, ids []int64) ([]db.ListPostingsByIDsRow, error) {
+	f.gotIDs = ids
+	if f.byIDsErr != nil {
+		return nil, f.byIDsErr
+	}
+	return f.byIDs, nil
+}
+
 func nullString(s string) sql.NullString { return sql.NullString{String: s, Valid: true} }
+
+func TestSelectIDsWith_PreservesExactRows(t *testing.T) {
+	q := &fakeQuerier{
+		byIDs: []db.ListPostingsByIDsRow{
+			{PostingID: 9, CompanyID: 2, CompanyName: "Beta", Title: nullString("Nine"), DescriptionText: nullString("d9")},
+			{PostingID: 4, CompanyID: 1, CompanyName: "Acme", Title: nullString("Four"), DescriptionText: nullString("d4")},
+		},
+		classified: []int64{9, 4},
+	}
+	postings, classified, err := SelectIDsWith(t.Context(), q, []int64{9, 4})
+	if err != nil {
+		t.Fatalf("SelectIDsWith: %v", err)
+	}
+	if len(postings) != 2 || postings[0].PostingID != 9 || postings[1].PostingID != 4 {
+		t.Fatalf("postings = %+v", postings)
+	}
+	if postings[0].DedupKey != "posting:9" || !postings[0].IsRepresentative || len(classified) != 2 {
+		t.Fatalf("postings/classified = %+v / %v", postings, classified)
+	}
+}
+
+func TestSelectIDsWith_RejectsPartialCohort(t *testing.T) {
+	q := &fakeQuerier{byIDs: []db.ListPostingsByIDsRow{{PostingID: 9}}}
+	_, _, err := SelectIDsWith(t.Context(), q, []int64{9, 4})
+	if err == nil {
+		t.Fatal("SelectIDsWith returned nil error for partial cohort")
+	}
+}
 
 func TestSelectWith_UnclassifiedVariant(t *testing.T) {
 	q := &fakeQuerier{

@@ -196,6 +196,7 @@ func newMCPServer(pools dbPools) *server.MCPServer {
 		mcp.WithBoolean("force", mcp.Description("Include already-classified postings (drops the unclassified filter). Defaults to false.")),
 		mcp.WithString("sort", mcp.Description("Selection order by first_seen_at: \"newest_first\" (default; enriches the current market before the backlog) or \"oldest_first\" (drains the backlog in arrival order). Leave unset unless you are deliberately working the backlog.")),
 		mcp.WithNumber("max_per_company", mcp.Description("Max work units one company may contribute to this wave (1-500). Defaults to 5. The wave also cycles across companies before recency, so it spreads over the watchlist instead of being consumed by the largest boards. Counts work units, not postings: a selected unit's siblings ride along.")),
+		mcp.WithArray("posting_ids", mcp.WithIntegerItems(), mcp.MaxItems(previewMaxCount), mcp.Description("Exact posting ids for a reviewed repair cohort (1-500). Preserves order, does not expand dedup siblings, and is mutually exclusive with ordinary selection parameters.")),
 	)
 	s.AddTool(enrichmentPreviewTool, enrichmentPreviewHandler(pools.readOnly))
 
@@ -292,8 +293,8 @@ func newMCPServer(pools dbPools) *server.MCPServer {
 		mcp.WithDescription("Persist a classifier-shaped enrichment for a job posting through the approved mcp.save_enrichment action function. Append-only: every call inserts a new classification row and never edits prior history."),
 		mcp.WithNumber("posting_id", mcp.Required(), mcp.Description("Target job posting id; must already exist.")),
 		mcp.WithObject("provenance", mcp.Required(), mcp.Description("Required: {model, prompt_version}. model is the model that produced the classification; prompt_version names the classifier contract, not the model. Both must be non-empty and match ^[A-Za-z0-9._-]+$. Neither is defaulted \u2014 a call omitting either is rejected with invalid_provenance.")),
-		mcp.WithObject("classification", mcp.Required(), mcp.Description("seniority (required closed set) and optional notes.")),
-		mcp.WithArray("canonical_roles", mcp.Description("Canonical roles: each {slug, name, dimensions[]}. Dimensions are a closed seeded set.")),
+		mcp.WithObject("classification", mcp.Required(), mcp.Description("seniority (required closed set) and notes. Non-unknown seniority requires exactly one tagged evidence line; unknown must not carry one.")),
+		mcp.WithArray("canonical_roles", mcp.Required(), mcp.MinItems(1), mcp.Description("At least one canonical role: each {slug, name, dimensions[]}. Dimensions are a closed seeded set.")),
 		mcp.WithArray("specializations", mcp.Description("Specializations: each {slug, name}.")),
 		mcp.WithArray("skills", mcp.Description("Skills: each {slug, name, optional requirement}. requirement is echoed but not persisted.")),
 		mcp.WithString("summary", mcp.Description("Echoed in the response only; not persisted.")),

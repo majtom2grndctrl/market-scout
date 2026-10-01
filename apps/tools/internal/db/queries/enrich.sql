@@ -349,6 +349,29 @@ FROM classifications
 WHERE job_posting_id = ANY(@ids::bigint[])
 GROUP BY job_posting_id;
 
+-- name: ListPostingsByIDs :many
+-- Exact-ID repair selection. Unlike the ordinary cohort selector this neither
+-- deduplicates nor expands siblings: every requested posting is one work unit,
+-- and WITH ORDINALITY preserves the caller's reviewed order. The latest
+-- snapshot must carry description text because a classifier cannot ground a
+-- repair without source text.
+SELECT jp.id AS posting_id,
+       jp.company_id,
+       c.name AS company_name,
+       latest.title,
+       latest.description_text
+FROM unnest(@ids::bigint[]) WITH ORDINALITY AS requested(posting_id, ordinal)
+JOIN job_postings jp ON jp.id = requested.posting_id
+JOIN companies c ON c.id = jp.company_id
+JOIN LATERAL (
+    SELECT ps.title, ps.description_text
+    FROM posting_snapshots ps
+    WHERE ps.job_posting_id = jp.id
+    ORDER BY ps.fetched_at DESC, ps.id DESC
+    LIMIT 1
+) latest ON latest.description_text IS NOT NULL
+ORDER BY requested.ordinal;
+
 -- PostingExists reports whether a job_postings row exists for the given id. The
 -- MCP save_enrichment action calls it through the read-only pool to reject a
 -- nonexistent posting before invoking the action function.

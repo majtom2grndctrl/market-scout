@@ -120,6 +120,7 @@ type Querier interface {
 	ListUnclassifiedPostings(ctx context.Context, arg db.ListUnclassifiedPostingsParams) ([]db.ListUnclassifiedPostingsRow, error)
 	ListUnclassifiedPostingsForced(ctx context.Context, arg db.ListUnclassifiedPostingsForcedParams) ([]db.ListUnclassifiedPostingsForcedRow, error)
 	ListClassifiedAmong(ctx context.Context, ids []int64) ([]int64, error)
+	ListPostingsByIDs(ctx context.Context, ids []int64) ([]db.ListPostingsByIDsRow, error)
 }
 
 // Select runs the unclassified-postings query (or the forced variant when
@@ -150,6 +151,40 @@ func SelectWith(ctx context.Context, q Querier, crit Criteria) (postings []Posti
 		ids = append(ids, p.PostingID)
 	}
 	alreadyClassified, err = q.ListClassifiedAmong(ctx, ids)
+	if err != nil {
+		return nil, nil, fmt.Errorf("checking already-classified postings: %w", err)
+	}
+	return postings, alreadyClassified, nil
+}
+
+// SelectIDs returns exactly the requested postings, in request order, without
+// deduplication or sibling expansion. It is for reviewed repair cohorts rather
+// than ordinary backlog selection. A missing posting or one whose latest
+// snapshot lacks description text is an error; silently returning a partial
+// cohort would make the coordinator believe the repair was complete.
+func SelectIDs(ctx context.Context, pool *sql.DB, ids []int64) ([]Posting, []int64, error) {
+	return SelectIDsWith(ctx, db.New(pool), ids)
+}
+
+// SelectIDsWith is the testable core of SelectIDs.
+func SelectIDsWith(ctx context.Context, q Querier, ids []int64) ([]Posting, []int64, error) {
+	rows, err := q.ListPostingsByIDs(ctx, ids)
+	if err != nil {
+		return nil, nil, fmt.Errorf("listing postings by id: %w", err)
+	}
+	if len(rows) != len(ids) {
+		return nil, nil, fmt.Errorf("exact-id selection returned %d of %d requested postings; a posting is missing or has no latest description", len(rows), len(ids))
+	}
+
+	postings := make([]Posting, 0, len(rows))
+	for _, r := range rows {
+		postings = append(postings, Posting{
+			PostingID: r.PostingID, CompanyID: r.CompanyID, CompanyName: r.CompanyName,
+			Title: nullStringOr(r.Title, ""), DescriptionText: r.DescriptionText.String,
+			DedupKey: fmt.Sprintf("posting:%d", r.PostingID), IsRepresentative: true,
+		})
+	}
+	alreadyClassified, err := q.ListClassifiedAmong(ctx, ids)
 	if err != nil {
 		return nil, nil, fmt.Errorf("checking already-classified postings: %w", err)
 	}

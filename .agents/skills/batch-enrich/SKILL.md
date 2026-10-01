@@ -1,47 +1,60 @@
 ---
 name: batch-enrich
-description: Classify a bounded cohort of Market Scout job postings through the project MCP server. Use GPT-5.6 Luna workers for normal chunks and GPT-5.6 Terra only for unresolved saves or a read-only quality sample.
+description: Classify a bounded cohort of Market Scout job postings through the project MCP server. Use Luna workers for normal chunks and Sol only for unresolved saves or a read-only quality sample.
 ---
 
 # Batch Enrich
+
+## Model choice
+
+Read [Codex Model Guide](../../../agent-context/lib/model-guide.md). Use Sol at `medium` for coordination, Luna at `high` for normal workers, and Sol at `high` for escalation and read-only audit. Resolve availability before cohort selection; substitute supported fallback identifiers into the invocation pins and report them.
 
 Enrich job postings into canonical roles, specializations, skills, and a structured summary. This is the interactive direct-MCP workflow. Coordinate selection, packing, dispatch, and reporting. Workers read their assigned postings and live taxonomy, then save through the constrained MCP action.
 
 Do not use `cmd/batch-enrich`, direct database access, shell SQL, or another write path.
 
 ```classification-pins
-PROMPT_VERSION=batch-enrich-v9
-LUNA_MODEL=gpt-5.6-luna
-TERRA_MODEL=gpt-5.6-terra
+PROMPT_VERSION=batch-enrich-v10
+LUNA_MODEL=gpt-6-luna
+ESCALATION_MODEL=gpt-6.1-sol
 ```
 
-This block is the only place these values are written. Read it once at
-invocation start and substitute it wherever this file shows `<PROMPT_VERSION>`,
-`<LUNA_MODEL>`, or `<TERRA_MODEL>`. Never copy a version string out of an
+This block supplies the default invocation pins. Resolve model fallbacks at
+invocation start; keep `PROMPT_VERSION` pinned. Read the values once and
+substitute them wherever this file shows `<PROMPT_VERSION>`,
+`<LUNA_MODEL>`, or `<ESCALATION_MODEL>`. Never copy a version string out of an
 example below — a restated literal is how the pin and the rows drifted apart
 before.
 
 `PROMPT_VERSION` names the **classifier contract**, not the model and not the
 harness: `model` is its own column, and the same contract runs under Luna and
-Terra here and under Haiku in `.claude/skills/batch-enrich/SKILL.md`. Bump it in
+Sol here and under Haiku in `.claude/skills/batch-enrich/SKILL.md`. Bump it in
 the same commit as any change to classification discipline, grounding rules, the
 worker contract, or selection semantics — and bump it in both skills together,
 since both implement the one contract. An unbumped pin is not a paperwork gap:
-it merges two cohorts into one string, and nothing later can separate them.
+it merges two cohorts into one string, and nothing later can separate them. A model or reasoning-effort update alone does not change the classifier contract; record it through actual-model provenance without bumping the version.
 
 ## Roles
 
 | Role | Owns |
 |---|---|
-| Coordinator | Argument parsing, MCP preflight, cohort selection, company-aware packing, waves, Terra escalation, report, failure history, read-only audit dispatch. |
+| Coordinator | Argument parsing, MCP preflight, cohort selection, company-aware packing, waves, Sol escalation, report, failure history, read-only audit dispatch. |
 | Luna worker | One bounded chunk. Reads its assigned postings and fresh taxonomy, strips eligible company groups, classifies sequentially, saves, and reports structured outcomes. |
-| Terra worker | One still-unsaved posting after Luna exhausts its retries, or a post-run read-only quality sample. |
+| Sol worker | One still-unsaved posting after Luna exhausts its retries, or a post-run read-only quality sample. |
 
 The coordinator does not read posting descriptions, taxonomy, or collision state. It may use preview titles and company IDs to pack work. Workers never write the report or failure history.
 
 ## Arguments
 
 Accept `<count> [focus] [--force] [--backlog] [--per-company N]`.
+
+For a reviewed repair cohort, the coordinator may instead call
+`enrichment_preview` with only `posting_ids: [<id>, ...]`. Exact-ID selection is
+bounded to 500 unique positive IDs, preserves their order, treats every posting
+as its own work unit, and never expands dedup siblings. Do not combine it with
+count, focus, force, sort, or max_per_company. A partial result is an error: a
+missing posting or missing latest description stops the repair rather than
+silently shrinking it.
 
 - Strip exact, whitespace-delimited `--force`, `--backlog`, and `--per-company <N>` tokens first. A word such as `forceful` remains focus text. `--per-company` consumes the following token as its integer value.
 - The first remaining token is `count`. If it is absent, non-numeric, zero, or negative, use `10`.
@@ -87,7 +100,7 @@ Start with a ceiling of 15 postings per chunk.
 - Do not split a company into sibling chunks merely to fill a wave. Same-wave workers load taxonomy independently and can mint divergent slugs.
 - Pass each worker only its chunk's posting IDs, company IDs, titles, focus guidance, and the literal Luna provenance values. Do not pass descriptions, taxonomy, or another chunk's results.
 
-Delegate each normal chunk to `gpt-5.6-luna`. Workers process assigned IDs sequentially. A terminated run is safe: each successful save is append-only, and unreached postings are eligible for a later run.
+Delegate each normal chunk to `<LUNA_MODEL>` at `high` reasoning effort. Workers process assigned IDs sequentially. A terminated run is safe: each successful save is append-only, and unreached postings are eligible for a later run.
 
 ## Luna worker contract
 
@@ -153,6 +166,7 @@ If this query returns no row, or its `description_text` is null or empty, return
 - Read the response as clusters, one per concept: a `representative` entry with its `variants` nested underneath. Attach the representative's slug and name, never a variant alongside it — a representative and its variant are one skill already in the table, not two, and tagging both is the duplication the clustering exists to prevent.
 - A cluster `score` near 1.0 means the table already names your concept: reuse the representative. A score below roughly 0.5 is related vocabulary, not a match — it tells you the concept probably isn't in the table yet, not something to attach. No cluster clears the tool's 0.3 floor: mint a new slug. When two candidates score close, prefer the one with the higher `usage_count` — more classifications already point at it.
 - Canonical roles name only the job function. Put seniority, deployment relationship, geographic scope, and specialization suffixes in seniority, notes, or specializations. Examples: Staff Software Engineer is `software-engineer` plus `staff`; Partner Deployed Engineer is `software-engineer`; GTM Enablement is an account-executive role plus a specialization.
+- Emit at least one canonical role for every posting. For a non-specific talent-community or general-interest posting, use `general-application`; an empty role array is invalid.
 - Use `specializations` for domain, industry, or product area. Use `skills` for named technology, tool, framework, language, or competency. A framework is a skill, not a specialization.
 - Ground skills, specializations, and seniority in the description. Do not infer typical tools from a role stereotype, or seniority from how advanced the subject matter sounds. Sparse tags are valid.
 - Ground seniority in scope of influence, not in years. Work three steps in order and stop at the first that resolves.
@@ -212,7 +226,7 @@ For each posting, call `save_enrichment` with the complete classifier payload an
 
 `save_enrichment` is the only write path. It validates payloads, preserves classification history, and returns `ok: false` with structured errors rather than a transport failure.
 
-On `ok: false`, read the errors, refresh taxonomy and collision state when relevant, and make a real correction. Do not blindly rename a slug or change its table axis. Retry at most twice after the first failed call: three attempts total. If no save succeeds, return the posting as `needs_terra`; do not keep looping and do not write a failure file.
+On `ok: false`, read the errors, refresh taxonomy and collision state when relevant, and make a real correction. Do not blindly rename a slug or change its table axis. Retry at most twice after the first failed call: three attempts total. If no save succeeds, return the posting as `needs_escalation`; do not keep looping and do not write a failure file.
 
 **`name_collision`.** Migrations `000038` and `000040` block minting a **new** `canonical_roles`, `specializations`, or `skills` slug whose name is already held by a row in that table. The normalizer lowercases and strips all whitespace, not just collapsing it, so "Power BI" and "PowerBI" collide; punctuation is untouched, so `C`, `C++`, and `C#` stay distinct. Reusing an existing slug is never blocked. The error carries `table`, `proposed_slug`, `proposed_name`, `existing_slug`, `existing_name`, `slug_similarity` and `name_similarity`, so the collider is named and needs no lookup.
 
@@ -221,7 +235,7 @@ Two responses, and only these two. Choose on the concept, not on the scores:
 - **Reuse `existing_slug`** when it is the same concept — swap in the existing slug and name, re-save. A low `slug_similarity` means the vocabulary spells the concept differently, not that it differs.
 - **Rename** when the concept is genuinely new — state the distinction in the name and keep your slug. Adding punctuation or a filler word to clear the gate is not a distinction; it recreates the duplicate.
 
-The gate blocks instead of substituting so that nothing is guessed. If neither response is defensible, return the posting as `needs_terra` and name the collider in the reason.
+The gate blocks instead of substituting so that nothing is guessed. If neither response is defensible, return the posting as `needs_escalation` and name the collider in the reason.
 
 **`retired_slug`.** `000031` created a registry of slugs `mcp.save_enrichment` refuses to mint again; `000037` and `000040` added rows to it when they merged duplicate or corrupted terms. It fires only when a payload slug would be minted — reusing a slug already in its own table is never checked. It runs before `name_collision`, so a retired slug is rejected outright, never remapped.
 
@@ -230,34 +244,34 @@ The gate blocks instead of substituting so that nothing is guessed. If neither r
  "message": "golang was retired: Duplicate slug, merged into 'go': the two slugs are one term (alias), so a grouping by skill split one population across two rows. Use 'go'."}
 ```
 
-Most retirements name the survivor slug in the message — reuse it and re-save. A minority (the original `000031` seed rows: geography terms, bundled multi-concept slugs, umbrella competencies) explain the defect instead, because there is no single replacement; read the reason and choose a slug that avoids the same defect. Never re-mint under a near-miss spelling to route around a retirement; return the posting as `needs_terra` if no valid response is available.
+Most retirements name the survivor slug in the message — reuse it and re-save. A minority (the original `000031` seed rows: geography terms, bundled multi-concept slugs, umbrella competencies) explain the defect instead, because there is no single replacement; read the reason and choose a slug that avoids the same defect. Never re-mint under a near-miss spelling to route around a retirement; return the posting as `needs_escalation` if no valid response is available.
 
 Return a structured chunk report to the coordinator:
 
 ```text
-posting_id, title, outcome (saved | needs_terra | failed), attempt count,
+posting_id, title, outcome (saved | needs_escalation | failed), attempt count,
 reason when not saved, summary when saved, actual model, and every entry in
 save_enrichment.new_taxonomy.
 ```
 
-## Terra escalation and audit
+## Sol escalation and audit
 
-For each `needs_terra` result, delegate a separate Terra task with only the still-unsaved posting ID, focus guidance, and these provenance values, substituted from the pins block:
+For each `needs_escalation` result, delegate a separate Sol task at `high` reasoning effort with only the still-unsaved posting ID, focus guidance, and these provenance values, substituted from the pins block:
 
 ```text
-model=<TERRA_MODEL>
+model=<ESCALATION_MODEL>
 prompt_version=<PROMPT_VERSION>
 ```
 
-Terra re-reads that ID, fresh taxonomy, and collision state through MCP, then follows the same classification and save contract. It must not receive or reclassify a successfully saved Luna posting. If Terra cannot save it, return one ultimate failure with its reason; do not cascade to another model.
+Sol re-reads that ID, fresh taxonomy, and collision state through MCP, then follows the same classification and save contract. It must not receive or reclassify a successfully saved Luna posting. If Sol cannot save it, return one ultimate failure with its reason; do not cascade to another model.
 
-After all saves and escalations, Terra may review a small sample with `query`. This audit is read-only: it must not call `save_enrichment`, repair data, or alter taxonomy. Report its findings separately as follow-up candidates.
+After all saves and escalations, Sol may review a small sample with `query`. This audit is read-only: it must not call `save_enrichment`, repair data, or alter taxonomy. Report its findings separately as follow-up candidates.
 
 ## Coordinator reconciliation, report, and failure history
 
 Before dispatch, capture an ISO-8601 `run_started_at` and a unique `run_id` of the form `YYYY-MM-DD-HHMMSS-<six-random-hex>`. The unique suffix prevents two same-second invocations from overwriting a report.
 
-After every Luna or Terra wave has finished or a worker has been confirmed terminated, reconcile the wave's dispatched IDs with persisted results before escalation or failure reporting. Use one read-only `query` call with the literal IDs from that wave and the invocation start time:
+After every Luna or Sol wave has finished or a worker has been confirmed terminated, reconcile the wave's dispatched IDs with persisted results before escalation or failure reporting. Use one read-only `query` call with the literal IDs from that wave and the invocation start time:
 
 ```sql
 SELECT DISTINCT ON (job_posting_id)
@@ -270,20 +284,20 @@ ORDER BY job_posting_id, classified_at DESC, id DESC;
 ```
 
 - A returned row is the source of truth that the posting saved in this invocation, even if its worker report was lost. Record a recovered persisted save with the returned model; omit a summary if the worker did not report one.
-- A worker-reported `saved` result without a matching row is unsaved and becomes `needs_terra` for a Luna wave or an ultimate failure for a Terra wave.
-- A reported `needs_terra` result without a matching row is eligible for its one Terra escalation.
+- A worker-reported `saved` result without a matching row is unsaved and becomes `needs_escalation` for a Luna wave or an ultimate failure for a Sol wave.
+- A reported `needs_escalation` result without a matching row is eligible for its one Sol escalation.
 - An ID with neither a report nor a matching row is an ultimate `worker_exited_without_report` failure. Do not guess a classification or write a replacement result.
 
-After all Luna and Terra reports and reconciliations, the coordinator alone creates `agent-output/batch-enrich/` if needed and writes `agent-output/batch-enrich/<run_id>.md`.
+After all Luna and Sol reports and reconciliations, the coordinator alone creates `agent-output/batch-enrich/` if needed and writes `agent-output/batch-enrich/<run_id>.md`.
 
 The report includes:
 
 - normalized count, focus, `force`, `backlog`, and `per_company`;
-- selected, dispatched, saved, Luna-escalated, Terra-saved, failed, and re-enriched counts;
+- selected, dispatched, saved, Luna-escalated, Sol-saved, failed, and re-enriched counts;
 - failure breakdown and a note that unsaved postings reselect on a later non-force run;
 - new roles, specializations, and skills, deduplicated by slug and name;
 - per-posting saved summaries with ID and title;
-- the read-only Terra audit, if run;
+- the read-only Sol audit, if run;
 - recurring failures from `agent-output/batch-enrich/failures.jsonl`.
 
 Then append one JSON object for every ultimate unsaved posting to `agent-output/batch-enrich/failures.jsonl`. Never truncate or let workers write it. Each line has:
@@ -308,7 +322,7 @@ Finish with a one-line result: saved and failed counts, plus report path.
 - Preflight the five required MCP tools. Stop if the server or action boundary is unavailable.
 - Use preview's complete ordered `postings` response; never copy selection SQL.
 - Pass the pinned `PROMPT_VERSION` and the actual saving model on every `save_enrichment` call. Substitute from the pins block; never reuse a version string copied from an example.
-- Luna is the normal bounded worker. Terra is only an isolated unsaved-posting escalation or a read-only audit.
+- Luna is the normal bounded worker. Sol classification workers handle only isolated unsaved-posting escalations or a read-only audit.
 - Keep company chunks from racing in one wave. Fresh taxonomy becomes visible to later waves, not sibling workers.
 - Save once per posting through MCP. Classifications and coordinator failure history are append-only.
 - Reconcile each dispatched wave against persisted classifications; a worker message alone never proves a save.
