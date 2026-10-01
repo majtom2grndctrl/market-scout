@@ -105,11 +105,12 @@ REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA app FROM market_scout_app;
 REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA app FROM market_scout_app;
 
 -- This role belongs to PUBLIC, so a routine that kept Postgres's implicit
--- PUBLIC EXECUTE would be callable by it. Both statements repeat
--- readonly_role.sql's, so "executes no function" does not depend on that
--- script having run: the first strips the grant from routines already in
--- `public` (pg_trgm's and pgvector's included), the second from routines the
--- owner creates later. Both are idempotent.
+-- PUBLIC EXECUTE would be callable by it. Both statements follow
+-- readonly_role.sql's: the first strips the grant from routines already in
+-- `public`, the second from routines the owner creates later. Both are
+-- idempotent. A REVOKE removes only grants its runner may remove, so routines
+-- an extension installed under another role can keep theirs; the check at the
+-- end of this script refuses to finish if any survive.
 REVOKE EXECUTE ON ALL ROUTINES IN SCHEMA public FROM PUBLIC;
 ALTER DEFAULT PRIVILEGES
     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
@@ -138,3 +139,22 @@ GRANT USAGE ON SCHEMA public TO market_scout_app;
 GRANT SELECT ON public.canonical_roles TO market_scout_app;
 GRANT SELECT ON public.skills TO market_scout_app;
 GRANT SELECT ON public.title_seniority_seeds TO market_scout_app;
+
+-- The boundary, checked rather than assumed: no routine in `public`, `app`, or
+-- `mcp` may be executable by this role, whoever owns it. A routine the REVOKE
+-- above could not reach -- an extension's, installed under another role --
+-- must lose its PUBLIC grant from its owner first.
+DO $$
+DECLARE
+    v_executable text;
+BEGIN
+    SELECT string_agg(p.oid::regprocedure::text, ', ') INTO v_executable
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname IN ('public', 'app', 'mcp')
+      AND has_function_privilege('market_scout_app', p.oid, 'EXECUTE');
+    IF v_executable IS NOT NULL THEN
+        RAISE EXCEPTION 'market_scout_app can still execute: %. Revoke PUBLIC EXECUTE on them as their owner, then re-run this script.', v_executable;
+    END IF;
+END
+$$;

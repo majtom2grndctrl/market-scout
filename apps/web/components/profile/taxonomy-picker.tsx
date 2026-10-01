@@ -64,7 +64,14 @@ export function TaxonomyPicker({
   const latest = React.useRef(0);
   const timer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
-  React.useEffect(() => () => clearTimeout(timer.current), []);
+  // On unmount, cancel a pending search and orphan one in flight.
+  React.useEffect(
+    () => () => {
+      latest.current += 1;
+      clearTimeout(timer.current);
+    },
+    [],
+  );
 
   const items = React.useMemo(
     () => (value && !results.some((r) => r.id === value.id) ? [...results, value] : results),

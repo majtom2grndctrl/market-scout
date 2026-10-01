@@ -25,8 +25,9 @@ Built in worktree `../market-scout-profile-and-pins` on `feat/profile-and-pins`,
 - **App role script** `setup/app_role.sql`, shaped like `readonly_role.sql`: guards, CONNECT, USAGE on `app`, explicit per-table grants, SELECT on `canonical_roles`, `skills`, `title_seniority_seeds`. No default privileges. DSNs `DATABASE_URL_APP`, `DATABASE_URL_TEST_APP`.
 - **Unpin by pin id**, so a retired pin (no role) can be removed too.
 - **Combobox ported by hand from the shadcn registry**, not `shadcn add`. The CLI added an npm package named `cn` (a registry dependency our `cn()` already covers) and prompted to overwrite the forked `button` and `input`. Only the single-select pieces were kept; colours migrated per `web-guide.md` §Colour.
-- **`taxonomy_undo_label(retired_by)`** undoes a label's standing repairs newest first. A repair migration's down calls it with the label its up passed; a down cannot know the repair id its up returned. Added after review.
-- **A claim whose text is already listed under another match is reported, not swallowed.** Repeating a claim -- same skill, or same text with the same match -- stays a silent no-op. Added after review: an untargeted `ON CONFLICT` had turned the text clash into a success that dropped the picked match.
+- **`taxonomy_undo_label(retired_by)`** undoes a label's standing repairs newest first. A repair migration's down calls it with the label its up passed; a down cannot know the repair id its up returned. It refuses a blank label or one no repair ever carried, so a mistyped down cannot record itself as done. Added after review.
+- **Undo's re-mint check:** the repair's own table at any time, the other two only for rows created since the repair. A slug in two tables before the repair -- the dev database holds two such legacy collisions -- is not the repair's doing, and undo restores it.
+- **Picking a match for text already listed under a different match (or unmatched) is reported, not swallowed.** Repeating a claim -- the same skill under any text, or the same text with no new match picked -- stays a silent no-op. A picked skill that vanished under the page gets the vanished message even when its text clashes. Added after review: an untargeted `ON CONFLICT` had turned the clash into a success that dropped the picked match.
 - **One-character searches.** The taxonomy holds `C` and `R`; an exact match scores 1.0 and ranks first. 27 ms over the full skill list.
 - **Skill picker keeps typed text on close.** Base UI resets an unselected input on focus-out, outside press, and Escape, which made unmatched entry impossible to submit. Found in the smoke test; the picker now controls its input text.
 - **Taxonomy search latency: no index.** Measured on the development database (2,691 skills), 2026-10-01. The trigram scan was never the cost: a correlated usage count per candidate seq-scanned the link table, 300–570 ms. One grouped pass over the candidates' links runs 20–30 ms for skills, 4 ms for roles.
@@ -34,6 +35,8 @@ Built in worktree `../market-scout-profile-and-pins` on `feat/profile-and-pins`,
 - **The picker searches through a Server Action.** Route handlers are reserved for streaming, and a request-response read from a Client Component has no other server seam. The action calls the read-only client; it never touches the app client.
 
 ## Review loop
+
+Panel 2 (18 agents, the fix commit): 20 findings and 8 drift, none refuted. One red introduced by panel 1's fixes -- the cross-table re-mint check would refuse to undo a repair of a legacy collision -- fixed with tests; undo-label input, race-probe isolation, the vanished-skill clash message, and app_role.sql's closing boundary check also fixed.
 
 Panel 1 (56 agents, four slices): 82 findings and 28 comment-drift items, 1 refuted. Acted on every red and the yellows that held against intent; 000044 was edited in place and re-applied to both databases (unshipped; both profiles empty), round-trip and parity re-checked. Accepted, recorded here rather than changed:
 
@@ -43,6 +46,9 @@ Panel 1 (56 agents, four slices): 82 findings and 28 comment-drift items, 1 refu
 - UPDATE is granted on whole profile tables, stamps included. No write core updates a row.
 - The profile read is four statements, not one snapshot; a repair landing mid-read gives one mixed render.
 - The client-boundary test sees direct imports only, not re-exports or dynamic `import()`.
+- Escape with the picker closed clears a pick and keeps its text, so the claim reads as unmatched until re-picked; the button label says so.
+- The picker, the past-title submit path, and the error retry have no automated test: the web suite has no DOM harness. Covered by stories and two browser passes against the test databases.
+- A pin or claim on a merge survivor racing the merge can deadlock instead of failing the foreign key; Postgres picks a victim and the write reports the generic save error. Rare: repairs run from migrations.
 - staticcheck could not run: the installed binary predates Go 1.27's export data. Environment, not this change.
 
 ## AC-to-proof

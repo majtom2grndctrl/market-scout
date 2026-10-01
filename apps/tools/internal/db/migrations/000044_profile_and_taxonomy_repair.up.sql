@@ -210,11 +210,11 @@ $$;
 -- A writer that skips that lock -- cmd/batch-enrich writes directly -- meets
 -- the FOR UPDATE each repair takes on the terms it names, which conflicts with
 -- the FOR KEY SHARE a foreign-key check takes on the referenced row. A link it
--- has in flight commits before the repair moves anything; one it starts later
--- waits, then fails the foreign key. Only rows that exist can be locked, and
--- that writer skips the retired-slug gate too, so it can still mint a slug a
--- repair has just retired. It stays unused until it writes through
--- mcp.save_enrichment.
+-- has in flight commits before the repair moves anything; a link it starts
+-- later against the old term id waits, then fails the foreign key. But that
+-- writer resolves terms by slug and skips the retired-slug gate, so its next
+-- write simply mints the retired slug again. It stays unused until it writes
+-- through mcp.save_enrichment.
 CREATE FUNCTION public.taxonomy_repair_begin(
     p_table      text,
     p_retired_by text,
@@ -348,8 +348,8 @@ BEGIN
     VALUES ('merge', p_table, p_retired_by)
     RETURNING id INTO v_repair_id;
 
-    -- Every named term, locked in one statement in slug order, so a repair and
-    -- any other writer that locks terms always take them the same way round.
+    -- Every named term, locked in one statement in slug order, so two repairs
+    -- that name overlapping terms always take them the same way round.
     EXECUTE format(
         'SELECT 1 FROM public.%I
          WHERE slug IN (SELECT slug FROM taxonomy_merge_map UNION SELECT into_slug FROM taxonomy_merge_map)
@@ -606,7 +606,7 @@ BEGIN
         RETURN;
     END IF;
 
-    SELECT string_agg(DISTINCT l.id::text, ', ') INTO v_bad
+    SELECT string_agg(DISTINCT format('%s (%s)', l.id, l.retired_by), ', ') INTO v_bad
     FROM public.taxonomy_repairs l
     JOIN public.taxonomy_repair_terms lt ON lt.repair_id = l.id
     WHERE l.id > p_repair_id
@@ -621,14 +621,25 @@ BEGIN
         RAISE EXCEPTION 'taxonomy_undo: later repairs % touch the same terms; undo them first', v_bad;
     END IF;
 
-    -- Any of the three tables: mcp.save_enrichment keeps a slug in one table
-    -- only, so restoring one that now lives elsewhere would break that rule.
-    SELECT string_agg(t.slug, ', ') INTO v_bad
-    FROM public.taxonomy_repair_terms t
-    WHERE t.repair_id = p_repair_id AND t.outcome = 'applied'
-      AND (EXISTS (SELECT 1 FROM public.canonical_roles x WHERE x.slug = t.slug)
-           OR EXISTS (SELECT 1 FROM public.specializations x WHERE x.slug = t.slug)
-           OR EXISTS (SELECT 1 FROM public.skills x WHERE x.slug = t.slug));
+    -- Its own table at any time; the other two only for a row created since
+    -- the repair. mcp.save_enrichment keeps a new slug in one table, so a mint
+    -- elsewhere after the repair would break that rule on restore. A slug that
+    -- already sat in two tables before the repair is a legacy collision the
+    -- repair did not cause, and undo puts back exactly what it found.
+    -- performed_at is the repair transaction's now(), so >= also catches a
+    -- re-mint in that same transaction.
+    EXECUTE format(
+        'SELECT string_agg(t.slug, '', '') FROM public.taxonomy_repair_terms t
+         WHERE t.repair_id = $1 AND t.outcome = ''applied''
+           AND (EXISTS (SELECT 1 FROM public.%I x WHERE x.slug = t.slug)
+                OR EXISTS (SELECT 1 FROM public.canonical_roles x
+                           WHERE x.slug = t.slug AND x.created_at >= $2)
+                OR EXISTS (SELECT 1 FROM public.specializations x
+                           WHERE x.slug = t.slug AND x.created_at >= $2)
+                OR EXISTS (SELECT 1 FROM public.skills x
+                           WHERE x.slug = t.slug AND x.created_at >= $2))',
+        v_repair.table_name)
+    INTO v_bad USING p_repair_id, v_repair.performed_at;
     IF v_bad IS NOT NULL THEN
         RAISE EXCEPTION 'taxonomy_undo: slugs minted again since repair %: %', p_repair_id, v_bad;
     END IF;
@@ -698,7 +709,12 @@ $$;
 --
 --   SELECT public.taxonomy_undo_label('000050_merge_go_aliases');
 --
--- A label that names nothing raises a notice and changes nothing.
+-- A label no repair ever carried is refused: a successful repair migration
+-- always leaves at least one repair row, so an unknown label is a typo, and a
+-- down that undid nothing must not record itself as done. A label whose
+-- repairs are all undone already raises a notice and changes nothing, so a
+-- down can run twice. A refusal partway through rolls back the repairs this
+-- call had already undone, with the rest of the transaction.
 CREATE FUNCTION public.taxonomy_undo_label(p_retired_by text)
 RETURNS void
 LANGUAGE plpgsql
@@ -708,7 +724,15 @@ DECLARE
     v_id bigint;
     v_found boolean := false;
 BEGIN
+    IF p_retired_by IS NULL OR btrim(p_retired_by) = '' THEN
+        RAISE EXCEPTION 'taxonomy_undo_label: a label is required';
+    END IF;
+    -- Taken here so the label's repairs are read under the lock; taxonomy_undo
+    -- takes it again, which a transaction-scoped advisory lock allows.
     PERFORM pg_advisory_xact_lock(734771, 26);
+    IF NOT EXISTS (SELECT 1 FROM public.taxonomy_repairs WHERE retired_by = p_retired_by) THEN
+        RAISE EXCEPTION 'taxonomy_undo_label: no repair was ever labelled %', p_retired_by;
+    END IF;
     FOR v_id IN
         SELECT id FROM public.taxonomy_repairs
         WHERE retired_by = p_retired_by AND undone_at IS NULL
@@ -718,7 +742,7 @@ BEGIN
         PERFORM public.taxonomy_undo(v_id);
     END LOOP;
     IF NOT v_found THEN
-        RAISE NOTICE 'taxonomy_undo_label: no standing repair labelled %; nothing changed', p_retired_by;
+        RAISE NOTICE 'taxonomy_undo_label: every repair labelled % is already undone; nothing changed', p_retired_by;
     END IF;
 END;
 $$;

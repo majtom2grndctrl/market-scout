@@ -161,7 +161,7 @@ describe("taxonomy_undo", () => {
 
         await tx`SAVEPOINT out_of_order`;
         await expect(undo(tx, first)).rejects.toThrow(
-          new RegExp(`later repairs ${second} touch the same terms`),
+          new RegExp(`later repairs ${second} \\(vitest\\) touch the same terms`),
         );
         await tx`ROLLBACK TO SAVEPOINT out_of_order`;
 
@@ -331,6 +331,115 @@ describe("taxonomy_undo", () => {
           SELECT count(*)::int AS standing FROM taxonomy_repairs WHERE retired_by = ${m} AND undone_at IS NULL
         `;
         expect(standing).toBe(0);
+      });
+    } finally {
+      await owner.end();
+    }
+  });
+
+  it("undoes a repair of one side of a legacy cross-table slug, and refuses when the slug was minted in another table since", async (context) => {
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
+    const m = newMarker("undo-cross");
+
+    try {
+      await inRolledBackTransaction(owner, async (tx) => {
+        // Both sides existed before the repair: a collision the repair did not cause.
+        await tx`
+          INSERT INTO specializations (slug, name, created_at)
+          VALUES (${`${m}-shared`}, 'Shared (specialization)', now() - interval '1 day')
+        `;
+        await tx`
+          INSERT INTO skills (slug, name, created_at)
+          VALUES (${`${m}-shared`}, 'Shared (skill)', now() - interval '1 day')
+        `;
+        const legacy = await retire(tx, "skills", [{ slug: `${m}-shared`, reason: "Cleanup" }]);
+        await undo(tx, legacy);
+        expect(await termId(tx, "skills", `${m}-shared`)).not.toBeNull();
+
+        // Minted elsewhere after the repair: restoring would put one slug in two tables.
+        await insertTerm(tx, "skills", `${m}-old`);
+        await insertTerm(tx, "skills", `${m}-new`);
+        const repair = await merge(tx, "skills", [{ slug: `${m}-old`, into: `${m}-new` }]);
+        await insertTerm(tx, "specializations", `${m}-old`);
+        await tx`SAVEPOINT reminted`;
+        await expect(undo(tx, repair)).rejects.toThrow(/slugs minted again since repair/);
+        await tx`ROLLBACK TO SAVEPOINT reminted`;
+      });
+    } finally {
+      await owner.end();
+    }
+  });
+
+  it("skips a role dimension removed between the repair and the undo", async (context) => {
+    const owner = ownerOrSkip(context);
+    if (!owner) return;
+    const m = newMarker("undo-dim");
+
+    try {
+      await inRolledBackTransaction(owner, async (tx) => {
+        const old = await insertTerm(tx, "canonical_roles", `${m}-old`);
+        const survivor = await insertTerm(tx, "canonical_roles", `${m}-new`);
+        const [dimension] = await tx<{ id: string }[]>`
+          INSERT INTO role_dimensions (slug, name) VALUES (${`${m}-dim`}, 'Fixture dimension') RETURNING id
+        `;
+        await tx`INSERT INTO canonical_role_dimensions VALUES (${old}, ${dimension.id})`;
+
+        const repair = await merge(tx, "canonical_roles", [{ slug: `${m}-old`, into: `${m}-new` }]);
+        // A later migration retires the dimension.
+        await tx`DELETE FROM canonical_role_dimensions WHERE canonical_role_id = ${survivor}`;
+        await tx`DELETE FROM role_dimensions WHERE id = ${dimension.id}`;
+        await undo(tx, repair);
+
+        expect(await termId(tx, "canonical_roles", `${m}-old`)).toBe(old);
+        const [{ count }] = await tx<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM canonical_role_dimensions WHERE canonical_role_id = ${old}
+        `;
+        expect(count).toBe(0);
+      });
+    } finally {
+      await owner.end();
+    }
+  });
+
+  it("refuses a blank or unknown label, notices a label already undone, and rolls back a label undo refused partway", async (context) => {
+    const notices: string[] = [];
+    const owner = ownerOrSkip(context, notices);
+    if (!owner) return;
+    const m = newMarker("undo-label-edge");
+    const other = `${m}-later`;
+
+    try {
+      await inRolledBackTransaction(owner, async (tx) => {
+        const refused = async (label: string, pattern: RegExp) => {
+          await tx`SAVEPOINT refused`;
+          await expect(tx`SELECT public.taxonomy_undo_label(${label})`).rejects.toThrow(pattern);
+          await tx`ROLLBACK TO SAVEPOINT refused`;
+        };
+        await refused("  ", /a label is required/);
+        await refused(`${m}-typo`, /no repair was ever labelled/);
+
+        for (const slug of ["a", "b", "c", "x", "y"]) {
+          await insertTerm(tx, "skills", `${m}-${slug}`);
+        }
+        await merge(tx, "skills", [{ slug: `${m}-a`, into: `${m}-b` }], m);
+        const unrelated = await merge(tx, "skills", [{ slug: `${m}-x`, into: `${m}-y` }], m);
+        // Another migration's repair builds on the first one.
+        await merge(tx, "skills", [{ slug: `${m}-b`, into: `${m}-c` }], other);
+
+        // Newest first: the unrelated repair undoes, then the first is refused.
+        await refused(m, new RegExp(`touch the same terms`));
+        const [{ undone_at: undoneAt }] = await tx<{ undone_at: Date | null }[]>`
+          SELECT undone_at FROM taxonomy_repairs WHERE id = ${unrelated}
+        `;
+        expect(undoneAt).toBeNull();
+
+        await tx`SELECT public.taxonomy_undo_label(${other})`;
+        await tx`SELECT public.taxonomy_undo_label(${m})`;
+        await tx`SELECT public.taxonomy_undo_label(${m})`;
+        expect(notices).toEqual(
+          expect.arrayContaining([expect.stringMatching(new RegExp(`every repair labelled ${m} is already undone`))]),
+        );
       });
     } finally {
       await owner.end();

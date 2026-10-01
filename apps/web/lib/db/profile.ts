@@ -218,6 +218,12 @@ export async function claimSkill(
       WHERE lower(btrim(skill_text)) = lower(btrim(${skillText}))
     `;
     if (sameText && sameText.skill_id !== input.skillId && input.skillId !== null) {
+      // The text clash kept the insert from running, so its foreign-key check
+      // never did: a term merged or retired under the page has to be caught here.
+      const [stillThere] = await sql`SELECT 1 FROM skills WHERE id = ${input.skillId}`;
+      if (!stillThere) {
+        return skillGone();
+      }
       const [sameSkill] = await sql`SELECT 1 FROM app.claimed_skills WHERE skill_id = ${input.skillId}`;
       if (!sameSkill) {
         return {
@@ -229,13 +235,17 @@ export async function claimSkill(
     return { ok: true };
   } catch (error) {
     if (pgCode(error) === FOREIGN_KEY_VIOLATION) {
-      return {
-        ok: false,
-        error: "That skill is no longer in the taxonomy. Search again, or add it as unmatched text.",
-      };
+      return skillGone();
     }
     throw error;
   }
+}
+
+function skillGone(): WriteResult {
+  return {
+    ok: false,
+    error: "That skill is no longer in the taxonomy. Search again, or add it as unmatched text.",
+  };
 }
 
 export async function removeClaimedSkill(sql: ISql, claimId: string): Promise<WriteResult> {

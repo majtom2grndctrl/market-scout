@@ -328,6 +328,19 @@ describe("profile writes", () => {
       expect(await removeClaimedSkill(app, claim.id)).toEqual({ ok: true });
       expect(await claimSkill(app, { skillText: `${m} Figma`, skillId: skill })).toEqual({ ok: true });
 
+      // Same text, listed under a different match.
+      const other = await insertTerm(owner, "skills", `${m}-figma-design`, `${m} Figma Design`);
+      expect(await claimSkill(app, { skillText: `${m} FIGMA`, skillId: other })).toEqual({
+        ok: false,
+        error: expect.stringMatching(/already listed under another match/),
+      });
+      // Same text, and the picked skill vanished under the page: the vanished
+      // message, not the clash one.
+      expect(await claimSkill(app, { skillText: `${m} figma`, skillId: "999999999999" })).toEqual({
+        ok: false,
+        error: expect.stringMatching(/no longer in the taxonomy/),
+      });
+
       expect(await claimSkill(app, { skillText: `${m} Other`, skillId: "999999999999" })).toEqual({
         ok: false,
         error: expect.stringMatching(/no longer in the taxonomy/),

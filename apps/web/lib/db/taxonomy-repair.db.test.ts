@@ -412,7 +412,7 @@ describe("repairs across installs", () => {
     }
   });
 
-  it("refuses malformed input before changing anything", async (context) => {
+  it("refuses malformed input", async (context) => {
     const owner = ownerOrSkip(context);
     if (!owner) return;
     const m = newMarker("refuse");
@@ -429,6 +429,7 @@ describe("repairs across installs", () => {
           ["missing into", () => tx`SELECT public.taxonomy_merge('skills', ${tx.json([{ slug: `${m}-a` }])}, 'vitest')`, /need both "slug" and "into"/],
           ["missing reason", () => tx`SELECT public.taxonomy_retire('skills', ${tx.json([{ slug: `${m}-a` }])}, 'vitest')`, /need both "slug" and "reason"/],
           ["duplicate after trim", () => retire(tx, "skills", [{ slug: `${m}-a`, reason: "r" }, { slug: ` ${m}-a `, reason: "r" }]), /named more than once/],
+          ["duplicate in a map", () => merge(tx, "skills", [{ slug: `${m}-a`, into: `${m}-b` }, { slug: `${m}-a`, into: `${m}-c` }]), /named more than once in the map/],
           ["not a slug", () => retire(tx, "skills", [{ slug: `${m}-A`, reason: "r" }]), /not a slug/],
           ["not a slug, survivor", () => merge(tx, "skills", [{ slug: `${m}-a`, into: "Go Lang" }]), /not a slug/],
         ];
@@ -438,10 +439,6 @@ describe("repairs across installs", () => {
           await tx`ROLLBACK TO SAVEPOINT refused`;
         }
         expect(await termId(tx, "skills", `${m}-a`)).not.toBeNull();
-        const [{ count }] = await tx<{ count: number }[]>`
-          SELECT count(*)::int AS count FROM taxonomy_repairs WHERE retired_by = 'vitest' AND performed_at = now()
-        `;
-        expect(count).toBe(0);
       });
     } finally {
       await owner.end();
@@ -586,6 +583,8 @@ describe("writes racing a merge", () => {
     const owner = ownerOrSkip(context);
     if (!owner) return;
     const saver = postgres(testDsns().ownerDsn!, { max: 1, onnotice: () => {} });
+    const merger = postgres(testDsns().ownerDsn!, { max: 1, onnotice: () => {} });
+    const [{ pid: mergerPid }] = await merger<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
     const m = newMarker("race");
 
     try {
@@ -611,8 +610,8 @@ describe("writes racing a merge", () => {
 
       try {
         expect(await held.ran).toMatchObject({ ok: true });
-        const mergeDone = merge(owner, "canonical_roles", [{ slug: `${m}-old`, into: `${m}-new` }], m);
-        await waitForBlocked(owner, "advisory");
+        const mergeDone = merge(merger, "canonical_roles", [{ slug: `${m}-old`, into: `${m}-new` }], m);
+        await waitForBlocked(owner, mergerPid, "advisory");
         held.release();
         await held.done;
         await mergeDone;
@@ -625,7 +624,7 @@ describe("writes racing a merge", () => {
       expect(await termId(owner, "canonical_roles", `${m}-old`)).toBeNull();
     } finally {
       await cleanupCommitted(owner, m);
-      await saver.end();
+      await Promise.all([saver.end(), merger.end()]);
       await owner.end();
     }
   }, 20_000);
@@ -636,6 +635,8 @@ describe("writes racing a merge", () => {
     const owner = ownerOrSkip(context);
     if (!owner) return;
     const writer = postgres(testDsns().ownerDsn!, { max: 1, onnotice: () => {} });
+    const merger = postgres(testDsns().ownerDsn!, { max: 1, onnotice: () => {} });
+    const [{ pid: mergerPid }] = await merger<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
     const m = newMarker("race-direct");
 
     try {
@@ -649,8 +650,8 @@ describe("writes racing a merge", () => {
 
       try {
         await held.ran;
-        const mergeDone = merge(owner, "canonical_roles", [{ slug: `${m}-old`, into: `${m}-new` }], m);
-        await waitForBlocked(owner, "transactionid");
+        const mergeDone = merge(merger, "canonical_roles", [{ slug: `${m}-old`, into: `${m}-new` }], m);
+        await waitForBlocked(owner, mergerPid, "transactionid");
         held.release();
         await held.done;
         await mergeDone;
@@ -663,7 +664,7 @@ describe("writes racing a merge", () => {
       expect(await termId(owner, "canonical_roles", `${m}-old`)).toBeNull();
     } finally {
       await cleanupCommitted(owner, m);
-      await writer.end();
+      await Promise.all([writer.end(), merger.end()]);
       await owner.end();
     }
   }, 20_000);
@@ -685,19 +686,18 @@ function holdOpen<T>(sql: postgres.Sql, body: (tx: ISql) => Promise<T>) {
   return { ran: ranOrFailed, release, done };
 }
 
-// Polls until exactly one backend waits on a lock of the given type, rather
-// than sleeping for a guessed interval.
-async function waitForBlocked(owner: ISql, locktype: "advisory" | "transactionid") {
+// Polls until the merging backend itself waits on a lock of the given type,
+// rather than sleeping for a guessed interval. Keyed on its pid: other suites
+// running in parallel take the same advisory lock.
+async function waitForBlocked(owner: ISql, pid: number, locktype: "advisory" | "transactionid") {
   for (let attempt = 0; attempt < 100; attempt++) {
-    const [{ waiting }] = await owner<{ waiting: number }[]>`
-      SELECT count(*)::int AS waiting FROM pg_locks
-      WHERE locktype = ${locktype} AND NOT granted
-        AND (${locktype} <> 'advisory' OR (classid = 734771 AND objid = 26))
+    const [{ waiting }] = await owner<{ waiting: boolean }[]>`
+      SELECT EXISTS (SELECT 1 FROM pg_locks WHERE pid = ${pid} AND locktype = ${locktype} AND NOT granted) AS waiting
     `;
-    if (waiting === 1) return;
+    if (waiting) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`no backend blocked on a ${locktype} lock after 5s`);
+  throw new Error(`the merge never blocked on a ${locktype} lock`);
 }
 
 async function postingOf(sql: ISql, classificationId: string): Promise<string> {

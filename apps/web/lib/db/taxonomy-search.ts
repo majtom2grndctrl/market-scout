@@ -10,7 +10,8 @@ import { getSql } from "./client";
 // taxonomy_search.go): pg_trgm similarity against slug and name, ties broken
 // by usage, then id. Its clustering of near-identical slugs is left out -- that
 // guards an agent against attaching three spellings of one concept, and a
-// person picking one term does not need it. Drift between the two only
+// person picking one term does not need it, and it searches from one
+// character where the tool asks for a concept. Drift between the two only
 // reorders a picker.
 //
 // One addition: a substring match qualifies a row even below the similarity
