@@ -30,14 +30,17 @@ Stories live beside reusable components under `components/**`. Add stories for m
 
 ## Database Tests
 
-Database tests run against a dedicated database, `market_scout_test`, and require both `DATABASE_URL_TEST` and `DATABASE_URL_TEST_RO`. Provisioning steps live in [Developer Guide](./developer-guide.md) §2.
+Database tests run against a dedicated database, `market_scout_test`, and require `DATABASE_URL_TEST` and `DATABASE_URL_TEST_RO`; the profile suites also require `DATABASE_URL_TEST_APP`. Provisioning steps live in [Developer Guide](./developer-guide.md) §2.
 
 - `DATABASE_URL_TEST` is the owner role. It creates uniquely marked fixture data and cleans it up, or rolls it back in a transaction.
 - `DATABASE_URL_TEST_RO` is the application role. It executes the query under test. Do not substitute the owner DSN; the grant boundary is part of the contract.
+- `DATABASE_URL_TEST_APP` is the profile's role. Profile reads and write cores run through it. It cannot see an owner's uncommitted rows, so a profile suite commits its fixtures and tears them down by marker.
 - Pass a SQL client into the query function. The route wrapper gets the application's client, while the test supplies the read-only client.
 - Isolate fixture rows with a unique marker. The test database persists across runs and suites, so assertions must not depend on absolute totals or another test's rows.
 
-Grant coverage here runs one way. Every assertion fails on a privilege the application role is missing — a table or view it cannot select, or the one granted function a suite calls — and none fails on a privilege it should not have. A grant that got wider leaves every result identical. Read a green run as "nothing the read model needs was dropped," not as proof the boundary is tight; the boundary lives in `readonly_role.sql`, and the parity check in [Developer Guide](./developer-guide.md) §2 is what reads it.
+Grant coverage in the read-model suites runs one way. Every assertion fails on a privilege the application role is missing — a table or view it cannot select, or the one granted function a suite calls — and none fails on a privilege it should not have. A grant that got wider leaves every result identical. Read a green run as "nothing the read model needs was dropped," not as proof the boundary is tight; the boundary lives in `readonly_role.sql`, and the parity check in [Developer Guide](./developer-guide.md) §2 is what reads it.
+
+The `app` schema is the exception, and its suites run both ways. The app role is the first application role that can write tables, and the profile is the first data no agent may read, so a widened grant there is a defect a one-way suite cannot see. The profile grant and privacy suites assert refusals directly — through the catalog over every table and function, with one real statement the role must have refused — and each privacy check first runs against a deliberate leak, rolled back, to prove it can see one.
 
 Both DSNs resolve through `lib/db/test-dsn.ts`. **There is no fallback to `DATABASE_URL` or `DATABASE_URL_RO`. Never add one.** The status and postings suites date their fixtures from `now()`, so against the development database they land inside the live `now() - interval` windows the read model queries, and a fixture fetch run poisons the `max(started_at)` the status read returns. Teardown is best-effort and has failed more than once. Every fixture company that survives becomes a permanent fetcher target: the fetch list filters on `ats IS NOT NULL`, and migration `000002` made `companies.ats` NOT NULL, so that predicate excludes no company at all. A separate database contains all of that no matter how teardown goes; a fallback DSN reopens it.
 
@@ -49,7 +52,7 @@ Run from `apps/web/`:
 pnpm test:db
 ```
 
-With either test DSN unset, individual DB tests call `context.skip()` — they never fall back to the development database. Vitest may exit successfully, but those tests are **skipped**, not passed and not evidence that the view or grants work. Report that distinction explicitly.
+With a test DSN a suite needs unset, individual DB tests call `context.skip()` — they never fall back to the development database. Vitest may exit successfully, but those tests are **skipped**, not passed and not evidence that the view or grants work. Report that distinction explicitly.
 
 ## Running Tests
 
