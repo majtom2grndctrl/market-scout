@@ -142,8 +142,8 @@ Goal: A person onboards with a résumé, discovers roles related to their experi
 
 ## Epic: Job Classification
 
-- [ ] `hybrid-classifier`
-  Replace `cmd/batch-enrich` with an unattended classifier: deterministic code where evidence is quotable, Jev over OpenRouter where judgment is contextual. Pick-only, writes through `mcp.save_enrichment`, stores per-label probabilities. Live runs stop at a pilot until `lineage-aware-measures` lands.
+- [x] `hybrid-classifier`
+  Stopped on 2026-10-01 after the probe. Jev role choice came in at the kill bar, and Jev skill and specialization tagging failed (18% and about 50% precision); lexical skill matching worked. v9 stays the enrichment path. Findings: `plans/done/hybrid-classifier/plan.md` §Outcome. Code: tag `archive/hybrid-classifier`, unmerged.
 
 - [ ] `lineage-aware-measures`
   Show each classification's lineage in the read model, and teach the measure engine that a skill a classifier cannot reach is absent, not zero. Then reclassify the recent window. Gates enrichment coverage for Profile-Led Exploration; `role-fit-measure` and skill adjacency are most exposed to capped skill reach.

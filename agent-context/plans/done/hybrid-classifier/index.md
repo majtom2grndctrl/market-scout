@@ -1,5 +1,7 @@
 # hybrid-classifier
 
+> **Stopped on 2026-10-01 after the probe.** Not built past Phase 1, and v9 stays the enrichment path. `plan.md` §Outcome has the findings, and the code sits on tag `archive/hybrid-classifier`.
+
 Brief · resumable · reads: `agent-context/lib/project.md` §Settled architecture, §Evidence trust tiers · `agent-context/lib/developer-guide.md` §2 Cost map, §2 Test database, §6.2 · `research/enrichment-tool-design-inputs.md` · read at 2bde04f
 
 ## Problem
