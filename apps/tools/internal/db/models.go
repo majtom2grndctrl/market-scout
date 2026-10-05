@@ -14,6 +14,28 @@ type AllSeenPosting struct {
 	JobPostingID int64
 }
 
+type AppClaimedSkill struct {
+	ID        int64
+	SkillText string
+	SkillID   sql.NullInt64
+	CreatedAt time.Time
+}
+
+type AppPastTitle struct {
+	ID        int64
+	TitleText string
+	RoleID    sql.NullInt64
+	Seniority sql.NullString
+	CreatedAt time.Time
+}
+
+type AppPin struct {
+	ID         int64
+	RoleID     sql.NullInt64
+	PinnedName string
+	PinnedAt   time.Time
+}
+
 type CanonicalRole struct {
 	ID        int64
 	Slug      string
@@ -231,6 +253,7 @@ type RetiredSlug struct {
 	RetiredAt          time.Time
 	RetiredByMigration string
 	Reason             string
+	RetiredByRepair    sql.NullInt64
 }
 
 type RetiredSlugLink struct {
@@ -264,6 +287,42 @@ type Specialization struct {
 	Slug      string
 	Name      string
 	CreatedAt time.Time
+}
+
+type TaxonomyRepair struct {
+	ID          int64
+	Operation   string
+	TableName   string
+	RetiredBy   string
+	PerformedAt time.Time
+	UndoneAt    sql.NullTime
+}
+
+type TaxonomyRepairLink struct {
+	RepairID         int64
+	TermID           int64
+	ClassificationID int64
+	Collided         bool
+}
+
+type TaxonomyRepairRoleDimension struct {
+	RepairID    int64
+	RoleID      int64
+	DimensionID int64
+	Collided    bool
+}
+
+type TaxonomyRepairTerm struct {
+	RepairID     int64
+	Slug         string
+	Outcome      string
+	TermID       sql.NullInt64
+	TermName     sql.NullString
+	TermCreated  sql.NullTime
+	SurvivorSlug sql.NullString
+	SurvivorID   sql.NullInt64
+	AlsoIn       []string
+	Reason       string
 }
 
 // Append-only record of every near match mcp.save_enrichment showed a worker, and whether the proposed term was minted anyway or reused. Added by 000039.

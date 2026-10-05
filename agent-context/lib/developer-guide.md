@@ -198,6 +198,28 @@ DATABASE_URL_ACTIONS=postgres://market_scout_actions:<password>@localhost:5432/m
 
 `action_role.sql` is operational SQL, hand-editable, not a numbered migration or sqlc input — same as `readonly_role.sql`.
 
+### App role
+
+The web app's profile reads and Server Action writes use `DATABASE_URL_APP`. Its role, `market_scout_app`, is the only application role that reaches the private `app` schema: SELECT, INSERT, UPDATE, DELETE on each profile table by explicit grant, and SELECT on the taxonomy tables the profile names. It writes nothing outside `app` and executes no function in `public`, `mcp`, or `app`: the script revokes Postgres's implicit `PUBLIC` EXECUTE itself rather than relying on `readonly_role.sql`.
+
+Provision after migrations, with the same owner role used for migrations, against every database the web app or its tests read:
+
+```bash
+psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f internal/db/setup/app_role.sql
+psql "$DATABASE_URL" -c '\password market_scout_app'
+```
+
+No default privilege grants this role anything. A migration that adds a table to `app` adds its grant to `app_role.sql` in the same change, and the script is re-run against both databases; until then the role cannot touch the table. That is deliberate — a later table is not writable by accident.
+
+Choose the password out of band, then add both DSNs to root `.env.local`:
+
+```bash
+DATABASE_URL_APP=postgres://market_scout_app:<password>@localhost:5432/market_scout?sslmode=disable
+DATABASE_URL_TEST_APP=postgres://market_scout_app:<password>@localhost:5432/market_scout_test?sslmode=disable
+```
+
+`app_role.sql` is operational SQL, hand-editable, not a numbered migration or sqlc input.
+
 Primary debugging surfaces:
 
 - **TablePlus** — GUI client. Connect using `DATABASE_URL`. Inspect tables, run ad-hoc queries, browse schema.
@@ -208,32 +230,34 @@ Primary debugging surfaces:
 
 The `.db.test.ts` suites in `apps/web/` write fixtures to a dedicated database, `market_scout_test`, never to `market_scout`. The status and postings suites date their fixtures from `now()`, so in the development database they land inside the live `now() - interval` windows the read model queries, and they survive any teardown failure. The boundary is the separate database, not teardown hygiene.
 
-Both DSNs resolve through `apps/web/lib/db/test-dsn.ts`, which enforces that boundary instead of trusting it. A DSN naming a database whose name does not end in `_test` throws before any connection opens, naming the database it found; unset stays a skip. The suffix is the contract, so a per-worktree or CI test database needs no code change — and a `DATABASE_URL_TEST` copied from `DATABASE_URL` fails every DSN-dependent test rather than writing fixtures into the development database.
+Every test DSN resolves through `apps/web/lib/db/test-dsn.ts`, which enforces that boundary instead of trusting it. A DSN naming a database whose name does not end in `_test` throws before any connection opens, naming the database it found; unset stays a skip. The suffix is the contract, so a per-worktree or CI test database needs no code change — and a `DATABASE_URL_TEST` copied from `DATABASE_URL` fails every DSN-dependent test rather than writing fixtures into the development database.
 
-Add both DSNs to root `.env.local` first — the provisioning commands below read them:
+Add the DSNs to root `.env.local` first — the provisioning commands below read them:
 
 ```bash
 DATABASE_URL_TEST=postgres://market_scout:<password>@localhost:5432/market_scout_test?sslmode=disable
 DATABASE_URL_TEST_RO=postgres://market_scout_readonly:<password>@localhost:5432/market_scout_test?sslmode=disable
+DATABASE_URL_TEST_APP=postgres://market_scout_app:<password>@localhost:5432/market_scout_test?sslmode=disable
 ```
 
-Both name `market_scout_test`. `market_scout_readonly` already exists cluster-wide, so reuse the password `DATABASE_URL_RO` already carries; there is no `\password` step here.
+All three name `market_scout_test`. The roles exist cluster-wide, so reuse the passwords `DATABASE_URL_RO` and `DATABASE_URL_APP` already carry; there is no `\password` step here.
 
 `.env.local` is the only file the suites read. `apps/web/vitest.setup.ts` forces `NODE_ENV` to a non-`test` value before calling `loadEnvConfig(process.cwd())`: `.env.local` is in every file set except the test-mode one, so forcing a non-`test` mode is what keeps it loaded. `.env.test` is in no other set and is never read.
 
-One Postgres cluster serves both databases. Source root `.env.local` into the shell (`set -a; source .env.local; set +a`), then create the database as the migration owner, apply migrations, and run the read-only grants against it:
+One Postgres cluster serves both databases. Source root `.env.local` into the shell (`set -a; source .env.local; set +a`), then create the database as the migration owner, apply migrations, and run the read-only and app grants against it:
 
 ```bash
 psql "$DATABASE_URL" -c 'CREATE DATABASE market_scout_test'
 DATABASE_URL="$DATABASE_URL_TEST" go run ./cmd/migrate up
 psql -v ON_ERROR_STOP=1 "$DATABASE_URL_TEST" -f internal/db/setup/readonly_role.sql
+psql -v ON_ERROR_STOP=1 "$DATABASE_URL_TEST" -f internal/db/setup/app_role.sql
 ```
 
 The middle line hands the test DSN to the migration runner under the name the runner reads; written the other way round it migrates the development database instead. Sourcing first is load-bearing for it: `godotenv.Load` never overwrites a key already present in the environment, so an unsourced `DATABASE_URL="$DATABASE_URL_TEST"` expands to empty, still counts as set, and suppresses the `.env.local` fallback — the migration then finds no DSN.
 
 `action_role.sql` is not needed here. No `.db.test.ts` suite calls an `mcp.` function, and `readonly_role.sql` now revokes `PUBLIC` EXECUTE itself — on the routines already in the schema, and by default privilege on the ones its owner creates later — so the function boundary no longer depends on `action_role.sql` to survive later migrations.
 
-Parity between the two databases is an action you repeat, not a property you assert. `migrate up` and `readonly_role.sql` each target one database; run each against both after any migration, and re-run `readonly_role.sql` after any `CREATE EXTENSION` as well. Two checks read the result. `migrate version` must report the same version with the dirty flag clear in each. And this must return the same rows in each — one line per function, so two databases granting different functions read as different instead of as equal counts:
+Parity between the two databases is an action you repeat, not a property you assert. `migrate up`, `readonly_role.sql`, and `app_role.sql` each target one database; run each against both after any migration, and re-run `readonly_role.sql` after any `CREATE EXTENSION` as well. Three checks read the result. `migrate version` must report the same version with the dirty flag clear in each. And this must return the same rows in each — one line per function, so two databases granting different functions read as different instead of as equal counts:
 
 ```sql
 SELECT p.oid::regprocedure::text AS executable_by_readonly
@@ -243,7 +267,24 @@ WHERE n.nspname = 'public'
 ORDER BY 1;
 ```
 
-The expected list is the per-function `GRANT EXECUTE` statements at the end of `readonly_role.sql`; read it rather than memorizing a count, and a commit that grants another function updates both sides at once. Signatures print in full, so a `timestamptz` argument in the script reads as `timestamp with time zone` here.
+The third lists what the app role can reach, and must also match row for row:
+
+```sql
+SELECT format('%I.%I', n.nspname, c.relname) AS relation,
+       concat_ws(',',
+         CASE WHEN has_table_privilege('market_scout_app', c.oid, 'SELECT') THEN 'select' END,
+         CASE WHEN has_table_privilege('market_scout_app', c.oid, 'INSERT') THEN 'insert' END,
+         CASE WHEN has_table_privilege('market_scout_app', c.oid, 'UPDATE') THEN 'update' END,
+         CASE WHEN has_table_privilege('market_scout_app', c.oid, 'DELETE') THEN 'delete' END) AS privileges
+FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+  AND has_table_privilege('market_scout_app', c.oid, 'SELECT, INSERT, UPDATE, DELETE')
+ORDER BY 1;
+```
+
+Expected: each `app` table with all four, and each taxonomy table `app_role.sql` names with `select` alone — nothing else.
+
+The expected function list is the per-function `GRANT EXECUTE` statements at the end of `readonly_role.sql`; read it rather than memorizing a count, and a commit that grants another function updates both sides at once. Signatures print in full, so a `timestamptz` argument in the script reads as `timestamp with time zone` here.
 
 The count only exposes an ownership mismatch once a later migration adds a function and the count drifts; the script's own guard, not this check, catches the mismatch at provisioning time.
 
@@ -260,7 +301,9 @@ go run ./cmd/migrate up
 DATABASE_URL="$DATABASE_URL_TEST" go run ./cmd/migrate up
 ```
 
-When the migration adds a routine to `public`, re-run `readonly_role.sql` against both afterward. See §2 Test database.
+When the migration adds a routine to `public`, re-run `readonly_role.sql` against both afterward. When it adds a table to `app`, add the table's grant to `app_role.sql` and re-run it against both. See §2 Test database.
+
+Taxonomy repair — merging or retiring a role, specialization, or skill — goes through the owner-only `taxonomy_merge` and `taxonomy_retire` functions (000044), called from a numbered migration; never hand-write the moves. Pass the migration's own name as the `retired_by` label; its down migration calls `taxonomy_undo_label` with the same label, which undoes that migration's repairs newest first and refuses while a later repair still touches the same terms. A migration that adds a foreign key into a taxonomy table extends merge, retire, and undo, and the handled list in `taxonomy_repair_unhandled_references()`, in the same file: merge and retire refuse to run while any reference is unhandled.
 
 `migrate` supports four verbs: `up`, `down`, `force <version>`, `version`. `version` prints the current version and the dirty flag (or reports no migrations on a fresh DB). `force <version>` pins the recorded version and clears the dirty flag.
 

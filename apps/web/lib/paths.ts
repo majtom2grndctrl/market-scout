@@ -8,6 +8,7 @@ export const paths = {
   home: "/",
   status: "/status",
   postings: "/postings",
+  profile: "/profile",
 } satisfies Record<string, Route | ((...args: never[]) => Route)>;
 
 export type Paths = typeof paths;

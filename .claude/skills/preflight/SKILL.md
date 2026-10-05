@@ -45,7 +45,7 @@ From `apps/web/`, run in order. Fast checks first, so a type error fails before 
 
 1. **Typecheck:** `pnpm typecheck` — `tsc --noEmit`, covers `.storybook/` too
 2. **Test:** `pnpm test` — DB-free Vitest suite
-3. **View tests:** `pnpm test:db` — requires `DATABASE_URL_TEST` and `DATABASE_URL_TEST_RO`. Report as skipped, never as passed, when they are unset
+3. **View tests:** `pnpm test:db` — requires `DATABASE_URL_TEST` and `DATABASE_URL_TEST_RO`, and the profile suites `DATABASE_URL_TEST_APP`. Report as skipped, never as passed, when they are unset
 4. **Stories:** `pnpm build-storybook` — the only check that every story compiles
 5. **Build:** `pnpm build` — `next build`
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Briefcase, Telescope } from "lucide-react";
+import { Activity, Briefcase, Telescope, UserRound } from "lucide-react";
 
 import {
   Sidebar,
@@ -21,6 +21,7 @@ import { paths } from "@/lib/paths";
 const navItems = [
   { title: "Status", href: paths.status, icon: Activity },
   { title: "Postings", href: paths.postings, icon: Briefcase },
+  { title: "Profile", href: paths.profile, icon: UserRound },
 ];
 
 export function AppSidebar() {
