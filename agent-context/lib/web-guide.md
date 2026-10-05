@@ -321,6 +321,8 @@ Typecheck, unit tests, and Storybook cannot show layout, positioning, overflow, 
 
 Seed rows through `DATABASE_URL_TEST` with a recognisable prefix such as `smoke-`. Delete them afterwards.
 
+Stop the worktree's server before removing the worktree. Removal deletes the folder, not the process, and an orphaned server keeps its port. `.next/dev/lock` names the server's pid and port; confirm the pid is live, since a crashed server leaves a stale lock. With the lock gone, match `next-server` processes by working directory.
+
 **Browser habits.**
 
 - Use an isolated browser context. It shares no cookies or storage with the owner's tabs.
