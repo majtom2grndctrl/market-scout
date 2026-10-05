@@ -16,6 +16,8 @@ Five page-scale sketches of the Discovery page, under `apps/web/app/prototypes/d
 | **Mood palettes are prototype-local.** A variant may define expressive colours as CSS custom properties, prefixed with its name (`--airy-glow`), scoped to its own root. | Lift needs warmth the achromatic accent cannot give. Keeping them local means a winner becomes a token proposal, not a silent token. |
 | **`motion` is installed** (`motion/react`, v14). | Layout and shared-element animation (a card moving into a pinned tray), springs, and scroll-linked effects are available. No other new dependency. |
 | **The shared read writes its own SQL**, a stated deviation from web-guide §Prototypes. | The ranking compares skill signatures, and the measure grammar has no similarity measure or title grouping. That gap is a finding for the spec. Both surviving safety rules hold: pooled clients only, and "open" and "latest classification" come from the views. |
+| **A sixth direction, Threads** (owner request after reviewing the five). Skills on the left, recommended roles on the right; focusing a role lights the skills it draws on and draws rounded connector lines to them. Card style borrows Airy's. | The story is "the skills are already there; you hadn't seen how they come together." It needs skills the person never typed, so the read gained `personSkills` and `connects`. |
+| **Inherited skills read a past role through the person's own flavour of it** — its postings that also ask for a claimed skill. | Design Engineer spans UI and CAD work; read whole, a UI designer inherited REVIT and GD&T. Below three such postings the whole role stands in. The ranking itself still reads whole roles. |
 | **"New this month" is omitted.** | `first_seen_at` is the fetcher's first sighting; a company onboarded last week makes every posting look new. Momentum would overstate. |
 
 ## Invariants
@@ -27,13 +29,15 @@ Five page-scale sketches of the Discovery page, under `apps/web/app/prototypes/d
 3. **`grow[].share` is P(skill | role)** — the share of this role's postings that ask for the skill. Render it as such ("asked for in 61% of postings"), never as the person's gap or deficiency.
 4. **Show coverage somewhere on the page**, even small: ranked from `coverage.classifiedPostings` classified of `coverage.openPostings` open postings. A recommendation from a third of the corpus must not read as the whole market.
 5. **Colour.** Real tokens (`apps/web/app/theme.css`) for ink, surfaces, and data marks. Mood colours only through the variant's own `--<variant>-*` custom properties, used via Tailwind's `bg-(--airy-glow)` syntax or in the variant's own CSS. Never edit `theme.css`, `tokens.css`, `globals.css`, or `scripts/theme/`. Never wear `success-*`/`danger-*`/`warning-*` (status) or `trend-*` for fit or strength: a close fit is not a success state, and a stretch is not a failure.
-6. **Encouragement is evidence.** Every uplifting line cites something real from the data: a past title, a claimed skill, a posting or company count. No generic affirmations.
-7. **Motion directs the eye.** Each animation answers "where should I look next?" — staged reveals in reading order, a pin landing where pins collect. No decorative loops; the one exception is a variant whose concept *is* motion (Marquee's cycling titles). Wrap the variant in `<MotionConfig reducedMotion="user">`.
-8. **Pinning.** Toggle per recommendation, keyed by `roleSlug`. The pinned count is visible. A "Continue to your dashboard" call to action becomes active once at least one role is pinned; activating it does nothing beyond acknowledging visually (the dashboard is not built).
+6. **Inherited is not claimed.** A `personSkills` entry with `claimed: false` was inferred from the market, not stated by the person. It reads that way in copy ("comes with roles you've held") and looks distinct from a claimed skill. Never present it as something the person said they have.
+7. **Encouragement is evidence.** Every uplifting line cites something real from the data: a past title, a claimed skill, a posting or company count. No generic affirmations.
+8. **Motion directs the eye.** Each animation answers "where should I look next?" — staged reveals in reading order, a pin landing where pins collect. No decorative loops; the one exception is a variant whose concept *is* motion (Marquee's cycling titles). Wrap the variant in `<MotionConfig reducedMotion="user">`.
+9. **Pinning.** Toggle per recommendation, keyed by `roleSlug`. The pinned count is visible. A "Continue to your dashboard" call to action becomes active once at least one role is pinned; activating it does nothing beyond acknowledging visually (the dashboard is not built).
 
 **Conventions:**
 
 - The page renders inside the app layout: sidebar plus a 56px sticky header. A full-height section is `min-h-[calc(100svh-3.5rem)]`, not `100vh`.
+- No eyebrow text — the small, often uppercase, tracked label above a heading. The owner asked for none unless requested; position and type scale carry hierarchy. Applies to Threads and anything after; the first five predate it.
 - Fonts: Funnel Display (`font-display`) and Schibsted Grotesk (`font-sans`), both variable. No new fonts.
 - Light mode is the review target. Dark mode must not break, but needn't be tuned.
 - `page.tsx` opens with the prototype header comment: the question it answers, and the date asked (2026-10-05).
@@ -43,7 +47,7 @@ Five page-scale sketches of the Discovery page, under `apps/web/app/prototypes/d
 
 ## Data shape
 
-`DiscoveryData` in `_data/query.ts` is the contract. Live values for the current profile (2026-10-05): four past titles (Visual Designer, Webmaster + UI Specialist, Frontend Engineer, Product Owner), seven claimed skills, twelve recommendations from Product Engineer down to Solutions Architect, two already pinned (Solutions Engineer, Design Engineer — only the first is a recommendation). `/prototypes/discovery` prints the full table.
+`DiscoveryData` in `_data/query.ts` is the contract. `personSkills` lists matched claimed skills first, then inherited ones; every slug in a recommendation's `connects` is in `personSkills`. `connects` can be empty. Live values for the current profile (2026-10-05): four past titles (Visual Designer, Webmaster + UI Specialist, Frontend Engineer, Product Owner), seven claimed skills, twelve recommendations from Product Engineer down to Solutions Architect, two already pinned (Solutions Engineer, Design Engineer — only the first is a recommendation). `/prototypes/discovery` prints the full table.
 
 Known data texture: some title spellings are noisy ("Engineering", "AI") and the tail of the ranking drifts into sales roles via generic skills. Present it honestly; don't filter in the variant.
 
@@ -58,6 +62,7 @@ All five run concurrently on this branch in the main checkout — no worktrees, 
 | Marquee | `discovery/marquee/**` | Display typography carries everything. Roles set as enormous type, alternate titles cycling beneath, a poster sequence. |
 | Constellation | `discovery/constellation/**` | Spatial. Past roles at the centre, recommendations at distances set by rank; paths draw from where you've been to where you could go. |
 | Letter | `discovery/letter/**` | Paced narrative, one idea per screen, ending in the roles to pin. |
+| Threads | `discovery/threads/**` | Skills left, roles right; a role lights the skills it draws on, with rounded connector lines. Airy's card style. |
 
 Coordinator owns `_data/**`, `discovery/page.tsx`, `package.json`, and this file.
 

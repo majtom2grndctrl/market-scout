@@ -61,6 +61,8 @@ export interface Recommendation {
   readonly closestPast: { readonly titleText: string; readonly roleName: string } | null;
   /** Claimed skills among this role's top ten, strongest first. May be empty. */
   readonly bring: readonly SkillRef[];
+  /** This role's top-ten skills that appear in personSkills, claimed or inherited, most distinctive first. Every slug here is in personSkills. */
+  readonly connects: readonly SkillRef[];
   /** Up to four of this role's top skills the person has not claimed, most distinctive first (not by share). share is P(skill | role), 0..1. */
   readonly grow: readonly (SkillRef & { readonly share: number })[];
   /** Open, classified postings assigned this role. */
@@ -71,6 +73,20 @@ export interface Recommendation {
   readonly score: number;
   /** Pinned in the real profile when the page rendered. */
   readonly pinned: boolean;
+}
+
+/**
+ * A skill the person has, either claimed outright or inherited from a past
+ * role's signature. At least one of `claimed` and `fromPast` is set. An
+ * inherited skill is inferred from the market, not stated by the person, and
+ * must read that way: "common in roles you've held", never "your skill".
+ */
+export interface PersonSkill {
+  readonly slug: string;
+  readonly name: string;
+  readonly claimed: boolean;
+  /** Inherited only: the past titles it comes with. Always empty for a claimed skill, which the person named themselves. */
+  readonly fromPast: readonly string[];
 }
 
 export interface PastRole {
@@ -86,6 +102,8 @@ export interface DiscoveryData {
   readonly pastRoles: readonly PastRole[];
   /** Every claimed skill, matched or not, as the person wrote it. */
   readonly claimedSkills: readonly { readonly text: string; readonly skill: SkillRef | null }[];
+  /** Matched claimed skills first, in profile order, then inherited skills, most distinctive first. Unmatched claims are absent; they cannot connect. */
+  readonly personSkills: readonly PersonSkill[];
   /** Best first. Excludes roles the person has held. At most RECOMMENDATION_LIMIT. */
   readonly recommendations: readonly Recommendation[];
   readonly coverage: {
@@ -104,6 +122,12 @@ const RECOMMENDATION_LIMIT = 12;
 const SIGNATURE_SIZE = 10;
 const GROW_LIMIT = 4;
 const TITLE_LIMIT = 5;
+// How many of each past role's most distinctive skills the person inherits.
+// Eight keeps a four-role profile near twenty inherited skills.
+const INHERITED_PER_ROLE = 8;
+// A past role needs this many postings asking for a claimed skill before its
+// flavoured reading replaces the whole role.
+const FLAVOUR_FLOOR = 3;
 
 interface RankedRow {
   role_id: string;
@@ -115,6 +139,8 @@ interface RankedRow {
   closest_past_role_id: string | null;
   bring: { slug: string; name: string }[];
   grow: { slug: string; name: string; share: number }[];
+  connects: { slug: string; name: string }[];
+  inherited: { slug: string; name: string; past_role_ids: string[] }[];
 }
 
 export async function getDiscoveryData(): Promise<DiscoveryData> {
@@ -199,6 +225,51 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
       GROUP BY a.role_id, b.role_id, na.l, nb.l
       ORDER BY a.role_id, sum(a.w * b.w) / nullif(na.l * nb.l, 0) DESC NULLS LAST, b.role_id
     ),
+    -- Skills that come with the roles the person has held. A role can mix
+    -- senses — Design Engineer spans UI work and CAD work — so each past role
+    -- is read through its postings that also ask for a skill the person
+    -- claimed: the person's own flavour of the role. Below FLAVOUR_FLOOR such
+    -- postings the whole role stands in. Claimed skills take no slot; they
+    -- are already the person's.
+    flavour AS (
+      SELECT pr.role_id, pr.job_posting_id
+      FROM posting_role pr
+      WHERE pr.role_id = ANY(${pastRoleIds}::bigint[])
+        AND EXISTS (
+          SELECT 1 FROM posting_skill ps
+          WHERE ps.job_posting_id = pr.job_posting_id AND ps.skill_id = ANY(${claimedSkillIds}::bigint[])
+        )
+    ),
+    flavour_n AS (
+      SELECT role_id, count(*)::float8 AS n FROM flavour GROUP BY role_id HAVING count(*) >= ${FLAVOUR_FLOOR}
+    ),
+    past_skill AS (
+      SELECT f.role_id, ps.skill_id,
+             count(*) / fn.n * coalesce(r.w, ln((SELECT count(*) FROM role_n)::float8)) AS w
+      FROM flavour f
+      JOIN flavour_n fn USING (role_id)
+      JOIN posting_skill ps USING (job_posting_id)
+      LEFT JOIN rarity r USING (skill_id)
+      GROUP BY f.role_id, ps.skill_id, fn.n, r.w
+      UNION ALL
+      SELECT role_id, skill_id, w FROM weighted
+      WHERE role_id = ANY(${pastRoleIds}::bigint[]) AND role_id NOT IN (SELECT role_id FROM flavour_n)
+    ),
+    inherited AS (
+      SELECT skill_id, array_agg(DISTINCT role_id::text) AS past_role_ids, max(w) AS w
+      FROM (
+        SELECT past_skill.*, row_number() OVER (PARTITION BY role_id ORDER BY w DESC, skill_id) AS rk
+        FROM past_skill
+        WHERE NOT skill_id = ANY(${claimedSkillIds}::bigint[])
+      ) ranked
+      WHERE rk <= ${INHERITED_PER_ROLE}
+      GROUP BY skill_id
+    ),
+    person_skill AS (
+      SELECT skill_id FROM inherited
+      UNION
+      SELECT unnest(${claimedSkillIds}::bigint[])
+    ),
     scored AS (
       SELECT rn.role_id, rn.n, rn.companies,
              0.5 * coalesce(k.k, 0) + 0.5 * coalesce(f.f, 0) AS score
@@ -224,7 +295,16 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
                ORDER BY sg.w DESC, k.slug
                LIMIT ${GROW_LIMIT}
              ) g
-           ), '[]') AS grow
+           ), '[]') AS grow,
+           coalesce((
+             SELECT json_agg(json_build_object('slug', k.slug, 'name', k.name) ORDER BY sg.w DESC, k.slug)
+             FROM signature sg JOIN skills k ON k.id = sg.skill_id
+             WHERE sg.role_id = s.role_id AND sg.skill_id IN (SELECT skill_id FROM person_skill)
+           ), '[]') AS connects,
+           -- Uncorrelated, so Postgres evaluates it once and repeats it per row.
+           (SELECT coalesce(json_agg(json_build_object('slug', k.slug, 'name', k.name, 'past_role_ids', i.past_role_ids)
+                                     ORDER BY i.w DESC, k.slug), '[]')
+            FROM inherited i JOIN skills k ON k.id = i.skill_id) AS inherited
     FROM scored s
     JOIN canonical_roles cr ON cr.id = s.role_id
     LEFT JOIN closest c ON c.role_id = s.role_id
@@ -288,6 +368,26 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
   const demandByRoleId = new Map(pastDemand.map((d) => [d.role_id, d.n]));
   const top = ranked[0]?.score ?? 0;
 
+  const titlesByPastRoleId = new Map<string, string[]>();
+  for (const t of profile.pastTitles) {
+    if (t.role) titlesByPastRoleId.set(t.role.id, [...(titlesByPastRoleId.get(t.role.id) ?? []), t.titleText]);
+  }
+  // With no ranked rows there are no signatures, so nothing is inherited.
+  const inherited = ranked[0]?.inherited ?? [];
+  const fromPastBySlug = new Map(
+    inherited.map((i) => [i.slug, [...new Set(i.past_role_ids.flatMap((id) => titlesByPastRoleId.get(id) ?? []))]]),
+  );
+  const claimedSlugs = new Set<string>();
+  const personSkills: PersonSkill[] = [];
+  for (const c of profile.claimedSkills) {
+    if (!c.skill || claimedSlugs.has(c.skill.slug)) continue;
+    claimedSlugs.add(c.skill.slug);
+    personSkills.push({ slug: c.skill.slug, name: c.skill.name, claimed: true, fromPast: [] });
+  }
+  for (const i of inherited) {
+    personSkills.push({ slug: i.slug, name: i.name, claimed: false, fromPast: fromPastBySlug.get(i.slug) ?? [] });
+  }
+
   return {
     pastRoles: profile.pastTitles.map((t) => ({
       titleText: t.titleText,
@@ -300,6 +400,7 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
       text: c.skillText,
       skill: c.skill ? { slug: c.skill.slug, name: c.skill.name } : null,
     })),
+    personSkills,
     recommendations: ranked.map((r, i) => {
       const titles = titlesByRole.get(r.role_id) ?? [];
       const past = r.closest_past_role_id ? pastByRoleId.get(r.closest_past_role_id) : undefined;
@@ -312,6 +413,7 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
         titles: titles.length > 0 ? titles : [{ title: r.name, postings: r.n }],
         closestPast: past?.role ? { titleText: past.titleText, roleName: past.role.name } : null,
         bring: r.bring,
+        connects: r.connects,
         grow: r.grow.map(({ slug, name, share }) => ({ slug, name, share })),
         openPostings: r.n,
         companies: r.companies,

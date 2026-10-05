@@ -15,6 +15,7 @@ const VARIANTS = [
   { href: "/prototypes/discovery/marquee", name: "Marquee", note: "Display typography carries everything." },
   { href: "/prototypes/discovery/constellation", name: "Constellation", note: "Where you have been, and what orbits it." },
   { href: "/prototypes/discovery/letter", name: "Letter", note: "A paced narrative, one idea per screen." },
+  { href: "/prototypes/discovery/threads", name: "Threads", note: "Your skills, and the roles they come together in." },
 ] as const;
 
 export default async function DiscoveryIndex() {
@@ -42,6 +43,13 @@ export default async function DiscoveryIndex() {
         ))}
       </ul>
 
+      <p className="text-sm">
+        <span className="text-content-muted">Person skills: </span>
+        {data.personSkills
+          .map((s) => `${s.name}${s.claimed ? " (claimed)" : ""}${s.fromPast.length ? ` ← ${s.fromPast.join(" / ")}` : ""}`)
+          .join(" · ")}
+      </p>
+
       <table className="w-full text-sm">
         <thead className="text-left text-content-muted">
           <tr>
@@ -50,6 +58,7 @@ export default async function DiscoveryIndex() {
             <th className="py-2 pr-4 font-normal">Strength</th>
             <th className="py-2 pr-4 font-normal">Closest past</th>
             <th className="py-2 pr-4 font-normal">Bring</th>
+            <th className="py-2 pr-4 font-normal">Connects</th>
             <th className="py-2 pr-4 font-normal">Grow</th>
             <th className="py-2 font-normal text-right">Open</th>
           </tr>
@@ -68,6 +77,7 @@ export default async function DiscoveryIndex() {
               <td className="py-2 pr-4">{r.strength}</td>
               <td className="py-2 pr-4">{r.closestPast?.titleText ?? "—"}</td>
               <td className="py-2 pr-4">{r.bring.map((s) => s.name).join(", ") || "—"}</td>
+              <td className="py-2 pr-4">{r.connects.map((s) => s.name).join(", ") || "—"}</td>
               <td className="py-2 pr-4">{r.grow.map((s) => `${s.name} ${Math.round(s.share * 100)}%`).join(", ")}</td>
               <td className="py-2 text-right tabular-nums">
                 {r.openPostings} / {r.companies}co
