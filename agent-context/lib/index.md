@@ -18,6 +18,7 @@ Take your side, plus **Either side**. Skip the other.
 - **Changing a colour, adding a token, `shadcn add` output that renders unstyled** → `agent-context/lib/web-guide.md` §Colour *(`app/theme.css` is generated; edit `scripts/theme/tokens.mjs`)*
 - **Storybook stories — where they live, why the font decorator exists** → `agent-context/lib/web-guide.md` §Storybook
 - **Build, typecheck, and dev commands** → `agent-context/lib/web-guide.md` §Commands
+- **Checking UI in a real browser; which dev server to use; screenshots** → `agent-context/lib/web-guide.md` §Verifying UI *(owner's server stays up; writes go to a second server on test DSNs)*
 - **Web tests, route states, Storybook a11y, or DB view tests** → `agent-context/lib/web-testing-guide.md`
 - **Sketching a page or chart against live data before it earns a spec** → `agent-context/lib/web-guide.md` §Prototypes *(`app/prototypes/` — a low-attention pocket; read it only when directed there)*
 - **Querying Postgres from the web app; what "currently open posting" means** → `agent-context/lib/project.md` §Settled architecture *(derived in SQL views, not per consumer)*

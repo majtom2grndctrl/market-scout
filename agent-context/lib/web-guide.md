@@ -306,12 +306,34 @@ pnpm install --frozen-lockfile
 | `pnpm theme:check` | Three guards: contrast and ordering over the palette, `app/theme.css` still matching `scripts/theme/tokens.mjs`, and no source file naming a colour token that does not exist. No dependencies. Runs first in `pnpm preflight`. |
 | `pnpm theme:build` | Regenerates `app/theme.css` from `scripts/theme/tokens.mjs`. Run after any palette edit. |
 
+## Verifying UI
+
+Typecheck, unit tests, and Storybook cannot show layout, positioning, overflow, or data-backed states. Check them in the running app, in a real browser.
+
+**Read-only checks.** The owner's dev server may already be running on port 3000 against real data. Reuse it; hot reload picks up edits. Never stop or restart it.
+
+**Writes need a second server.** Saving, pinning, and removing write to whatever database the server points at. Run a second `pnpm dev` on another port, from a separate worktree: Next locks `.next` per checkout, so a second server in the owner's checkout exits. Override the web app's two DSNs in its environment; process env beats `.env.local`, so no file edit is needed.
+
+| Reads | Override with |
+|---|---|
+| `DATABASE_URL_RO` | `DATABASE_URL_TEST_RO` |
+| `DATABASE_URL_APP` | `DATABASE_URL_TEST_APP` |
+
+Seed rows through `DATABASE_URL_TEST` with a recognisable prefix such as `smoke-`. Delete them afterwards.
+
+**Browser habits.**
+
+- Use an isolated browser context. It shares no cookies or storage with the owner's tabs.
+- Trust screenshots over the accessibility tree for what is visible. The tree can lag content in portaled popups: comboboxes, menus.
+- Reproduce before fixing. Positioning bugs can hide in a narrow band of geometry: a popup may collapse with a small gap below its trigger yet flip correctly with none. Sweep a few positions, not one extreme.
+- Save screenshots under the repo-root `tmp/`, which is gitignored. Browser tools may refuse paths outside the repo.
+
 ## Frontend Definition of Done
 
 Before handoff, a frontend change has the following. Sketches under `app/prototypes/` are exempt — see § Prototypes.
 
 - A loading state, empty state, and actionable error retry wherever its data can be pending, absent, or unavailable.
-- Narrow and wide viewport review. Layout changes must preserve readable content and usable controls at both.
+- Narrow and wide viewport review, in a real browser (see § Verifying UI). Layout changes must preserve readable content and usable controls at both.
 - Keyboard and focus review for every interactive control. Labels, semantics, and contrast must remain clear.
 - Honest data states. Show missing, partial, unmapped, and unavailable data rather than implying a complete answer.
 - Relevant Storybook states and theme review for reusable or themed components. Run the a11y addon where a story exists.
