@@ -1,0 +1,150 @@
+/*
+ * Threads' mood palette. Airy's card language — warm light, soft tinted
+ * elevation — with one thread colour for what a role lights: a fuchsia far
+ * from every status and trend hue, so a lit skill reads as "connected", never
+ * as good, bad, rising, or falling. Prototype-local by contract.
+ */
+.root {
+  --threads-dawn: oklch(0.975 0.014 75);
+  --threads-haze: oklch(0.965 0.022 345);
+
+  --threads-line: oklch(0.6 0.19 338);
+  --threads-ink: oklch(0.47 0.17 338);
+  --threads-wash: oklch(0.978 0.011 338);
+  --threads-tint: oklch(0.948 0.034 338);
+  --threads-edge: oklch(0.83 0.09 338);
+
+  --threads-lift:
+    0 1px 1px oklch(0.45 0.04 60 / 0.04),
+    0 10px 24px -12px oklch(0.45 0.06 55 / 0.12),
+    0 32px 64px -32px oklch(0.5 0.06 330 / 0.18);
+  --threads-float:
+    0 1px 0 oklch(1 0 0 / 0.9) inset,
+    0 10px 28px -12px oklch(0.4 0.06 55 / 0.22),
+    0 28px 56px -24px oklch(0.5 0.07 330 / 0.22);
+
+  container: threads / inline-size;
+}
+
+:global(.dark) .root {
+  --threads-dawn: oklch(0.22 0.02 60);
+  --threads-haze: oklch(0.22 0.03 340);
+  --threads-line: oklch(0.74 0.15 338);
+  --threads-ink: oklch(0.82 0.11 338);
+  --threads-wash: oklch(0.26 0.04 338);
+  --threads-tint: oklch(0.32 0.06 338);
+  --threads-edge: oklch(0.5 0.1 338);
+  --threads-lift: 0 24px 48px -24px oklch(0 0 0 / 0.6);
+  --threads-float: 0 24px 56px -16px oklch(0 0 0 / 0.7);
+}
+
+/* A faint wash behind the headline: warm at the right, a hint of thread. */
+.sky {
+  background:
+    radial-gradient(42% 60% at 86% 0%, var(--threads-dawn) 0%, transparent 75%),
+    radial-gradient(36% 46% at 60% 8%, var(--threads-haze) 0%, transparent 80%);
+  mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+}
+
+/*
+ * Two layouts. Wide: skills in a sticky column, a gutter for the lines, the
+ * roles card scrolling beside them. Narrow: stacked, skills as a wrapped
+ * cloud, no lines (the role's own card still names what it draws on).
+ */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2.5rem;
+}
+
+.column {
+  /* One row per skill, sized so the whole column fits under the app header:
+     every lit skill stays on screen wherever the roles have scrolled. The
+     chrome term is the column's headings, notes, and padding. */
+  --threads-row: clamp(1.125rem, calc((100svh - 3.5rem - 12.75rem) / var(--threads-rows, 30)), 1.625rem);
+}
+
+.skillList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.skillRow {
+  display: flex;
+  align-items: center;
+}
+
+@container threads (min-width: 60rem) {
+  .grid {
+    grid-template-columns: minmax(0, 19.5rem) 7.5rem minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .column {
+    position: sticky;
+    top: 3.5rem;
+    height: calc(100svh - 3.5rem);
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+
+  .skillList {
+    display: block;
+  }
+
+  /* Only on a viewport too short for every row: the column scrolls, and a
+     soft edge says there is more beyond it. */
+  .column[data-more-above="true"] {
+    mask-image: linear-gradient(to bottom, transparent 0, black 3rem);
+  }
+
+  .column[data-more-below="true"] {
+    mask-image: linear-gradient(to top, transparent 0, black 3rem);
+  }
+
+  .column[data-more-above="true"][data-more-below="true"] {
+    mask-image: linear-gradient(to bottom, transparent 0, black 3rem, black calc(100% - 3rem), transparent 100%);
+  }
+
+  .skillRow {
+    height: var(--threads-row);
+  }
+
+  /* On a short viewport the rows tighten; the pill tightens with them so a
+     lit pill never overlaps its neighbours. */
+  .pill {
+    height: min(var(--threads-row), 1.375rem);
+    padding-block: 0;
+  }
+}
+
+.gutter {
+  display: none;
+}
+
+/* Wide placement: the column and gutter span both rows, so the column can
+   stick for the whole length of the roles card. */
+@container threads (min-width: 60rem) {
+  .intro {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .column {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .gutter {
+    display: block;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .card {
+    grid-column: 3;
+    grid-row: 2;
+    align-self: start;
+  }
+}
