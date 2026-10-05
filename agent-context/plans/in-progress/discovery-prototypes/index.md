@@ -32,12 +32,14 @@ Five page-scale sketches of the Discovery page, under `apps/web/app/prototypes/d
 6. **Inherited is not claimed.** A `personSkills` entry with `claimed: false` was inferred from the market, not stated by the person. It reads that way in copy ("comes with roles you've held") and looks distinct from a claimed skill. Never present it as something the person said they have.
 7. **Encouragement is evidence.** Every uplifting line cites something real from the data: a past title, a claimed skill, a posting or company count. No generic affirmations.
 8. **Motion directs the eye.** Each animation answers "where should I look next?" — staged reveals in reading order, a pin landing where pins collect. No decorative loops; the one exception is a variant whose concept *is* motion (Marquee's cycling titles). Wrap the variant in `<MotionConfig reducedMotion="user">`.
-9. **Pinning.** Toggle per recommendation, keyed by `roleSlug`. The pinned count is visible. A "Continue to your dashboard" call to action becomes active once at least one role is pinned; activating it does nothing beyond acknowledging visually (the dashboard is not built).
+9. **Readable type.** Every piece of reading text clears 4.5:1 against its actual background in every state — dimmed, receded, lit, on a mood wash — or 3:1 at 24px and up (18.66px bold). Nothing a person reads is under 14px. Recede by stepping ink tokens (`content-primary` → `-secondary` → `-muted`), never to `content-disabled` (≈2.4:1, reserved for disabled controls) and never by opacity on text. A genuinely disabled control is the one exemption, and must be named as such. Owner feedback after reviewing the six.
+10. **Pinning.** Toggle per recommendation, keyed by `roleSlug`. The pinned count is visible. A "Continue to your dashboard" call to action becomes active once at least one role is pinned; activating it does nothing beyond acknowledging visually (the dashboard is not built).
 
 **Conventions:**
 
 - The page renders inside the app layout: sidebar plus a 56px sticky header. A full-height section is `min-h-[calc(100svh-3.5rem)]`, not `100vh`.
-- No eyebrow text — the small, often uppercase, tracked label above a heading. The owner asked for none unless requested; position and type scale carry hierarchy. Applies to Threads and anything after; the first five predate it.
+- No eyebrow text — the small, often uppercase, tracked label above a heading. The owner asked for none unless requested; position and type scale carry hierarchy. Applies to all six.
+- When small type grows to meet Invariant 9, re-step the section's whole scale so its hierarchy still reads proportionally. Never bump one size alone: a 13px label raised to 14px beside 14px body text is a flattened hierarchy, not a fix.
 - Fonts: Funnel Display (`font-display`) and Schibsted Grotesk (`font-sans`), both variable. No new fonts.
 - Light mode is the review target. Dark mode must not break, but needn't be tuned.
 - `page.tsx` opens with the prototype header comment: the question it answers, and the date asked (2026-10-05).
@@ -78,6 +80,7 @@ Run from `apps/web/`. Other tracks edit concurrently, so filter to your own fold
 | `grep -rn '\.score' app/prototypes/discovery/<track>` | no output |
 | `git status --porcelain` | nothing of yours outside `app/prototypes/discovery/<track>/` |
 | Headless screenshots at 1440 wide, settled and mid-animation | looked at, and polished |
+| `node <scratchpad>/shared/audit-type.mjs <url>` in every reviewable state | exit 0, or only named disabled-control exemptions |
 
 ## Open questions
 
