@@ -1,0 +1,55 @@
+/*
+ * Airy's mood palette: dawn. Pale warm light low on the horizon, a cool sky
+ * above it. Prototype-local by contract; a winner becomes a token proposal.
+ * Ink, surfaces, and data marks still come from theme.css.
+ */
+.root {
+  --airy-sky: oklch(0.94 0.035 238);
+  --airy-dawn: oklch(0.965 0.03 75);
+  --airy-sun: oklch(0.915 0.07 62);
+  --airy-haze: oklch(0.975 0.018 30);
+  --airy-glow: oklch(0.955 0.04 72);
+  --airy-glow-edge: oklch(0.86 0.075 64);
+  --airy-ember: oklch(0.5 0.11 52);
+  --airy-thread: oklch(0.84 0.05 64);
+
+  /* Elevation tinted by the light: warm near, cool far. */
+  --airy-lift:
+    0 1px 1px oklch(0.45 0.04 60 / 0.04),
+    0 10px 24px -12px oklch(0.45 0.06 55 / 0.14),
+    0 32px 64px -32px oklch(0.55 0.06 235 / 0.22);
+  --airy-lift-hover:
+    0 1px 1px oklch(0.45 0.04 60 / 0.05),
+    0 16px 32px -14px oklch(0.45 0.07 55 / 0.2),
+    0 44px 80px -36px oklch(0.55 0.07 235 / 0.3);
+  --airy-tray:
+    0 1px 0 oklch(1 0 0 / 0.9) inset,
+    0 12px 32px -12px oklch(0.4 0.06 55 / 0.22),
+    0 40px 80px -24px oklch(0.5 0.07 235 / 0.28);
+}
+
+:global(.dark) .root {
+  --airy-sky: oklch(0.28 0.05 250);
+  --airy-dawn: oklch(0.24 0.03 60);
+  --airy-sun: oklch(0.34 0.07 50);
+  --airy-haze: oklch(0.22 0.02 30);
+  --airy-glow: oklch(0.3 0.05 60);
+  --airy-glow-edge: oklch(0.48 0.08 60);
+  --airy-ember: oklch(0.82 0.09 62);
+  --airy-thread: oklch(0.42 0.05 60);
+  --airy-lift: 0 24px 48px -24px oklch(0 0 0 / 0.6);
+  --airy-lift-hover: 0 32px 64px -28px oklch(0 0 0 / 0.7);
+  --airy-tray: 0 24px 64px -16px oklch(0 0 0 / 0.7);
+}
+
+/* The morning sky behind the hero: sun low at the right, sky cool at the
+   left, both dissolving into the page before the first tier. */
+.sky {
+  background:
+    radial-gradient(48% 64% at 82% 4%, var(--airy-sun) 0%, transparent 72%),
+    radial-gradient(40% 50% at 58% 30%, var(--airy-haze) 0%, transparent 80%),
+    radial-gradient(64% 80% at 8% -12%, var(--airy-sky) 0%, transparent 70%),
+    linear-gradient(to bottom, var(--airy-dawn) 0%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 55%, transparent 100%);
+}
+

@@ -1,0 +1,42 @@
+/* Marquee mood palette. Prototype-local by contract: scoped to this variant's
+ * root, so a winner becomes a token proposal rather than a silent token.
+ * Plates sit light enough that content-primary ink reads on all of them. */
+.marquee-root {
+  --marquee-sky: oklch(0.885 0.07 232);
+  --marquee-sun: oklch(0.925 0.115 96);
+  --marquee-bloom: oklch(0.885 0.07 352);
+  --marquee-mint: oklch(0.905 0.08 165);
+  --marquee-lilac: oklch(0.875 0.065 298);
+  --marquee-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Dark mode is not tuned, only kept legible: light ink needs dark plates. */
+.dark .marquee-root {
+  --marquee-sky: oklch(0.34 0.06 232);
+  --marquee-sun: oklch(0.36 0.06 96);
+  --marquee-bloom: oklch(0.34 0.06 352);
+  --marquee-mint: oklch(0.35 0.06 165);
+  --marquee-lilac: oklch(0.34 0.06 298);
+}
+
+/* A marker stroke laid under the lower half of the letters, drawn left to
+ * right. `clone` gives each wrapped line its own stroke. */
+.marquee-band {
+  background-image: linear-gradient(var(--marquee-plate), var(--marquee-plate));
+  background-repeat: no-repeat;
+  background-position: 0 92%;
+  background-size: 0% 0.46em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: background-size 1s var(--marquee-ease) var(--marquee-delay, 0s);
+}
+
+.marquee-band[data-on="true"] {
+  background-size: 100% 0.46em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-band {
+    transition: none;
+  }
+}

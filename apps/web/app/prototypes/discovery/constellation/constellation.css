@@ -1,0 +1,34 @@
+/* Constellation mood palette. Prototype-local by contract: a night sky that
+   warms toward the centre, where the person's past sits — dawn coming up from
+   what they have already done. Ink inside the sky comes from the real tokens,
+   via a `dark` scope on the panel; these properties only paint the sky and
+   its marks. Never status or trend hues: a near orbit is not a success state. */
+
+.constellation-root {
+  --constellation-sky-edge: oklch(0.155 0.03 270);
+  --constellation-sky: oklch(0.215 0.048 272);
+  --constellation-dawn: oklch(0.52 0.105 48);
+  --constellation-dusk: oklch(0.3 0.075 330);
+  --constellation-star: oklch(0.97 0.018 85);
+  --constellation-path: oklch(0.84 0.055 78);
+  --constellation-pin: oklch(0.86 0.125 82);
+  --constellation-orbit: oklch(0.74 0.035 265);
+  --constellation-home: oklch(0.95 0.045 78);
+  /* The pin's gold, deepened to read as ink on the light rail. */
+  --constellation-pin-ink: oklch(0.56 0.115 72);
+  --constellation-pin-wash: oklch(0.965 0.03 85);
+}
+
+.constellation-sky {
+  background:
+    radial-gradient(ellipse 22% 20% at 50% 50%, color-mix(in oklch, var(--constellation-dawn) 62%, transparent), transparent 100%),
+    radial-gradient(ellipse 48% 44% at 50% 52%, color-mix(in oklch, var(--constellation-dusk) 55%, transparent), transparent 100%),
+    radial-gradient(ellipse 90% 85% at 50% 50%, var(--constellation-sky) 0%, var(--constellation-sky-edge) 100%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in oklch, var(--constellation-orbit) 16%, transparent),
+    0 24px 48px -28px color-mix(in oklch, var(--constellation-sky-edge) 70%, transparent);
+}
+
+.constellation-sky [role="button"]:focus-visible {
+  outline: none;
+}

@@ -1,0 +1,72 @@
+/* Letter's mood palette: warm paper and one gentle ink accent. Prototype-local
+   (contract decision: mood palettes are local); ink, edges, and actions stay on
+   the real tokens. The accent sits at a plum hue so it reads as nothing the
+   status, trend, or freshness families already mean. */
+.root {
+  --letter-paper: oklch(0.977 0.011 82);
+  --letter-paper-deep: oklch(0.955 0.014 80);
+  --letter-accent: oklch(0.45 0.095 352);
+  --letter-accent-soft: oklch(0.45 0.095 352 / 0.32);
+  --letter-wash: oklch(0.935 0.026 352);
+  background-color: var(--letter-paper);
+}
+
+:global(.dark) .root {
+  --letter-paper: oklch(0.205 0.008 70);
+  --letter-paper-deep: oklch(0.235 0.01 70);
+  --letter-accent: oklch(0.8 0.08 352);
+  --letter-accent-soft: oklch(0.8 0.08 352 / 0.4);
+  --letter-wash: oklch(0.3 0.04 352);
+}
+
+/* The key phrase: accent ink, and an underline drawn left to right. Slice
+   decoration keeps one continuous strip across a wrapped line, so the pen
+   finishes the first line before starting the second. */
+.key {
+  color: var(--letter-accent);
+  background-image: linear-gradient(var(--letter-accent-soft), var(--letter-accent-soft));
+  background-repeat: no-repeat;
+  background-position: 0 92%;
+  box-decoration-break: slice;
+  -webkit-box-decoration-break: slice;
+}
+
+.display {
+  font-weight: 430;
+  font-size: clamp(2.25rem, 1.1rem + 2.9vw, 4rem);
+  line-height: 1.08;
+  letter-spacing: -0.022em;
+  text-wrap: balance;
+}
+
+.headline {
+  font-weight: 480;
+  /* Width sets the size; height caps it, so a three-line title still leaves
+     room for what follows it on a short screen. */
+  font-size: min(clamp(3rem, 1rem + 5vw, 6.5rem), 10.5svh);
+  line-height: 0.93;
+  letter-spacing: -0.038em;
+  text-wrap: balance;
+}
+
+.prose {
+  font-size: clamp(1.125rem, 1rem + 0.35vw, 1.3125rem);
+  line-height: 1.62;
+  text-wrap: pretty;
+}
+
+.eyebrow {
+  font-size: 0.75rem;
+  font-weight: 560;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--letter-accent);
+}
+
+.footnoteMark {
+  font-size: 0.42em;
+  vertical-align: 0.95em;
+  margin-left: 0.08em;
+  font-weight: 500;
+  color: var(--letter-accent);
+}
