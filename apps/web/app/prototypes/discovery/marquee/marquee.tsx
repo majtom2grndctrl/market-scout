@@ -41,8 +41,8 @@ export function Marquee({ data }: { readonly data: MarqueeData }) {
 
         <footer className="border-t border-content-primary px-5 py-10 font-sans text-sm text-content-secondary sm:px-10">
           <p className="mx-auto max-w-[96rem]">
-            Ranked from {data.coverage.classifiedPostings.toLocaleString()} classified of{" "}
-            {data.coverage.openPostings.toLocaleString()} open postings. Titles are spelled as employers wrote them;
+            Ranked from {data.coverage.classifiedPostings.toLocaleString("en-US")} classified of{" "}
+            {data.coverage.openPostings.toLocaleString("en-US")} open postings. Titles are spelled as employers wrote them;
             counts are open postings.
           </p>
         </footer>

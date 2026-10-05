@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from "motion/react";
 
 import type { Recommendation } from "../_data/query";
 import { EASE_OUT } from "./choreography";
-import { anchorOf } from "./copy";
 import { PinGlyph } from "./pin-glyph";
 
 interface Props {
@@ -66,7 +65,7 @@ export function PinTray({ className, pinned, delay, continued, onUnpin, onFocus,
                 </motion.span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{r.headline}</span>
-                  <span className="block truncate text-xs text-content-muted">From {anchorOf(r)}</span>
+                  <span className="block truncate text-xs text-content-muted">From {r.closestPast?.titleText ?? "your profile as a whole"}</span>
                 </span>
                 <button
                   type="button"

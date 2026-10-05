@@ -43,10 +43,10 @@ export function Hero({ data }: { data: DiscoveryData }) {
         <Rise delay={0.55}>
           <p className="mt-9 max-w-[34rem] text-xl leading-[1.55] text-pretty text-content-secondary">
             {lede.sentence}
-            {lede.nearestFrom && (
+            {lede.nearestLead && lede.nearestFrom && (
               <>
                 {" "}
-                {lede.nearestMany ? "The nearest grow out of " : "The nearest grows out of "}
+                {lede.nearestLead}{" "}
                 <span className="font-medium text-content-primary">{lede.nearestFrom}</span>.
               </>
             )}

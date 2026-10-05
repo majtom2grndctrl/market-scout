@@ -87,7 +87,8 @@ export function composeLetter(data: DiscoveryData): Beat[] {
   const featured = pickFeatured(recs);
 
   const beats: Beat[] = [pathBeat(titles, unique(data.claimedSkills.map((c) => c.text)), data)];
-  if (recs.length > 0) beats.push(travelsBeat(recs));
+  // "What you've done lines up with" needs something done to line up.
+  if (recs.some((r) => r.closestPast !== null || r.bring.length > 0)) beats.push(travelsBeat(recs));
   beats.push(bridgeBeat(data, recs.length, featured.length));
 
   const said = new Set<string>();

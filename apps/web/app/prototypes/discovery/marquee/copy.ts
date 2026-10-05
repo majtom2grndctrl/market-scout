@@ -27,7 +27,7 @@ const WORDS = [
 
 /** Spelled out through twenty, as display type reads better in words. */
 export function numberWord(n: number, capitalise = false): string {
-  const word = WORDS[n] ?? n.toLocaleString();
+  const word = WORDS[n] ?? n.toLocaleString("en-US");
   return capitalise ? word.charAt(0).toUpperCase() + word.slice(1) : word;
 }
 

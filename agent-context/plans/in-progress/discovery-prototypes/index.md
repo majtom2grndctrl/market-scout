@@ -15,6 +15,7 @@ Five page-scale sketches of the Discovery page, under `apps/web/app/prototypes/d
 | **Pins are local state**, seeded from `recommendation.pinned`. | Testing five pages never writes to the real profile. A reload resets. The real write path (`pinRoleAction`) is settled and out of scope. |
 | **Mood palettes are prototype-local.** A variant may define expressive colours as CSS custom properties, prefixed with its name (`--airy-glow`), scoped to its own root. | Lift needs warmth the achromatic accent cannot give. Keeping them local means a winner becomes a token proposal, not a silent token. |
 | **`motion` is installed** (`motion/react`, v14). | Layout and shared-element animation (a card moving into a pinned tray), springs, and scroll-linked effects are available. No other new dependency. |
+| **The shared read writes its own SQL**, a stated deviation from web-guide §Prototypes. | The ranking compares skill signatures, and the measure grammar has no similarity measure or title grouping. That gap is a finding for the spec. Both surviving safety rules hold: pooled clients only, and "open" and "latest classification" come from the views. |
 | **"New this month" is omitted.** | `first_seen_at` is the fetcher's first sighting; a company onboarded last week makes every posting look new. Momentum would overstate. |
 
 ## Invariants
@@ -80,4 +81,36 @@ Run from `apps/web/`. Other tracks edit concurrently, so filter to your own fold
 
 ## Result
 
-_Pending._
+All five variants are built, reviewed in one pass, and pass `pnpm preflight` (267 tests; production build lists all six discovery routes).
+
+| Acceptance row | Airy | Ledger | Marquee | Constellation | Letter |
+|---|---|---|---|---|---|
+| Typecheck clean | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `theme:check` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Route 200 | ✓ | ✓ | ✓ | ✓ | ✓ |
+| No `.score` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Changes confined to own folder | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Headless screenshots reviewed | ✓ | ✓ | ✓ | ✓ | ✓ |
+
+The review fixed a title-display bug in `_data/query.ts` (a head absent from its raw title recovered a truncated prefix), guarded three divisions, and corrected copy that claimed more than the data supports: pluralities phrased as "most", a capped title count phrased as a total, broken grammar at zero or one claimed skill, and headlines that implied lineage when no role has any. Client number formatting now pins `en-US` to avoid hydration mismatches.
+
+**Outstanding manual proof** — none of this is visible headless:
+
+- Real-time motion feel: spring tension, stagger pacing, and Letter's ~2.5s first beat.
+- Trackpad momentum in Letter: one flick should move one beat.
+- Keyboard focus rings and screen-reader output.
+- Marquee's headline sizing on a cold load (sized in JS after first paint).
+
+**Left for the owner:**
+
+- Marquee's kicker "Because you were a {title}" claims causation; `closestPast` is only the most similar past role. Other variants say "builds on" or "nearest".
+- Marquee's palette has five plates; a sixth past title repeats a hue.
+
+**Findings for the spec:**
+
+- No variant can show a pin that is not a recommendation; `DiscoveryData` needs the profile's pins with headlines.
+- Every variant wanted a reason when `bring` is empty (kinship versus fit), and Letter wanted the share of postings asking for skills the person already brings.
+- Distinct postings and companies across a set of roles cannot be summed from per-role counts; a set-level count needs its own read.
+- The measure grammar has no similarity measure or title grouping; the shared read writes its own SQL.
+- Title spellings are noisy enough that a typography-led direction amplifies them; a per-spelling posting floor is worth deciding.
+- Classified counts drift during enrichment, so the ranking shifts between loads.

@@ -8,7 +8,7 @@ import type { DiscoveryData, Recommendation, SkillRef, Strength } from "../../_d
 const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];
 
 export function countWord(n: number): string {
-  return Number.isInteger(n) && n >= 0 && n < WORDS.length ? WORDS[n] : n.toLocaleString();
+  return Number.isInteger(n) && n >= 0 && n < WORDS.length ? WORDS[n] : n.toLocaleString("en-US");
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {
@@ -25,7 +25,7 @@ export function listJoin(items: readonly string[]): string {
 }
 
 export function postingsLine(r: Recommendation): string {
-  return `${r.openPostings.toLocaleString()} open ${plural(r.openPostings, "posting")} · ${r.companies.toLocaleString()} ${plural(r.companies, "company", "companies")}`;
+  return `${r.openPostings.toLocaleString("en-US")} open ${plural(r.openPostings, "posting")} · ${r.companies.toLocaleString("en-US")} ${plural(r.companies, "company", "companies")}`;
 }
 
 /** P(skill | role) as a share of the role's postings. Never the person's gap. */
@@ -51,7 +51,7 @@ export function alsoPostedAs(r: Recommendation, limit: number): string[] {
   return out;
 }
 
-function mode(values: readonly string[]): string | null {
+function mode(values: readonly string[]): { value: string; count: number } | null {
   const counts = new Map<string, number>();
   let best: string | null = null;
   for (const v of values) {
@@ -59,15 +59,15 @@ function mode(values: readonly string[]): string | null {
     counts.set(v, n);
     if (best === null || n > (counts.get(best) ?? 0)) best = v;
   }
-  return best;
+  return best === null ? null : { value: best, count: counts.get(best) ?? 0 };
 }
 
 export interface Lede {
   readonly sentence: string;
-  /** The past title most of the nearest roles grow out of, when there is one. */
+  /** "The nearest grow out of", or "Two of the three nearest grow out of" when they don't all share one. Null with no past title to cite. */
+  readonly nearestLead: string | null;
+  /** The past title the most of the nearest roles sit closest to. */
   readonly nearestFrom: string | null;
-  /** Whether "the nearest" names one role or several. */
-  readonly nearestMany: boolean;
 }
 
 export function ledeFor(data: DiscoveryData): Lede {
@@ -81,7 +81,7 @@ export function ledeFor(data: DiscoveryData): Lede {
   ].filter((p): p is string => p !== null);
   const subject = parts.length > 0 ? capitalize(parts.join(" and ")) : "Your profile";
   const singular = past + skills <= 1;
-  const corpus = `${data.coverage.classifiedPostings.toLocaleString()} classified postings`;
+  const corpus = `${data.coverage.classifiedPostings.toLocaleString("en-US")} classified postings`;
 
   const sentence =
     recs > 0
@@ -90,13 +90,20 @@ export function ledeFor(data: DiscoveryData): Lede {
 
   const close = data.recommendations.filter((r) => r.strength === "close");
   const pool = close.length > 0 ? close : data.recommendations;
-  const nearestFrom = mode(pool.flatMap((r) => (r.closestPast ? [r.closestPast.titleText] : [])));
+  const top = mode(pool.flatMap((r) => (r.closestPast ? [r.closestPast.titleText] : [])));
+  if (!top) return { sentence, nearestLead: null, nearestFrom: null };
 
-  return { sentence, nearestFrom, nearestMany: pool.length > 1 };
+  // A plurality is not "the nearest": say how many when they don't all agree.
+  const verb = top.count === 1 ? "grows" : "grow";
+  const nearestLead =
+    top.count === pool.length
+      ? `The nearest ${verb} out of`
+      : `${capitalize(countWord(top.count))} of the ${countWord(pool.length)} nearest ${verb} out of`;
+  return { sentence, nearestLead, nearestFrom: top.value };
 }
 
 export function coverageLine(c: DiscoveryData["coverage"]): string {
-  return `Ranked from ${c.classifiedPostings.toLocaleString()} classified of ${c.openPostings.toLocaleString()} open postings, across ${c.rolesConsidered.toLocaleString()} roles: what has been read so far, not the whole market.`;
+  return `Ranked from ${c.classifiedPostings.toLocaleString("en-US")} classified of ${c.openPostings.toLocaleString("en-US")} open postings, across ${c.rolesConsidered.toLocaleString("en-US")} roles: what has been read so far, not the whole market.`;
 }
 
 /** How many recommendations name each past title as their closest. */
@@ -110,7 +117,7 @@ export function tallyByPastTitle(recs: readonly Recommendation[]): Map<string, n
 
 export interface NamedSkill {
   readonly text: string;
-  /** Recommendations whose top skills include this one. */
+  /** Recommendations whose ten defining skills include this one. */
   readonly carries: number;
 }
 

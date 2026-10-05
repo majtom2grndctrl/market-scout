@@ -32,7 +32,7 @@ export function RoleDetail({ rec, pinned, claimedCount, onTogglePin }: Props) {
         </p>
         <h2 className="font-display text-[1.7rem] leading-[1.1] font-semibold tracking-tight text-balance">{rec.headline}</h2>
         <p className="text-[13px] text-content-muted tabular-nums">
-          {postings(rec.openPostings)} open at {rec.companies.toLocaleString()} {plural(rec.companies, "company", "companies")}
+          {postings(rec.openPostings)} open at {rec.companies.toLocaleString("en-US")} {plural(rec.companies, "company", "companies")}
         </p>
         {also.length > 0 && (
           <p className="text-[13px] leading-snug text-content-secondary">
@@ -69,7 +69,9 @@ export function RoleDetail({ rec, pinned, claimedCount, onTogglePin }: Props) {
             </ul>
           ) : (
             <span className="text-content-secondary">
-              None of your {countWord(claimedCount)} claimed {plural(claimedCount, "skill")} is among its top ten.
+              {claimedCount > 0
+                ? `None of your ${countWord(claimedCount)} claimed ${plural(claimedCount, "skill")} is among its top ten.`
+                : "You haven’t claimed any skills to compare yet."}
               {rec.closestPast ? ` The link runs through ${rec.closestPast.titleText}.` : " The link runs through your profile as a whole."}
             </span>
           )}

@@ -88,7 +88,7 @@ export function Stage({ role, total, plate, pinned, onToggle }: StageProps) {
           {role.grow.length > 0 && (
             <Reveal seen={seen} delay={0.95} className={hasWhy ? "@[48rem]:col-span-4" : "@[48rem]:col-span-9"}>
               <p className="font-sans text-sm text-content-secondary">
-                Also asked for, as a share of its {role.openPostings.toLocaleString()}{" "}
+                Also asked for, as a share of its {role.openPostings.toLocaleString("en-US")}{" "}
                 {plural(role.openPostings, "posting", "postings")}
               </p>
               <ul className="mt-2">
@@ -123,7 +123,7 @@ function Count({ n, label }: { readonly n: number; readonly label: string }) {
   return (
     <p>
       <span className="block font-display text-[clamp(2.75rem,5.5cqi,4.5rem)] leading-[0.9] font-extrabold tabular-nums tracking-[-0.04em]">
-        {n.toLocaleString()}
+        {n.toLocaleString("en-US")}
       </span>
       <span className="mt-1 block font-sans text-sm text-content-secondary">{label}</span>
     </p>

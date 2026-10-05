@@ -14,7 +14,7 @@ const ITEM_STEP = 0.1;
 /**
  * The person's own past, read back as evidence: each past title with how many
  * of the roles below sit nearest to it, and each named skill with how many of
- * those roles ask for it. The thread draws down first, then titles settle on
+ * those roles count it among their ten defining skills. The thread draws down first, then titles settle on
  * it in the order the person gave them.
  */
 export function Trail({ data }: { data: DiscoveryData }) {
@@ -51,7 +51,7 @@ export function Trail({ data }: { data: DiscoveryData }) {
                 n > 0
                   ? `Nearest to ${countWord(n)} of the roles below`
                   : p.openPostings !== null
-                    ? `${p.openPostings.toLocaleString()} open ${plural(p.openPostings, "posting")} in this role`
+                    ? `${p.openPostings.toLocaleString("en-US")} open ${plural(p.openPostings, "posting")} in this role`
                     : null;
               return (
                 <motion.li
@@ -105,7 +105,7 @@ export function Trail({ data }: { data: DiscoveryData }) {
           </ul>
           {anyCarries && (
             <p className="mt-3 text-[0.75rem] leading-relaxed text-content-muted">
-              Numbered skills are asked for by that many of the roles below.
+              The number is how many of the roles below count the skill among their ten defining skills.
             </p>
           )}
         </motion.section>

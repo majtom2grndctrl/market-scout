@@ -9,7 +9,7 @@ import { motion } from "motion/react";
 import type { ReactNode } from "react";
 
 import type { DiscoveryData } from "../_data/query";
-import { formatCount, listPhrase, plural, type LedgerSummary, pastPresence, skillPresence, TIER_LABEL, TIERS } from "./derive";
+import { buildsOnRecord, formatCount, listPhrase, plural, type LedgerSummary, pastPresence, skillPresence, TIER_LABEL, TIERS } from "./derive";
 import { PresenceStrip, Rule } from "./marks";
 import { CUE, EASE_OUT, Tick } from "./motion";
 
@@ -38,7 +38,9 @@ export function Masthead({ data, summary }: { readonly data: DiscoveryData; read
           ) : (
             <>
               <span className="tabular-nums">{n}</span>
-              {` ${plural(n, "role builds", "roles build")} on what you’ve already done.`}
+              {data.recommendations.every(buildsOnRecord)
+                ? ` ${plural(n, "role builds", "roles build")} on what you’ve already done.`
+                : ` ${plural(n, "role", "roles")} ranked against what you’ve already done.`}
             </>
           )}
         </motion.h1>
@@ -70,7 +72,7 @@ function Lede({ summary }: { readonly summary: LedgerSummary }) {
   }
   parts.push(
     <span key="titles">
-      Employers post {plural(roleCount, "it", "them")} under {titleSpellings} different{" "}
+      Employers post {plural(roleCount, "it", "them")} under at least {titleSpellings} different{" "}
       {plural(titleSpellings, "title", "titles")}.
     </span>,
   );

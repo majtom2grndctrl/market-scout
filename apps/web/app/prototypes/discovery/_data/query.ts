@@ -168,7 +168,10 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
     norm AS (SELECT role_id, sqrt(sum(w * w)) AS l FROM weighted GROUP BY role_id),
     person AS (
       SELECT skill_id, sum(w) AS w FROM (
-        SELECT skill_id, w / ${Math.max(1, pastRoleIds.length)} AS w
+        -- The mean runs over past roles that have a signature. A past role
+        -- below the posting floor contributes nothing, so counting it would
+        -- shrink the past relative to the claimed skills.
+        SELECT skill_id, w / greatest(1, (SELECT count(*) FROM role_n WHERE role_id = ANY(${pastRoleIds}::bigint[]))) AS w
         FROM weighted WHERE role_id = ANY(${pastRoleIds}::bigint[])
         UNION ALL
         SELECT m.skill_id, coalesce((SELECT max(w) FROM weighted WHERE skill_id = m.skill_id), 0)
@@ -177,13 +180,13 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
     ),
     person_norm AS (SELECT nullif(sqrt(sum(w * w)), 0) AS l FROM person),
     kinship AS (
-      SELECT r.role_id, sum(r.w * p.w) / (n.l * (SELECT l FROM person_norm)) AS k
+      SELECT r.role_id, sum(r.w * p.w) / (nullif(n.l, 0) * (SELECT l FROM person_norm)) AS k
       FROM weighted r JOIN person p USING (skill_id) JOIN norm n USING (role_id)
       GROUP BY r.role_id, n.l
     ),
     fit AS (
       SELECT role_id,
-             coalesce(sum(w) FILTER (WHERE skill_id = ANY(${claimedSkillIds}::bigint[])), 0) / sum(w) AS f
+             coalesce(sum(w) FILTER (WHERE skill_id = ANY(${claimedSkillIds}::bigint[])), 0) / nullif(sum(w), 0) AS f
       FROM signature GROUP BY role_id
     ),
     closest AS (
@@ -194,7 +197,7 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
       JOIN norm nb ON nb.role_id = b.role_id
       WHERE b.role_id = ANY(${pastRoleIds}::bigint[])
       GROUP BY a.role_id, b.role_id, na.l, nb.l
-      ORDER BY a.role_id, sum(a.w * b.w) / (na.l * nb.l) DESC, b.role_id
+      ORDER BY a.role_id, sum(a.w * b.w) / nullif(na.l * nb.l, 0) DESC NULLS LAST, b.role_id
     ),
     scored AS (
       SELECT rn.role_id, rn.n, rn.companies,
@@ -233,14 +236,17 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
   const [titleRows, pastDemand, [coverage]] = await Promise.all([
     // Heads are lowercase in the view. The display form is the head's own span
     // inside the raw title, so "applied ai engineer" reads back as "Applied AI
-    // Engineer" the way most employers wrote it.
+    // Engineer" the way most employers wrote it. A head stitched from around a
+    // bracket is not a span of the title; substr from position 0 would return a
+    // truncated prefix, so that posting casts no display vote.
     sql<{ role_id: string; title_head: string; n: number; display: string | null }[]>`
       SELECT role_id::text, title_head, count(*)::int AS n,
              mode() WITHIN GROUP (ORDER BY display) AS display
       FROM (
         SELECT jpr.role_id, opt.title_head,
-               nullif(substr(opt.title_clean, strpos(lower(opt.title_clean), opt.title_head), length(opt.title_head)), '') AS display
+               CASE WHEN span.pos > 0 THEN substr(opt.title_clean, span.pos, length(opt.title_head)) END AS display
         FROM open_posting_titles opt
+        CROSS JOIN LATERAL (SELECT strpos(lower(opt.title_clean), opt.title_head) AS pos) span
         JOIN latest_classifications lc USING (job_posting_id)
         JOIN job_posting_roles jpr ON jpr.classification_id = lc.classification_id
         WHERE jpr.role_id = ANY(${recIds}::bigint[]) AND opt.title_head IS NOT NULL

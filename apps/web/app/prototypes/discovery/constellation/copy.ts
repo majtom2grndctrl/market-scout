@@ -8,7 +8,7 @@ const WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eig
 
 /** Small counts read better as words in a sentence; larger ones stay numerals. */
 export function countWord(n: number): string {
-  return WORDS[n] ?? n.toLocaleString();
+  return WORDS[n] ?? n.toLocaleString("en-US");
 }
 
 export function plural(n: number, one: string, many = `${one}s`): string {
@@ -21,7 +21,7 @@ export function listJoin(items: readonly string[]): string {
 }
 
 export function postings(n: number): string {
-  return `${n.toLocaleString()} ${plural(n, "posting")}`;
+  return `${n.toLocaleString("en-US")} ${plural(n, "posting")}`;
 }
 
 export const ORBIT_NAME: Record<Strength, string> = {
@@ -43,8 +43,3 @@ export function shareOfPostings(share: number): string {
 }
 
 export const WHOLE_PROFILE = "Your profile as a whole";
-
-/** Label for the place a recommendation's path starts. */
-export function anchorOf(rec: Recommendation): string {
-  return rec.closestPast?.titleText ?? WHOLE_PROFILE;
-}

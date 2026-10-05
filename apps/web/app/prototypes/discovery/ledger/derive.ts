@@ -42,8 +42,8 @@ export function alsoCalled(rec: Recommendation): Recommendation["titles"] {
 export interface TierGroup {
   readonly tier: Strength;
   readonly recs: readonly Recommendation[];
-  /** The past title most of this tier builds on, when one does. */
-  readonly commonPast: string | null;
+  /** The past title the most of this tier builds on, and how many do; null when none does. */
+  readonly commonPast: { readonly title: string; readonly count: number } | null;
 }
 
 /** Rank order is preserved; strength is monotone in rank, so groups are contiguous. */
@@ -55,18 +55,19 @@ export function groupByTier(recs: readonly Recommendation[]): TierGroup[] {
   });
 }
 
-function mostCommon(values: readonly string[]): string | null {
+function mostCommon(values: readonly string[]): { title: string; count: number } | null {
   const counts = new Map<string, number>();
   for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
-  let best: string | null = null;
-  let bestN = 0;
-  for (const [v, n] of counts) {
-    if (n > bestN) {
-      best = v;
-      bestN = n;
-    }
+  let best: { title: string; count: number } | null = null;
+  for (const [title, count] of counts) {
+    if (!best || count > best.count) best = { title, count };
   }
   return best;
+}
+
+/** A role builds on a record when it names a closest past title or a claimed skill it is defined by. */
+export function buildsOnRecord(rec: Recommendation): boolean {
+  return rec.closestPast !== null || rec.bring.length > 0;
 }
 
 export interface LedgerSummary {
@@ -75,7 +76,7 @@ export interface LedgerSummary {
   readonly pastTitlesUsed: readonly string[];
   /** Recommendations whose top skills include at least one the person claimed. */
   readonly withBring: number;
-  /** Distinct title spellings shown across all recommendations. */
+  /** Distinct title spellings shown across all recommendations. A floor: each role carries only its most-posted few. */
   readonly titleSpellings: number;
   readonly tierCounts: Record<Strength, number>;
   readonly coverageShare: number;

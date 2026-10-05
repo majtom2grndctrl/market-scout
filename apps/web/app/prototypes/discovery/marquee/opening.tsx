@@ -144,8 +144,8 @@ export function Opening({ data, plates, pinned }: OpeningProps) {
         {past.length > 0 && skills.length > 0 && " and "}
         {skills.length > 0 && `the ${numberWord(skills.length)} ${plural(skills.length, "skill", "skills")} you named`}
         {past.length === 0 && skills.length === 0 && "your profile"}, read from{" "}
-        {coverage.classifiedPostings.toLocaleString()} classified of {coverage.openPostings.toLocaleString()} open
-        postings across {coverage.rolesConsidered.toLocaleString()} roles.
+        {coverage.classifiedPostings.toLocaleString("en-US")} classified of {coverage.openPostings.toLocaleString("en-US")} open
+        postings across {coverage.rolesConsidered.toLocaleString("en-US")} roles.
         {past.length > 0 && " Each highlight matches the past role it sits closest to."} A full stop marks a role
         you&rsquo;ve pinned.
       </motion.p>

@@ -98,7 +98,8 @@ function TierHeading({ group }: { readonly group: TierGroup }) {
         {group.commonPast && (
           <>
             <span className="mx-2 text-content-disabled">/</span>
-            {n === 1 ? "builds on" : "most build on"} <span className="text-content-secondary">{group.commonPast}</span>
+            {n === 1 ? "builds on" : group.commonPast.count === n ? "all build on" : `${formatCount(group.commonPast.count)} build on`}{" "}
+            <span className="text-content-secondary">{group.commonPast.title}</span>
           </>
         )}
       </span>

@@ -89,7 +89,7 @@ export function SkyPanel({ data, pinned, focus, entered, onFocus, onTogglePin }:
 
       <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-edge-hairline/60 px-5 py-3 text-[11px] text-content-muted">
         <p>
-          Ranked from {coverage.classifiedPostings.toLocaleString()} classified of {coverage.openPostings.toLocaleString()} open
+          Ranked from {coverage.classifiedPostings.toLocaleString("en-US")} classified of {coverage.openPostings.toLocaleString("en-US")} open
           postings · {coverage.rolesConsidered} roles considered
         </p>
         {tiers.length > 0 && (

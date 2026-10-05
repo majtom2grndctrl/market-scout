@@ -118,13 +118,19 @@ function Intro({ data }: { data: DiscoveryData }) {
   for (const r of data.recommendations) counts.set(groupKeyOf(r), (counts.get(groupKeyOf(r)) ?? 0) + 1);
   const [leadKey, leadCount] = [...counts.entries()].filter(([k]) => k !== WHOLE_KEY).sort((a, b) => b[1] - a[1])[0] ?? [null, 0];
 
+  const skills = `your ${countWord(claimed)} claimed ${plural(claimed, "skill")}`;
   const centre =
     titles.length > 0
       ? `${listJoin(titles)} ${titles.length === 1 ? "sits" : "sit"} at the centre.`
-      : `Your ${countWord(claimed)} claimed ${plural(claimed, "skill")} sit at the centre.`;
+      : claimed > 0
+        ? `${skills.charAt(0).toUpperCase()}${skills.slice(1)} ${claimed === 1 ? "sits" : "sit"} at the centre.`
+        : "Your profile sits at the centre.";
+  const against = [titles.length > 0 ? (titles.length === 1 ? "that title" : "those titles") : null, claimed > 0 ? skills : null].filter(
+    (s): s is string => s !== null,
+  );
   const orbit =
     n > 0
-      ? ` The ${countWord(n)} ${plural(n, "role")} around ${titles.length === 1 ? "it" : "them"} are ranked against ${titles.length > 0 ? `${titles.length === 1 ? "that title" : "those titles"} and ` : ""}your ${countWord(claimed)} claimed ${plural(claimed, "skill")}. The nearer the orbit, the higher the rank.`
+      ? ` The ${countWord(n)} ${plural(n, "role")} around ${titles.length === 1 || (titles.length === 0 && claimed === 1) ? "it" : "them"} ${n === 1 ? "is" : "are"} ranked against ${against.length > 0 ? listJoin(against) : "your profile"}. The nearer the orbit, the higher the rank.`
       : " No roles are ranked for this profile yet.";
 
   return (

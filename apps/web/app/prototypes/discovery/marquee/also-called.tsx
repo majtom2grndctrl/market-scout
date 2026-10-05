@@ -79,7 +79,7 @@ export function AlsoCalled({ slug, headline, titles, seen }: AlsoCalledProps) {
           return (
             <li key={t.title} className="relative">
               <span className={isHeadline ? "font-semibold text-content-primary" : undefined}>{t.title}</span>{" "}
-              <span className="tabular-nums text-content-muted">{t.postings.toLocaleString()}</span>
+              <span className="tabular-nums text-content-muted">{t.postings.toLocaleString("en-US")}</span>
               {showing && n > 1 && (
                 <motion.span
                   layoutId={`marquee-spelling-${slug}`}

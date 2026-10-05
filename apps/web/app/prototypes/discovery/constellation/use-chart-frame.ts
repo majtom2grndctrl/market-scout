@@ -6,9 +6,9 @@ import { type FontRole, type Measure, TYPE } from "./geometry";
 
 /**
  * Width of the map's container, the first-screen height below it, and a text
- * measurer, all client-only. The
- * layout waits for the fonts: label collision depends on real glyph widths,
- * and a fallback-font measurement would place every label a little wrong.
+ * measurer, all client-only. The layout waits for the fonts: label collision
+ * depends on real glyph widths, and a fallback-font measurement would place
+ * every label a little wrong.
  */
 export function useChartFrame() {
   const ref = useRef<HTMLDivElement>(null);

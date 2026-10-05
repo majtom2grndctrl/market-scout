@@ -37,9 +37,7 @@ export function Orientation({ data, activeGroup, onGroup }: Props) {
       <header className="space-y-1.5">
         <p className="text-[11px] font-semibold tracking-[0.14em] text-content-muted uppercase">Paths from your past</p>
         <h2 className="font-display text-xl leading-snug font-semibold text-balance">
-          {data.recommendations.length > 0
-            ? `${capitalise(countWord(data.recommendations.length))} ${plural(data.recommendations.length, "role")} trace back to what you've done.`
-            : "No roles are ranked for this profile yet."}
+          {headingFor(data.recommendations)}
         </h2>
       </header>
 
@@ -71,6 +69,17 @@ export function Orientation({ data, activeGroup, onGroup }: Props) {
       )}
     </motion.div>
   );
+}
+
+// "Trace back" is a claim: only a role with a closest past title or a claimed
+// skill among its ten defining skills makes it.
+function headingFor(recs: readonly Recommendation[]): string {
+  const n = recs.length;
+  if (n === 0) return "No roles are ranked for this profile yet.";
+  const traced = recs.filter((r) => r.closestPast !== null || r.bring.length > 0).length;
+  if (traced === n) return `${capitalise(countWord(n))} ${plural(n, "role")} ${n === 1 ? "traces" : "trace"} back to what you've done.`;
+  if (traced === 0) return `${capitalise(countWord(n))} ${plural(n, "role")} ranked against your profile.`;
+  return `${capitalise(countWord(traced))} of ${countWord(n)} roles ${traced === 1 ? "traces" : "trace"} back to what you've done.`;
 }
 
 function capitalise(s: string): string {
