@@ -252,6 +252,10 @@ Tailwind 4.3.3 keeps these for backward compatibility. This project is new — n
 
 CSS requires every `@import` to precede other rules, so `app/tokens.css` imports at the top of `app/globals.css`.
 
+## Headings
+
+No eyebrow text unless the owner asks for it. An eyebrow is the small label above a heading, often uppercase and letter-spaced. It usually repeats what the heading, nav, or page title already says.
+
 ## Storybook
 
 **Stories live under `components/**`.** The glob in `.storybook/main.ts` scans nowhere else — a story placed elsewhere silently never loads.
