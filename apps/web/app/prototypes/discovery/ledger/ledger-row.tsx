@@ -1,8 +1,9 @@
 "use client";
 
 // One ranked role. Cells share the table's column template and align on their
-// first baseline, so a 28px rank, a 20px headline, and 14px reasons all sit on
-// one line however many lines each cell runs to.
+// first baseline, so a 28px rank, a 20px headline, and 15px reasons all sit on
+// one line however many lines each cell runs to. Secondary lines step down to
+// 14px and one ink step; nothing is smaller.
 
 import { Plus } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -89,7 +90,7 @@ export function LedgerRow({ rec, index, pinned, expanded, onTogglePin, onToggleE
             </span>
           </button>
           {also.length > 0 && (
-            <p className="mt-1.5 line-clamp-2 text-[13px] leading-[1.45] text-content-muted">
+            <p className="mt-1.5 line-clamp-2 text-[14px] leading-[1.4] text-content-muted">
               <span className="text-content-secondary">Also called</span> {also.map((t) => t.title).join(" · ")}
             </p>
           )}
@@ -107,7 +108,7 @@ export function LedgerRow({ rec, index, pinned, expanded, onTogglePin, onToggleE
             <>
               <span className="block">{rec.closestPast.titleText}</span>
               {rec.closestPast.roleName.toLowerCase() !== rec.closestPast.titleText.toLowerCase() && (
-                <span className="mt-0.5 block text-[12px] text-content-muted">as {rec.closestPast.roleName}</span>
+                <span className="mt-0.5 block text-[14px] leading-[1.35] text-content-muted">as {rec.closestPast.roleName}</span>
               )}
             </>
           ) : (
@@ -134,11 +135,11 @@ export function LedgerRow({ rec, index, pinned, expanded, onTogglePin, onToggleE
           {rec.grow.length > 0 ? (
             <ul className="space-y-2">
               {rec.grow.map((g, i) => (
-                <li key={g.slug} className="grid grid-cols-[minmax(0,1fr)_3ch] items-baseline gap-x-3 gap-y-[5px]">
-                  <span className="truncate text-[13px] leading-[1.35]" title={g.name}>
+                <li key={g.slug} className="grid grid-cols-[minmax(0,1fr)_3ch] items-baseline gap-x-3 gap-y-1">
+                  <span className="truncate text-[14px] leading-[1.3]" title={g.name}>
                     {g.name}
                   </span>
-                  <span className="text-right text-[13px] leading-[1.35] text-content-secondary tabular-nums" aria-label={`asked for in ${Math.round(g.share * 100)}% of postings`}>
+                  <span className="text-right text-[14px] leading-[1.3] text-content-secondary tabular-nums" aria-label={`asked for in ${Math.round(g.share * 100)}% of postings`}>
                     <Tick value={Math.round(g.share * 100)} play={play} delay={marks + i * 0.05} duration={0.55} />
                   </span>
                   <span className="col-span-2">
@@ -153,13 +154,13 @@ export function LedgerRow({ rec, index, pinned, expanded, onTogglePin, onToggleE
         </Cell>
 
         <Cell label="Postings" className="col-start-2 @5xl:col-start-6 @5xl:row-start-1 @5xl:text-right">
-          <span className="text-[15px] tabular-nums">
+          <span className="text-[16px] font-medium tabular-nums">
             <Tick value={rec.openPostings} play={play} delay={marks} />
           </span>
         </Cell>
 
         <Cell label="Companies" className="col-start-2 @2xl:col-start-3 @5xl:col-start-7 @5xl:row-start-1 @5xl:text-right">
-          <span className="text-[15px] text-content-secondary tabular-nums">
+          <span className="text-[16px] text-content-secondary tabular-nums">
             <Tick value={rec.companies} play={play} delay={marks + 0.04} />
           </span>
         </Cell>
@@ -184,16 +185,20 @@ export function LedgerRow({ rec, index, pinned, expanded, onTogglePin, onToggleE
   );
 }
 
-/** On wide containers the column header names the cell; stacked, it carries its own label. */
+/**
+ * On wide containers the column header names the cell; stacked, it carries its
+ * own label: sentence case, a step smaller and two ink steps back from the
+ * value, so the pair reads as key and figure.
+ */
 function Cell({ label, className, children }: { readonly label: string; readonly className: string; readonly children: React.ReactNode }) {
   return (
-    <div className={`min-w-0 text-[14px] leading-[1.4] ${className}`}>
-      <span className="mb-1 block text-[10.5px] font-medium tracking-[0.12em] text-content-muted uppercase @5xl:hidden">{label}</span>
+    <div className={`min-w-0 text-[15px] leading-[1.4] ${className}`}>
+      <span className="mb-1 block text-[14px] text-content-muted @5xl:hidden">{label}</span>
       {children}
     </div>
   );
 }
 
 function Dash() {
-  return <span className="text-content-disabled">—</span>;
+  return <span className="text-content-muted">—</span>;
 }

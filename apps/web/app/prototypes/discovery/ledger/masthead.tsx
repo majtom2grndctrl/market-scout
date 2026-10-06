@@ -24,14 +24,8 @@ export function Masthead({ data, summary }: { readonly data: DiscoveryData; read
   return (
     <header>
       <Rule delay={CUE.rule} />
-      <motion.div {...rise(CUE.rule + 0.1)} className="flex items-baseline justify-between pt-3 text-[11px] font-medium tracking-[0.14em] text-content-muted uppercase">
-        <span>Discovery</span>
-        <span className="tabular-nums">
-          {n} of {formatCount(data.coverage.rolesConsidered)} roles shown
-        </span>
-      </motion.div>
 
-      <div className="mt-10 grid grid-cols-1 gap-x-6 gap-y-6 @5xl:grid-cols-12">
+      <div className="mt-8 grid grid-cols-1 gap-x-6 gap-y-6 @5xl:grid-cols-12">
         <motion.h1 {...rise(CUE.headline)} className="font-display text-[44px] leading-[0.98] font-semibold tracking-[-0.035em] text-balance @3xl:text-[64px] @5xl:col-span-8">
           {n === 0 ? (
             "No roles ranked yet."
@@ -44,7 +38,7 @@ export function Masthead({ data, summary }: { readonly data: DiscoveryData; read
             </>
           )}
         </motion.h1>
-        <motion.p {...rise(CUE.lede)} className="max-w-[34rem] self-end text-[15px] leading-[1.55] text-content-secondary @5xl:col-span-4">
+        <motion.p {...rise(CUE.lede)} className="max-w-[34rem] self-end text-[17px] leading-[1.5] text-content-secondary @5xl:col-span-4">
           <Lede summary={summary} />
         </motion.p>
       </div>
@@ -139,7 +133,7 @@ export function SummaryBand({ data, summary }: { readonly data: DiscoveryData; r
               />
             );
           })}
-          <Coverage data={data} share={summary.coverageShare} delay={col(2) + 0.3} />
+          <Coverage data={data} shown={summary.roleCount} share={summary.coverageShare} delay={col(2) + 0.3} />
         </BandColumn>
       </div>
     </section>
@@ -149,9 +143,10 @@ export function SummaryBand({ data, summary }: { readonly data: DiscoveryData; r
 function BandColumn({ title, note, delay, children }: { readonly title: string; readonly note: string; readonly delay: number; readonly children: ReactNode }) {
   return (
     <motion.div {...rise(delay)}>
-      <div className="flex items-baseline justify-between border-b border-content-primary pb-2 text-[11px] font-medium tracking-[0.12em] text-content-muted uppercase">
-        <h2 className="font-sans text-content-primary">{title}</h2>
-        <span className="tabular-nums">{note}</span>
+      {/* Sentence-case heading on the heavy rule: the rule and weight mark the column, not tracked capitals. The note keys the tick strips. */}
+      <div className="flex items-baseline justify-between border-b-2 border-content-primary pb-2.5">
+        <h2 className="font-display text-[19px] leading-6 font-semibold tracking-[-0.01em] text-content-primary">{title}</h2>
+        <span className="text-[14px] text-content-muted tabular-nums">{note}</span>
       </div>
       <ul>{children}</ul>
     </motion.div>
@@ -169,23 +164,24 @@ interface BandRowProps {
 
 function BandRow({ label, sub, cells, count, delay, aria }: BandRowProps) {
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_auto_2ch] items-center gap-x-4 border-b border-edge-hairline py-[7px] text-[14px] leading-5">
+    <li className="grid grid-cols-[minmax(0,1fr)_auto_2ch] items-center gap-x-4 border-b border-edge-hairline py-2 text-[15px] leading-5">
       <span className="min-w-0 truncate">
         {label}
-        {sub && <span className="ml-2 text-[12px] text-content-muted">{sub}</span>}
+        {sub && <span className="ml-2 text-[14px] text-content-muted">{sub}</span>}
       </span>
       <PresenceStrip cells={cells} delay={delay} label={aria} />
-      <span className={`text-right tabular-nums ${count === 0 ? "text-content-disabled" : "text-content-primary"}`}>
+      {/* A zero recedes one ink step, to muted; it is still a figure someone reads. */}
+      <span className={`text-right tabular-nums ${count === 0 ? "text-content-muted" : "font-medium text-content-primary"}`}>
         <Tick value={count} delay={delay} duration={0.5} />
       </span>
     </li>
   );
 }
 
-function Coverage({ data, share, delay }: { readonly data: DiscoveryData; readonly share: number; readonly delay: number }) {
+function Coverage({ data, shown, share, delay }: { readonly data: DiscoveryData; readonly shown: number; readonly share: number; readonly delay: number }) {
   const { classifiedPostings, openPostings, rolesConsidered } = data.coverage;
   return (
-    <li className="pt-4 text-[12px] leading-[1.5] text-content-muted">
+    <li className="pt-4 text-[14px] leading-[1.5] text-content-muted">
       <div aria-hidden className="mb-2.5 h-[3px] w-full bg-edge-hairline">
         <motion.div
           className="h-full origin-left bg-content-secondary"
@@ -196,8 +192,9 @@ function Coverage({ data, share, delay }: { readonly data: DiscoveryData; readon
         />
       </div>
       Ranked from <span className="text-content-secondary">{formatCount(classifiedPostings)}</span> classified of{" "}
-      <span className="text-content-secondary">{formatCount(openPostings)}</span> open postings, across{" "}
-      {formatCount(rolesConsidered)} roles with enough postings to compare.
+      <span className="text-content-secondary">{formatCount(openPostings)}</span> open postings. These{" "}
+      <span className="text-content-secondary">{formatCount(shown)}</span> lead the{" "}
+      <span className="text-content-secondary">{formatCount(rolesConsidered)}</span> roles with enough postings to compare.
     </li>
   );
 }

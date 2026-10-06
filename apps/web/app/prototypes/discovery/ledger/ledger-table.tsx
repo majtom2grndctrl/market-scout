@@ -50,7 +50,10 @@ export function LedgerTable({ recs, pinned, expanded, onTogglePin, onToggleExpan
   );
 }
 
-const HEAD = "text-[10.5px] font-medium tracking-[0.12em] text-content-muted uppercase";
+// Column heads read as structure through position and ink, not tracked
+// capitals: the body's size less one step, a heavier weight, one ink step back,
+// and boxed by the heavy rule above and the hairline below.
+const HEAD = "text-[14px] leading-5 font-medium text-content-secondary";
 
 function ColumnHeader() {
   return (
@@ -61,7 +64,7 @@ function ColumnHeader() {
       className="sticky top-14 z-[5] hidden bg-surface-page @5xl:block"
     >
       <Rule delay={CUE.tableHead} />
-      <div className={`grid items-end gap-x-5 px-3 pt-2.5 pb-2 ${HEAD} ${COLS}`}>
+      <div className={`grid items-end gap-x-5 px-3 pt-3 pb-2.5 ${HEAD} ${COLS}`}>
         <span>Rank</span>
         <span>Role</span>
         <span>Builds on</span>
@@ -90,14 +93,14 @@ function TierHeading({ group }: { readonly group: TierGroup }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: play ? 1 : 0 }}
       transition={{ delay, duration: 0.3, ease: EASE_OUT }}
-      className="flex items-baseline gap-4 border-b border-content-primary px-3 pt-9 pb-2"
+      className="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-content-primary px-3 pt-10 pb-2.5"
     >
-      <h3 className="font-display text-[15px] font-semibold tracking-[-0.005em]">{TIER_LABEL[group.tier]}</h3>
-      <span className="text-[12px] text-content-muted tabular-nums">
+      <h3 className="font-display text-[22px] leading-7 font-semibold tracking-[-0.015em]">{TIER_LABEL[group.tier]}</h3>
+      <span className="text-[14px] text-content-muted tabular-nums">
         {formatCount(n)} {plural(n, "role", "roles")}
         {group.commonPast && (
           <>
-            <span className="mx-2 text-content-disabled">/</span>
+            <span className="mx-2">/</span>
             {n === 1 ? "builds on" : group.commonPast.count === n ? "all build on" : `${formatCount(group.commonPast.count)} build on`}{" "}
             <span className="text-content-secondary">{group.commonPast.title}</span>
           </>

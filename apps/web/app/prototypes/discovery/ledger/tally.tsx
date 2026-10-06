@@ -31,16 +31,17 @@ export function Tally({ pins, acknowledged, onContinue, onUnpin }: TallyProps) {
       className="sticky bottom-0 z-10 mt-16 -mx-6 border-t-2 border-content-primary bg-surface-page/95 px-6 backdrop-blur-sm @5xl:-mx-10 @5xl:px-10"
     >
       <div className="flex flex-col gap-3 py-3.5 @3xl:flex-row @3xl:items-center @3xl:gap-6">
-        <div className="flex shrink-0 items-baseline gap-2.5">
-          <span className="text-[10.5px] font-medium tracking-[0.12em] text-content-muted uppercase">Pinned</span>
-          <Roll value={n} className={`font-display text-[26px] leading-none font-semibold tabular-nums ${n > 0 ? "text-(--ledger-signal)" : "text-content-disabled"}`} />
+        {/* The count reads into its word, "2 pinned", so the label needs no tag of its own. */}
+        <div className="flex shrink-0 items-baseline gap-2">
+          <Roll value={n} className={`font-display text-[28px] leading-none font-semibold tabular-nums ${n > 0 ? "text-(--ledger-signal)" : "text-content-muted"}`} />
+          <span className="text-[15px] font-medium text-content-secondary">pinned</span>
         </div>
 
         <LayoutGroup>
           <ul className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1.5">
             <AnimatePresence mode="popLayout" initial={false}>
               {n === 0 && (
-                <motion.li key="empty" layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.1 } }} className="text-[13px] text-content-muted">
+                <motion.li key="empty" layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.1 } }} className="text-[14px] text-content-muted">
                   Pin the roles worth watching; they collect here.
                 </motion.li>
               )}
@@ -57,11 +58,11 @@ export function Tally({ pins, acknowledged, onContinue, onUnpin }: TallyProps) {
                     type="button"
                     onClick={() => onUnpin(r.roleSlug)}
                     aria-label={`Unpin ${r.headline}`}
-                    className="group/chip flex items-baseline gap-2 border border-edge bg-surface-raised py-1 pr-2.5 pl-2 text-[13px] leading-5 transition-colors duration-150 hover:border-content-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:bg-surface-sunken"
+                    className="group/chip flex items-baseline gap-2 border border-edge bg-surface-raised py-1 pr-2.5 pl-2 text-[14px] leading-5 transition-colors duration-150 hover:border-content-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:bg-surface-sunken"
                   >
-                    <span className="font-display text-[12px] font-medium text-(--ledger-signal) tabular-nums">{rankLabel(r.rank)}</span>
+                    <span className="font-display text-[14px] font-semibold text-(--ledger-signal) tabular-nums">{rankLabel(r.rank)}</span>
                     <span>{r.headline}</span>
-                    <span aria-hidden className="text-content-disabled transition-colors group-hover/chip:text-content-primary">
+                    <span aria-hidden className="text-content-muted transition-colors group-hover/chip:text-content-primary">
                       ×
                     </span>
                   </button>
@@ -71,13 +72,14 @@ export function Tally({ pins, acknowledged, onContinue, onUnpin }: TallyProps) {
           </ul>
         </LayoutGroup>
 
+        {/* Disabled is carried by the empty outline and the cursor; the label stays at muted ink because it says what pinning unlocks. */}
         <button
           type="button"
           disabled={n === 0}
           onClick={onContinue}
           className={`flex shrink-0 items-center justify-center gap-2 px-4 py-2.5 text-[14px] font-medium transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${
             n === 0
-              ? "cursor-not-allowed border border-edge text-content-disabled"
+              ? "cursor-not-allowed border border-edge text-content-muted"
               : acknowledged
                 ? "border border-content-primary text-content-primary"
                 : "bg-accent-solid text-on-solid hover:bg-accent-hover active:bg-accent-active"

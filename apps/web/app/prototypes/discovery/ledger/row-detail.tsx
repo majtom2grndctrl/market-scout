@@ -20,7 +20,7 @@ export function RowDetail({ rec }: { readonly rec: Recommendation }) {
         <Label>Posted as</Label>
         <ul className="space-y-1.5">
           {rec.titles.map((t, i) => (
-            <li key={`${t.title}-${i}`} className="grid grid-cols-[minmax(0,1fr)_3.5rem_3ch] items-center gap-x-3 text-[13px] leading-[1.35]">
+            <li key={`${t.title}-${i}`} className="grid grid-cols-[minmax(0,1fr)_2rem_3ch] items-center gap-x-3 text-[14px] leading-[1.35] @2xl:grid-cols-[minmax(0,1fr)_3.5rem_3ch]">
               <span className="truncate" title={t.title}>
                 {t.title}
               </span>
@@ -37,12 +37,12 @@ export function RowDetail({ rec }: { readonly rec: Recommendation }) {
             </li>
           ))}
         </ul>
-        <p className="mt-2 text-[12px] text-content-muted">Open postings per title, as written.</p>
+        <p className="mt-2.5 text-[14px] leading-[1.4] text-content-muted">Open postings per title, as written.</p>
       </section>
 
       <section className="col-start-2 min-w-0 @2xl:col-start-3 @5xl:col-span-2 @5xl:col-start-3">
         <Label>Why it&rsquo;s here</Label>
-        <div className="space-y-2 text-[13px] leading-[1.5] text-content-secondary">
+        <div className="space-y-2 text-[14px] leading-[1.5] text-content-secondary">
           {rec.closestPast && (
             <p>
               Of your past titles, its skills sit nearest <Em>{rec.closestPast.titleText}</Em>.
@@ -61,7 +61,7 @@ export function RowDetail({ rec }: { readonly rec: Recommendation }) {
 
       <section className="col-start-2 min-w-0 @5xl:col-start-5">
         <Label>Reading the bars</Label>
-        <p className="text-[13px] leading-[1.5] text-content-secondary">
+        <p className="text-[14px] leading-[1.5] text-content-secondary">
           Each bar is the share of this role&rsquo;s <Em>{formatCount(rec.openPostings)}</Em> open postings that ask for the skill. They are
           listed by how particular the skill is to this role, not by share.
         </p>
@@ -69,15 +69,16 @@ export function RowDetail({ rec }: { readonly rec: Recommendation }) {
 
       <section className="col-start-2 min-w-0 @2xl:col-start-3 @5xl:col-span-2 @5xl:col-start-6 @5xl:text-right">
         <Label>Per company</Label>
-        <p className="text-[15px] tabular-nums">{perCompany.toFixed(1)}</p>
-        <p className="mt-1 text-[12px] leading-[1.4] text-content-muted">open postings each, on average</p>
+        <p className="text-[16px] font-medium tabular-nums">{perCompany.toFixed(1)}</p>
+        <p className="mt-1 text-[14px] leading-[1.4] text-content-muted">open postings each, on average</p>
       </section>
     </div>
   );
 }
 
+/** A subheading, not a tag: sentence case in primary ink, one step above the 14px text it heads. */
 function Label({ children }: { readonly children: React.ReactNode }) {
-  return <h3 className="mb-2.5 font-sans text-[10.5px] font-medium tracking-[0.12em] text-content-muted uppercase">{children}</h3>;
+  return <h3 className="mb-2 font-sans text-[15px] leading-5 font-semibold text-content-primary">{children}</h3>;
 }
 
 function Em({ children }: { readonly children: React.ReactNode }) {

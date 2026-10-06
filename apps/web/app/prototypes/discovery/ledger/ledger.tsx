@@ -15,9 +15,11 @@ import { markPageStart } from "./motion";
 import { Tally } from "./tally";
 
 // The one mood colour: a Swiss signal red, spent only on pins (the marker,
-// the rank of a pinned row, the tally). Fit and strength never wear it.
+// the rank of a pinned row, the tally). Fit and strength never wear it. It is
+// also ink, so it sits dark enough to clear 4.5:1 on the page, a hovered row,
+// and the raised chip.
 const MOOD = {
-  "--ledger-signal": "oklch(0.57 0.205 31)",
+  "--ledger-signal": "oklch(0.53 0.2 31)",
 } as CSSProperties;
 
 export function Ledger({ data }: { readonly data: DiscoveryData }) {
