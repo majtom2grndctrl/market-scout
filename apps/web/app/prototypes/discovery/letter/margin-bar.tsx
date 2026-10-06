@@ -35,7 +35,7 @@ export function MarginBar({
   return (
     <div className="flex h-18 shrink-0 items-center gap-4 border-t border-edge-hairline px-6 sm:gap-6 sm:px-10 lg:px-16">
       <nav aria-label="Where you are in the letter" className="flex items-center gap-5">
-        <p className="text-xs text-content-muted tabular-nums sm:hidden">
+        <p className="text-sm text-content-muted tabular-nums sm:hidden">
           {index + 1} / {labels.length}
         </p>
         <ol className="hidden items-center sm:flex">
@@ -63,7 +63,7 @@ export function MarginBar({
           {index === 0 ? (
             <motion.p
               {...mainThread}
-              className="hidden text-xs text-content-muted md:block"
+              className="hidden text-sm text-content-muted md:block"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1, transition: { delay: 2.6, duration: 0.8 } }}
               exit={{ opacity: 0, transition: { duration: 0.2 } }}
@@ -151,51 +151,56 @@ function PinTally({ pinned }: { pinned: number }) {
   );
 }
 
+// Before a pin, Continue is a genuinely disabled control in content-disabled
+// ink: the one exemption the readable-type rule allows. Its reason sits
+// outside it, so the reason is read in ordinary ink.
 function ContinueButton({ pinned, continued, onContinue }: { pinned: number; continued: boolean; onContinue: () => void }) {
   const ready = pinned > 0;
   return (
-    <button
-      type="button"
-      onClick={onContinue}
-      disabled={!ready}
-      aria-describedby={ready ? undefined : "letter-continue-why"}
-      className={cn(
-        FOCUS_RING,
-        "flex h-11 items-center gap-2 rounded-full px-5 text-sm font-medium transition-colors duration-300",
-        ready ? "bg-accent-solid text-on-solid hover:bg-accent-hover" : "cursor-not-allowed bg-surface-sunken text-content-disabled",
-      )}
-    >
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.span
-          key={continued ? "done" : "go"}
-          className="flex items-center gap-2"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.25 }}
-        >
-          {continued ? (
-            <>
-              <Check className="size-4" strokeWidth={2} />
-              <span>
-                Noted.<span className="hidden sm:inline"> Your dashboard is next.</span>
-              </span>
-            </>
-          ) : (
-            <>
-              <span>
-                Continue<span className="hidden sm:inline"> to your dashboard</span>
-              </span>
-              <ArrowRight className="size-4" strokeWidth={2} />
-            </>
-          )}
-        </motion.span>
-      </AnimatePresence>
+    <>
       {ready ? null : (
         <span id="letter-continue-why" className="sr-only">
           Pin at least one role first.
         </span>
       )}
+      <button
+        type="button"
+        onClick={onContinue}
+        disabled={!ready}
+        aria-describedby={ready ? undefined : "letter-continue-why"}
+        className={cn(
+          FOCUS_RING,
+          "flex h-11 items-center gap-2 rounded-full px-5 text-sm font-medium transition-colors duration-300",
+          ready ? "bg-accent-solid text-on-solid hover:bg-accent-hover" : "cursor-not-allowed bg-surface-sunken text-content-disabled",
+        )}
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={continued ? "done" : "go"}
+            className="flex items-center gap-2"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.25 }}
+          >
+            {continued ? (
+            <>
+                <Check className="size-4" strokeWidth={2} />
+                <span>
+                  Noted.<span className="hidden sm:inline"> Your dashboard is next.</span>
+                </span>
+            </>
+          ) : (
+            <>
+                <span>
+                  Continue<span className="hidden sm:inline"> to your dashboard</span>
+                </span>
+                <ArrowRight className="size-4" strokeWidth={2} />
+            </>
+          )}
+        </motion.span>
+      </AnimatePresence>
     </button>
+    </>
   );
 }

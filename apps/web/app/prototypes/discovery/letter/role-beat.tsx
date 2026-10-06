@@ -8,9 +8,9 @@ import styles from "./letter.module.css";
 export function RoleBeatView({ beat, pinned, onTogglePin }: { beat: RoleBeat; pinned: boolean; onTogglePin: () => void }) {
   const tl = timeline();
 
-  // Reading order is cue order: where they come from, the role, what else
-  // employers call it, how much of it there is, and last, what they bring.
-  const eyebrowAt = tl.cue(0);
+  // Reading order is cue order: which featured role this is and where they
+  // come from, the role, what else employers call it, how much of it there
+  // is, and last, what they bring.
   const kickerAt = beat.kicker ? tl.words(beat.kicker, 0.25) : null;
   const headlineAt = tl.words(beat.rec.headline, beat.kicker ? 0.2 : 0.3);
   const alsoAt = beat.alsoCalled ? tl.cue(0.55) : null;
@@ -23,17 +23,13 @@ export function RoleBeatView({ beat, pinned, onTogglePin }: { beat: RoleBeat; pi
   return (
     <div className="grid flex-1 items-center gap-x-16 gap-y-12 pt-8 pb-[6vh] lg:grid-cols-[minmax(0,1fr)_15rem]">
       <div>
-        <Arrive delay={eyebrowAt} as="p" className={styles.eyebrow}>
-          {beat.eyebrow}
-        </Arrive>
-
         {kickerAt !== null && beat.kicker ? (
-          <p className={`${styles.prose} mt-8 text-content-muted`}>
+          <p className={`${styles.prose} text-content-muted`}>
             <Words text={beat.kicker} delay={kickerAt} />
           </p>
         ) : null}
 
-        <h2 className={`${styles.headline} ${beat.kicker ? "mt-2" : "mt-8"} max-w-[14ch] font-display text-content-primary`}>
+        <h2 className={`${styles.headline} ${beat.kicker ? "mt-2" : ""} max-w-[14ch] font-display text-content-primary`}>
           <Words text={beat.rec.headline} delay={headlineAt} />
         </h2>
 
@@ -62,11 +58,13 @@ export function RoleBeatView({ beat, pinned, onTogglePin }: { beat: RoleBeat; pi
 
       {growAt !== null ? (
         <Arrive delay={growAt} as="aside" className="border-t border-edge pt-5 lg:mt-24 lg:self-end lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6">
-          <h3 className="text-xs font-medium tracking-[0.12em] text-content-muted uppercase">Its postings also ask for</h3>
-          <ul className="mt-4 space-y-3">
+          {/* A margin note: the heading leads by size and weight, each skill
+              by ink, and its share recedes a step to muted. */}
+          <h3 className="text-base leading-snug font-medium text-content-primary">Its postings also ask for</h3>
+          <ul className="mt-4 space-y-3.5">
             {beat.grow.map((g) => (
               <li key={g.name} className="text-sm leading-snug">
-                <span className="block text-content-primary">{g.name}</span>
+                <span className="block text-[0.9375rem] text-content-primary">{g.name}</span>
                 <span className="text-content-muted tabular-nums">in {g.share} of postings</span>
               </li>
             ))}

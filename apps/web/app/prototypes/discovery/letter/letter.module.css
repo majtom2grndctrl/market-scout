@@ -31,6 +31,11 @@
   -webkit-box-decoration-break: slice;
 }
 
+/* The type scale, largest first. Every beat leads with one of the first two;
+   prose carries the argument; notes and chrome sit at 14-16px and recede by
+   ink step (primary, secondary, muted), never by opacity or a smaller size.
+   No eyebrows: a beat's place in the letter is in its first words or the
+   progress bar, not in a label above the heading. */
 .display {
   font-weight: 430;
   font-size: clamp(2.25rem, 1.1rem + 2.9vw, 4rem);
@@ -53,14 +58,6 @@
   font-size: clamp(1.125rem, 1rem + 0.35vw, 1.3125rem);
   line-height: 1.62;
   text-wrap: pretty;
-}
-
-.eyebrow {
-  font-size: 0.75rem;
-  font-weight: 560;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--letter-accent);
 }
 
 .footnoteMark {

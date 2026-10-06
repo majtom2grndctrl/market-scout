@@ -135,10 +135,6 @@ export function Letter({ beats, initialBeat, initialPins }: { beats: readonly Be
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
-        <p className="flex shrink-0 items-center gap-3 px-6 pt-6 text-xs tracking-[0.02em] text-content-muted sm:px-10 lg:px-16">
-          <span aria-hidden className="h-px w-6 bg-(--letter-accent)" />A note on where you could go next
-        </p>
-
         <p aria-live="polite" className="sr-only">
           {`${index + 1} of ${beats.length}: ${beat.label}`}
         </p>

@@ -12,7 +12,6 @@ const ROW_GAP = 0.06;
 
 export function AllBeatView({ beat, pins, onTogglePin }: { beat: AllBeat; pins: ReadonlySet<string>; onTogglePin: (slug: string) => void }) {
   const tl = timeline();
-  const eyebrowAt = tl.cue(0);
   const display = phrases(beat.display, tl, { first: 0.22 });
   const bodyAt = tl.cue(0.45);
   // The list follows the sentence that introduces it, one row after another
@@ -22,10 +21,7 @@ export function AllBeatView({ beat, pins, onTogglePin }: { beat: AllBeat; pins: 
 
   return (
     <div className="pt-[8vh] pb-20">
-      <Arrive delay={eyebrowAt} as="p" className={styles.eyebrow}>
-        {beat.eyebrow}
-      </Arrive>
-      <h2 className={`${styles.display} mt-6 font-display text-content-primary`}>{display}</h2>
+      <h2 className={`${styles.display} font-display text-content-primary`}>{display}</h2>
       <Arrive delay={bodyAt} as="p" className={`${styles.prose} mt-6 max-w-[36rem] text-content-secondary`}>
         {beat.body}
       </Arrive>
@@ -38,7 +34,7 @@ export function AllBeatView({ beat, pins, onTogglePin }: { beat: AllBeat; pins: 
             <section key={group.strength} aria-label={group.label}>
               <motion.h3
                 {...mainThread}
-                className="flex items-center gap-4 text-xs font-medium tracking-[0.12em] text-content-muted uppercase"
+                className="flex items-center gap-4 text-base font-medium text-content-secondary"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.6, delay: headAt }}
@@ -92,7 +88,7 @@ export function AllBeatView({ beat, pins, onTogglePin }: { beat: AllBeat; pins: 
         })}
       </div>
 
-      <Arrive delay={Math.max(footAt, rowAt)} as="p" className="mt-10 max-w-[40rem] text-xs leading-relaxed text-content-muted">
+      <Arrive delay={Math.max(footAt, rowAt)} as="p" className="mt-10 max-w-[40rem] text-sm leading-relaxed text-content-muted">
         {beat.coverage}
       </Arrive>
     </div>

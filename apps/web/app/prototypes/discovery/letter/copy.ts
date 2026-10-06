@@ -32,7 +32,6 @@ export type Rec = Omit<Recommendation, "score">;
 export interface ProseBeat {
   readonly kind: "prose";
   readonly label: string;
-  readonly eyebrow: string;
   readonly display: Line;
   readonly body: readonly Line[];
   /** A quieter line after the key fact: a postscript, never the point. */
@@ -45,7 +44,7 @@ export interface ProseBeat {
 export interface RoleBeat {
   readonly kind: "role";
   readonly label: string;
-  readonly eyebrow: string;
+  /** The line above the title: its place among the featured roles, and the past role it builds on. */
   readonly kicker: string | null;
   readonly rec: Rec;
   readonly alsoCalled: string | null;
@@ -64,7 +63,6 @@ export interface RosterRow {
 export interface AllBeat {
   readonly kind: "all";
   readonly label: string;
-  readonly eyebrow: string;
   readonly display: Line;
   readonly body: string;
   readonly groups: readonly { readonly strength: Strength; readonly label: string; readonly rows: readonly RosterRow[] }[];
@@ -113,7 +111,7 @@ function pickFeatured(recs: readonly Rec[]): Rec[] {
 }
 
 function pathBeat(titles: string[], skills: string[], data: DiscoveryData): ProseBeat {
-  const base = { kind: "prose", label: "Where you've been", eyebrow: "Where you've been" } as const;
+  const base = { kind: "prose", label: "Where you've been" } as const;
 
   if (titles.length > 0) {
     const items = listPhrases(titles.map(withArticle));
@@ -145,7 +143,7 @@ function pathBeat(titles: string[], skills: string[], data: DiscoveryData): Pros
 }
 
 function travelsBeat(recs: readonly Rec[]): ProseBeat {
-  const base = { kind: "prose", label: "What comes with you", eyebrow: "What comes with you" } as const;
+  const base = { kind: "prose", label: "What comes with you" } as const;
 
   // Which claimed skill reaches the most of the recommended roles.
   const reach = new Map<string, { name: string; roles: Rec[] }>();
@@ -207,7 +205,6 @@ function bridgeBeat(data: DiscoveryData, n: number, featured: number): ProseBeat
   return {
     kind: "prose",
     label: "Where it could lead",
-    eyebrow: "Where it could lead",
     display: [
       { text: `Of ${pool} roles` },
       { text: "employers are hiring for now,", note: true },
@@ -241,8 +238,7 @@ function roleBeat(rec: Rec, i: number, total: number, titles: string[], said: Se
   return {
     kind: "role",
     label: rec.headline,
-    eyebrow: total > 1 ? `Closest to your path · ${i + 1} of ${total}` : "Closest to your path",
-    kicker: rec.closestPast ? `From ${rec.closestPast.titleText}, toward` : null,
+    kicker: kickerOf(rec, i, total),
     rec,
     alsoCalled: alternates.length > 0 ? `Also posted as ${joinList(alternates)}.` : null,
     echo: echo ? `${echo} is a title you've held.` : null,
@@ -250,6 +246,19 @@ function roleBeat(rec: Rec, i: number, total: number, titles: string[], said: Se
     bring,
     grow: rec.grow.map((g) => ({ name: g.name, share: percent(g.share) })),
   };
+}
+
+// The bridge beat promised the featured roles "one at a time", so each says
+// where it falls in that run as the opening of its own sentence, not as a
+// label above it: "Second, from Tech Lead, toward".
+const ORDINAL = ["First", "Second", "Third"];
+
+function kickerOf(rec: Rec, i: number, total: number): string | null {
+  const place = total < 2 ? null : i === total - 1 ? "And last" : (ORDINAL[i] ?? null);
+  const from = rec.closestPast ? `from ${rec.closestPast.titleText}, toward` : null;
+  if (place && from) return `${place}, ${from}`;
+  if (place) return `${place}, toward`;
+  return from ? capital(from) : null;
 }
 
 function allBeat(data: DiscoveryData, recs: readonly Rec[], titles: string[]): AllBeat {
@@ -264,12 +273,13 @@ function allBeat(data: DiscoveryData, recs: readonly Rec[], titles: string[]): A
   return {
     kind: "all",
     label: recs.length > 1 ? `All ${count(recs.length)}` : "The list",
-    eyebrow: recs.length > 1 ? `All ${count(recs.length)}, closest first` : "The list",
     display: recs.length > 0
       ? [{ text: "Pin the ones" }, { text: "worth watching.", key: true }]
       : [{ text: "Nothing to pin" }, { text: "just yet.", key: true }],
-    body: recs.length > 0
-      ? "Pin as many as you like. They're yours to change later."
+    body: recs.length > 1
+      ? `All ${count(recs.length)} are here, closest first. Pin as many as you like; they're yours to change later.`
+      : recs.length === 1
+        ? "Pin it if it's worth watching. You can change that later."
       : "Add a past title or a few skills to your profile, and this list will fill in.",
     groups,
     coverage: coverageLine(data),

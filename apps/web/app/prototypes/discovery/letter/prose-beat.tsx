@@ -11,7 +11,6 @@ export function ProseBeatView({ beat }: { beat: ProseBeat }) {
 
   // Cues are taken in reading order, top to bottom: the order of these
   // statements is the choreography.
-  const eyebrowAt = tl.cue(0);
   const display = phrases(beat.display, tl, { first: 0.28, note: mark });
   const body = beat.body.map((line, i) => phrases(line, tl, { first: i === 0 ? 0.55 : 0.3 }));
   const rosterAt = beat.roster && beat.roster.length > 0 ? tl.cue(0.3) : null;
@@ -21,11 +20,7 @@ export function ProseBeatView({ beat }: { beat: ProseBeat }) {
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex flex-1 flex-col justify-center pb-[6vh]">
-        <Arrive delay={eyebrowAt} as="p" className={styles.eyebrow}>
-          {beat.eyebrow}
-        </Arrive>
-
-        <h2 className={`${styles.display} mt-6 max-w-[24ch] font-display text-content-primary`}>{display}</h2>
+        <h2 className={`${styles.display} max-w-[24ch] font-display text-content-primary`}>{display}</h2>
 
         <div className={`${styles.prose} mt-10 max-w-[36rem] space-y-4 text-content-secondary`}>
           {body.map((line, i) => (
@@ -46,8 +41,11 @@ export function ProseBeatView({ beat }: { beat: ProseBeat }) {
       </div>
 
       {footnoteAt !== null && beat.footnote ? (
-        <Arrive delay={footnoteAt} as="p" className="max-w-[40rem] pb-14 text-xs leading-relaxed text-content-muted">
-          <span className={`${styles.footnoteMark} !text-[0.7em]`}>1</span> {beat.footnote}
+        // The note's own mark sits in line at full size: a superscript at
+        // footnote scale would fall under the 14px floor.
+        <Arrive delay={footnoteAt} as="p" className="flex max-w-[40rem] gap-3 pb-14 text-sm leading-relaxed text-content-muted">
+          <span className="font-medium text-(--letter-accent) tabular-nums">1</span>
+          <span>{beat.footnote}</span>
         </Arrive>
       ) : null}
     </div>
