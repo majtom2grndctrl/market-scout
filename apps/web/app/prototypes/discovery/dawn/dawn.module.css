@@ -1,31 +1,27 @@
 /*
- * Dawn's mood palette: first light. A sky held to the viewport, clear blue
- * overhead and warm at the horizon, where the pin bar sits; the sun rising
- * behind the roles (where you're going); and threads that warm from the
- * skills (where you've been) to the roles. Prototype-local by contract; a
- * winner becomes a token proposal. Ink, surfaces, and data marks still come
- * from theme.css.
+ * Dawn's mood palette: first light. Morning sky glowing out from behind the
+ * roles card (where you're going), warm sunlight inside it on the role you
+ * light, and threads that warm from the skills (where you've been) to the
+ * roles. Everywhere else, including behind the skills, is the plain page.
+ * Prototype-local by contract; a winner becomes a token proposal. Ink,
+ * surfaces, and data marks still come from theme.css.
  *
  * Every hue here is atmosphere or light, never data. Nothing on the page is a
  * measure that moves, so no gradient can read as a direction of change. Blue
- * is only ever sky, behind everything; the thread's ends are lilac and rose
+ * is only ever light behind the card; the thread's ends are lilac and rose
  * rather than the trend pair's blue and orange. Status hues (green, amber,
  * red) and the info violet stay clear.
  */
 .root {
-  /* Sky, top to bottom. Every stop holds L >= 0.953, the floor at which
-     content-muted still clears 4.5:1 on it, and stays in sRGB: the skill
-     column and intro sit straight on the sky. Blue here is air, never a
-     mark: pale, low chroma, and on a sky hue (232) clear of the trend
-     pair's 255. */
-  --dawn-zenith: oklch(0.953 0.027 232);
-  --dawn-twilight: oklch(0.953 0.022 288);
-  --dawn-lilac: oklch(0.958 0.026 315);
-  --dawn-haze: oklch(0.962 0.017 15);
-  --dawn-peach: oklch(0.958 0.026 64);
-  --dawn-sunlight: oklch(0.978 0.028 86);
-  /* The sun's centre: under the roles card. */
-  --dawn-sun-x: 50%;
+  /* Light behind the card. Morning is the peak wherever type or a thread
+     can sit on it (intro, gutter): Y >= 0.86, where content-muted clears
+     4.5:1 and the thread's rose end 3:1. Deep is bluer and goes only where
+     neither ever sits: the margin right of the card. Dusk is the faint glow
+     before first light. All in sRGB, and on a sky hue (230) clear of the
+     trend pair's 255. */
+  --dawn-morning: oklch(0.95 0.029 230);
+  --dawn-deep: oklch(0.92 0.046 232);
+  --dawn-dusk: oklch(0.958 0.018 280);
 
   /* Sunlight on things: the pin bar's glow, a lit wash. */
   --dawn-sun: oklch(0.915 0.07 66);
@@ -44,31 +40,33 @@
   --dawn-glow-edge: oklch(0.855 0.08 68);
   --dawn-ember: oklch(0.48 0.09 64);
 
-  /* Elevation tinted by the light: warm near, cool far. */
+  /* Elevation tinted by the light: warm near, cool far. The card's falls
+     only below it (each blur is matched by a negative spread): it is lit
+     from behind, and its sides keep the glow clean where the threads cross
+     to the port. */
   --dawn-lift:
     0 1px 1px oklch(0.45 0.04 60 / 0.04),
-    0 10px 24px -12px oklch(0.45 0.06 55 / 0.14),
-    0 32px 64px -32px oklch(0.55 0.06 235 / 0.22);
+    0 14px 24px -24px oklch(0.45 0.06 55 / 0.14),
+    0 40px 64px -64px oklch(0.55 0.06 235 / 0.22);
   --dawn-float:
     0 1px 0 oklch(1 0 0 / 0.9) inset,
     0 8px 24px -12px oklch(0.4 0.06 55 / 0.16),
     0 24px 48px -24px oklch(0.5 0.07 235 / 0.16);
-  /* A lit skill's halo: sunlight blooming off it. Brighter than the sky it
+  /* A lit skill's halo: sunlight blooming off it. Brighter than the page it
      spills onto, so it lifts its neighbours' contrast rather than shading
-     it; a darker glow reads as a shadow on a blue sky. */
+     it. */
   --dawn-halo: 0 0 0 1px var(--dawn-glow-edge), 0 1px 12px 1px oklch(0.99 0.03 88 / 0.95);
   --dawn-halo-soft: 0 1px 12px 1px oklch(0.99 0.03 88 / 0.85);
 
   container: dawn / inline-size;
+  /* The light behind the card spills past it; it never widens the page. */
+  overflow-x: clip;
 }
 
 :global(.dark) .root {
-  --dawn-zenith: oklch(0.25 0.04 235);
-  --dawn-twilight: oklch(0.22 0.03 288);
-  --dawn-lilac: oklch(0.23 0.03 315);
-  --dawn-haze: oklch(0.22 0.02 15);
-  --dawn-peach: oklch(0.25 0.035 60);
-  --dawn-sunlight: oklch(0.29 0.045 70);
+  --dawn-morning: oklch(0.27 0.045 235);
+  --dawn-deep: oklch(0.3 0.06 235);
+  --dawn-dusk: oklch(0.235 0.03 280);
   --dawn-sun: oklch(0.34 0.07 55);
   --dawn-horizon: oklch(0.26 0.035 65);
   --dawn-thread-cool: oklch(0.72 0.09 310);
@@ -84,40 +82,94 @@
 }
 
 /*
- * The sky, held to the viewport. The frame sticks under the app header for
- * the whole page and takes no space (its negative margin cancels its
- * height), so it is one composited layer the compositor keeps in place while
- * the page scrolls over it: no repaint and no script per frame. It stays
- * inside the root, so it never reaches under the sidebar.
+ * Morning light from behind the roles card. A grid item in the card's own
+ * cell, painted under it, so it moves and reflows with the card and never
+ * reaches the skill column or the space above it: those keep the plain page.
  *
- * Three layers. The twilight base is there from the start. With the first
- * light (see sky.tsx) the blue clears overhead, and the sun layer, a warm
- * band at the horizon with the sun behind the roles card, climbs into place.
- * Gradients mix in oklab, so no stop between two light colours dips darker
- * than either end.
+ * Inside that cell the frame sticks under the app header, so the light holds
+ * to the part of the card on screen, from the card's top edge to its bottom.
+ * Between them it is one composited layer the compositor keeps in place: no
+ * repaint and no script per scroll frame. What spills past the card's sides
+ * is clipped by the root, so the page never widens.
+ *
+ * Dusk, faint and close, is there from the start. Morning blooms out with
+ * the first light (see sky.tsx), in three parts:
+ * - a halo, the card's own shape blurred, at its peak along the card's
+ *   edges and gone by the end of the gutter, before the skill column;
+ * - a dome, a radial rising from behind the card's top edge into the intro;
+ * - a deeper bloom right of the card, where nothing is read.
+ * The frame's top and bottom edges glow too, but a stuck frame's top sits
+ * under the app header and its bottom below the viewport, so only the card's
+ * real top and bottom edges show light. Gradients mix in oklab, so no stop
+ * between two light colours dips darker than either end.
  */
-.skyFrame {
+.glow {
+  position: relative;
+  z-index: -1;
+  pointer-events: none;
+  /* Spill past the card, per side, and the halo that fills it. Narrow: the
+     page's side padding, short of the skills that sit just over the card. */
+  --dawn-spill-l: 1.5rem;
+  --dawn-spill-r: 1.5rem;
+  --dawn-spill-t: 1.5rem;
+  --dawn-halo-glow: 0 0.25rem 1.25rem 0.25rem;
+  --dawn-dusk-glow: 0 0.25rem 1rem 0;
+}
+
+.glowFrame {
   position: sticky;
   top: 3.5rem;
-  z-index: -10;
   height: calc(100svh - 3.5rem);
-  margin-bottom: calc(3.5rem - 100svh);
-  overflow: hidden;
   will-change: transform;
 }
 
-.sky {
-  background: linear-gradient(in oklab to bottom, var(--dawn-twilight) 0%, var(--dawn-lilac) 58%, var(--dawn-haze) 100%);
+.dusk,
+.morning {
+  position: absolute;
+  inset: 0;
+  border-radius: 1.75rem;
+  transform-origin: 50% 0;
 }
 
-.clear {
-  background: linear-gradient(in oklab to bottom, var(--dawn-zenith) 0%, var(--dawn-zenith) 34%, transparent 72%);
+.dusk {
+  box-shadow: var(--dawn-dusk-glow) var(--dawn-dusk);
 }
 
-.sun {
-  background:
-    radial-gradient(ellipse 44% 36% at var(--dawn-sun-x) 100% in oklab, var(--dawn-sunlight) 0%, transparent 100%),
-    linear-gradient(in oklab to top, var(--dawn-peach) 0%, var(--dawn-peach) 6%, transparent 36%);
+.morning {
+  box-shadow: var(--dawn-halo-glow) var(--dawn-morning);
+}
+
+/* The dome and the deeper bloom, in a box reaching past the card. The dome's
+   box is the card plus the left spill on both sides, so it centres on the
+   card; Chrome takes no calc() with a percentage in a radial's size, so the
+   box carries the arithmetic instead. The bloom starts below the card's top
+   edge, clear of the intro. Morning scales from that edge, so it rises out
+   from behind the card as it blooms. */
+.morning::before {
+  content: "";
+  position: absolute;
+  top: calc(-1 * var(--dawn-spill-t));
+  bottom: 0;
+  left: calc(-1 * var(--dawn-spill-l));
+  right: calc(-1 * var(--dawn-spill-r));
+  background-image:
+    radial-gradient(
+      ellipse var(--dawn-spill-r) 34% at calc(100% - var(--dawn-spill-r)) 54% in oklab,
+      var(--dawn-deep) 0,
+      oklch(from var(--dawn-deep) l c h / 0.55) 45%,
+      transparent 100%
+    ),
+    radial-gradient(
+      ellipse 50% calc(var(--dawn-spill-t) * 1.1) at 50% var(--dawn-spill-t) in oklab,
+      var(--dawn-morning) 0,
+      var(--dawn-morning) 42%,
+      oklch(from var(--dawn-morning) l c h / 0.5) 70%,
+      transparent 100%
+    );
+  background-size:
+    100% 100%,
+    calc(100% - var(--dawn-spill-r) + var(--dawn-spill-l)) 100%;
+  background-repeat: no-repeat;
 }
 
 /* The lit role: light falls on it from the port, at the card's left edge,
@@ -173,8 +225,14 @@
 }
 
 @container dawn (min-width: 60rem) {
-  .skyFrame {
-    --dawn-sun-x: 66%;
+  .glow {
+    --dawn-spill-l: 5.5rem;
+    /* As far as the page's right margin reaches, up to 16rem. */
+    --dawn-spill-r: clamp(2.5rem, calc((100cqw - 76rem) / 2 + 2.5rem), 16rem);
+    --dawn-spill-t: 14rem;
+    /* Peak at the card's edge, faded out a spill's width from it. */
+    --dawn-halo-glow: 0 0 3.5rem 2rem;
+    --dawn-dusk-glow: 0 0 2.5rem 0.5rem;
   }
 
   .grid {
@@ -225,6 +283,13 @@
   display: none;
 }
 
+/* Narrow placement: the light shares the card's cell, under the skills. */
+.glow,
+.card {
+  grid-column: 1;
+  grid-row: 3;
+}
+
 /* Wide placement: the column and gutter span both rows, so the column can
    stick for the whole length of the roles card. */
 @container dawn (min-width: 60rem) {
@@ -244,9 +309,13 @@
     grid-row: 1 / span 2;
   }
 
+  .glow,
   .card {
     grid-column: 3;
     grid-row: 2;
+  }
+
+  .card {
     align-self: start;
   }
 

@@ -72,8 +72,6 @@ export function DawnDiscovery({ data, lines }: { data: DiscoveryData; lines: Lin
   return (
     <MotionConfig reducedMotion="user">
       <div className={cn(styles.root, "relative isolate min-h-[calc(100svh-3.5rem)]")}>
-        <Sky risen={activeSlug !== null} />
-
         <div ref={containerRef} className={cn(styles.grid, "relative mx-auto max-w-[76rem] px-6 pb-16 md:px-10")}>
           <Intro data={data} className={cn(styles.intro, "pt-12 @min-[60rem]/dawn:pt-14 @min-[60rem]/dawn:pb-10")} />
           <SkillColumn
@@ -85,6 +83,7 @@ export function DawnDiscovery({ data, lines }: { data: DiscoveryData; lines: Lin
             registerSkill={registerSkill}
           />
           <div aria-hidden className={styles.gutter} />
+          <Sky risen={activeSlug !== null} />
           <RoleCard
             className={styles.card}
             recs={recs}
