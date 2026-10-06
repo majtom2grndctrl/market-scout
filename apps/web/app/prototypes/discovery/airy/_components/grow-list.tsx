@@ -29,13 +29,13 @@ export function GrowList({
 
   return (
     <div>
-      <p className="text-[0.8125rem] font-medium text-content-muted">It also asks for</p>
-      <ul className={cn("mt-3", compact ? "space-y-2.5" : "space-y-3.5")}>
+      <p className="text-sm font-medium text-content-muted">It also asks for</p>
+      <ul className={cn("mt-3", compact ? "space-y-3" : "space-y-4")}>
         {rows.map((g, i) => (
           <li key={g.slug}>
             <div className="flex items-baseline justify-between gap-4">
-              <span className={cn("min-w-0 text-content-primary", compact ? "text-[0.8125rem]" : "text-sm")}>{g.name}</span>
-              <span className="shrink-0 text-[0.75rem] whitespace-nowrap text-content-muted tabular-nums">
+              <span className={cn("min-w-0 text-content-primary", compact ? "text-[0.9375rem]" : "text-base")}>{g.name}</span>
+              <span className="shrink-0 text-sm whitespace-nowrap text-content-muted tabular-nums">
                 in {shareLabel(g.share)} of postings
               </span>
             </div>

@@ -37,7 +37,7 @@ function Count({ n }: { n: number }) {
           </motion.span>
         </AnimatePresence>
       </span>
-      <span className="text-[0.8125rem] leading-tight text-content-secondary">
+      <span className="text-[0.9375rem] leading-tight text-content-secondary">
         {plural(n, "role")}
         <br />
         pinned
@@ -65,7 +65,7 @@ function PinChip({ rec, onUnpin }: { rec: Recommendation; onUnpin: (roleSlug: st
         <button
           type="button"
           onClick={() => scrollToRole(rec.roleSlug)}
-          className="max-w-[13rem] min-w-0 cursor-pointer truncate rounded-full py-1 pr-1 pl-3.5 text-[0.8125rem] font-medium text-content-primary outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="max-w-[14rem] min-w-0 cursor-pointer truncate rounded-full py-1 pr-1 pl-3.5 text-sm font-medium text-content-primary outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           {rec.headline}
         </button>
@@ -118,7 +118,7 @@ export function PinTray({
     >
       <div
         ref={scope}
-        className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[1.75rem] bg-surface-raised/78 p-3 pl-5 shadow-(--airy-tray) ring-1 ring-edge-hairline backdrop-blur-xl backdrop-saturate-150 md:flex-nowrap md:gap-6 md:pl-6"
+        className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-[1.75rem] bg-surface-raised/84 p-3 pl-5 shadow-(--airy-tray) ring-1 ring-edge-hairline backdrop-blur-xl backdrop-saturate-150 md:flex-nowrap md:gap-6 md:pl-6"
       >
         <Count n={n} />
 
@@ -127,7 +127,7 @@ export function PinTray({
             {n === 0 && (
               <motion.p
                 key="hint"
-                className="text-sm text-content-muted"
+                className="text-sm text-content-muted md:text-[0.9375rem]"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0, transition: { duration: 0.15 } }}
@@ -142,7 +142,7 @@ export function PinTray({
               <motion.li
                 layout
                 transition={FLIGHT}
-                className="grid h-9 shrink-0 place-items-center rounded-full px-3 text-[0.8125rem] font-medium text-content-secondary ring-1 ring-edge ring-inset tabular-nums"
+                className="grid h-9 shrink-0 place-items-center rounded-full px-3 text-sm font-medium text-content-secondary ring-1 ring-edge ring-inset tabular-nums"
               >
                 +{folded}
               </motion.li>
@@ -165,7 +165,8 @@ export function PinTray({
             "transition-[background-color,color] duration-300 ease-out focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2",
             ready
               ? "cursor-pointer bg-accent-solid text-on-solid hover:bg-accent-hover active:bg-accent-active"
-              : "cursor-not-allowed bg-surface-sunken text-content-disabled",
+              : // A genuinely disabled control: the one exemption from the 4.5:1 text bar.
+                "cursor-not-allowed bg-surface-sunken text-content-disabled",
           )}
         >
           <AnimatePresence mode="popLayout" initial={false}>

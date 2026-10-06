@@ -19,26 +19,34 @@ export type Density = "feature" | "standard" | "light";
 const ALSO_LIMIT: Record<Density, number> = { feature: 4, standard: 3, light: 2 };
 const GROW_LIMIT: Record<Density, number> = { feature: 4, standard: 3, light: 3 };
 
-function Evidence({ rec, light }: { rec: Recommendation; light: boolean }) {
+// Each density steps its whole scale together, floor 14px: the headline
+// carries the level, values sit a step under it in primary ink, and labels
+// recede by ink at the floor rather than by size. VALUE sizes both the
+// alternate titles and the evidence values.
+const RANK: Record<Density, string> = { feature: "text-lg", standard: "text-base", light: "text-sm" };
+const VALUE: Record<Density, string> = { feature: "text-base", standard: "text-base", light: "text-[0.9375rem]" };
+
+function Evidence({ rec, density }: { rec: Recommendation; density: Density }) {
+  const light = density === "light";
   if (!rec.closestPast && rec.bring.length === 0) return null;
   return (
-    <dl className={cn("flex flex-wrap gap-x-10 gap-y-4", light && "gap-x-8 gap-y-3")}>
+    <dl className={cn("flex flex-wrap gap-x-10 gap-y-5", light && "gap-x-8 gap-y-4")}>
       {rec.closestPast && (
         <div>
-          <dt className="text-[0.8125rem] font-medium text-content-muted">Nearest past title</dt>
-          <dd className={cn("mt-1.5 font-medium text-content-primary", light ? "text-sm" : "text-[0.9375rem]")}>
+          <dt className="text-sm font-medium text-content-muted">Nearest past title</dt>
+          <dd className={cn("mt-1.5 font-medium text-content-primary", VALUE[density])}>
             {rec.closestPast.titleText}
           </dd>
         </div>
       )}
       {rec.bring.length > 0 && (
         <div>
-          <dt className="text-[0.8125rem] font-medium text-content-muted">You bring</dt>
-          <dd className="mt-1 flex flex-wrap gap-1.5">
+          <dt className="text-sm font-medium text-content-muted">You bring</dt>
+          <dd className="mt-1.5 flex flex-wrap gap-1.5">
             {rec.bring.map((s) => (
               <span
                 key={s.slug}
-                className="inline-flex h-7 items-center rounded-full bg-(--airy-glow) px-2.5 text-[0.8125rem] text-content-primary ring-1 ring-(--airy-glow-edge) ring-inset"
+                className="inline-flex h-8 items-center rounded-full bg-(--airy-glow) px-3 text-sm text-content-primary ring-1 ring-(--airy-glow-edge) ring-inset"
               >
                 {s.name}
               </span>
@@ -69,31 +77,32 @@ export function RoleCard({
   const light = density === "light";
   const titleId = `airy-role-${rec.roleSlug}-title`;
 
-  const heading = (
-    <div className="min-w-0">
-      <p className="font-display text-[0.8125rem] text-content-muted tabular-nums">{String(rec.rank).padStart(2, "0")}</p>
-      <h3
-        id={titleId}
-        className={cn(
-          "mt-2 font-display font-normal text-balance text-content-primary",
-          feature && "text-[clamp(2rem,1.3rem+1.4vw,2.625rem)] leading-[1.02] tracking-[-0.03em]",
-          density === "standard" && "text-[1.75rem] leading-[1.08] tracking-[-0.022em]",
-          light && "text-[1.25rem] leading-[1.15] tracking-[-0.012em]",
-        )}
-      >
-        {rec.headline}
-      </h3>
-      {also.length > 0 && (
-        <p className={cn("mt-2.5 text-pretty text-content-secondary", light ? "text-[0.8125rem]" : "text-[0.9375rem]")}>
-          <span className="text-content-muted">Also posted as </span>
-          {also.join(" · ")}
-        </p>
+  const title = (
+    <h3
+      id={titleId}
+      className={cn(
+        "font-display font-normal text-balance text-content-primary",
+        feature && "text-[clamp(2rem,1.3rem+1.4vw,2.625rem)] leading-[1.02] tracking-[-0.03em]",
+        density === "standard" && "text-[1.875rem] leading-[1.08] tracking-[-0.022em]",
+        light && "text-[1.375rem] leading-[1.15] tracking-[-0.012em]",
       )}
-    </div>
+    >
+      {/* The rank rides the headline as an index rather than a label above it. */}
+      <span className={cn("mr-[0.3em] align-top font-light tracking-normal text-content-muted tabular-nums", RANK[density])}>
+        {String(rec.rank).padStart(2, "0")}
+      </span>
+      {rec.headline}
+    </h3>
+  );
+  const alsoLine = also.length > 0 && (
+    <p className={cn("mt-3 text-pretty text-content-secondary", VALUE[density])}>
+      <span className="text-content-muted">Also posted as </span>
+      {also.join(" · ")}
+    </p>
   );
 
   const pin = <PinButton roleSlug={rec.roleSlug} headline={rec.headline} pinned={pinned} onToggle={onToggle} />;
-  const postings = <p className="text-[0.8125rem] text-content-muted tabular-nums">{postingsLine(rec)}</p>;
+  const postings = <p className="text-sm text-content-muted tabular-nums">{postingsLine(rec)}</p>;
 
   return (
     <motion.article
@@ -126,12 +135,15 @@ export function RoleCard({
 
         {light ? (
           <div className="relative flex h-full flex-col">
+            {/* The pin shares a row with the title only; alternate titles take
+                the tile's full width below, so they never wrap into a sliver. */}
             <div className="flex items-start justify-between gap-5">
-              {heading}
+              <div className="min-w-0 pt-1">{title}</div>
               {pin}
             </div>
-            <div className="mt-5 space-y-5">
-              <Evidence rec={rec} light />
+            {alsoLine}
+            <div className="mt-6 space-y-6">
+              <Evidence rec={rec} density={density} />
               <GrowList grow={rec.grow} limit={GROW_LIMIT[density]} arriveAt={delay} compact />
             </div>
             <div className="mt-auto pt-6">{postings}</div>
@@ -139,14 +151,15 @@ export function RoleCard({
         ) : (
           <div
             className={cn(
-              "relative grid gap-8",
-              feature ? "md:grid-cols-[minmax(0,1fr)_minmax(0,19rem)] md:gap-14" : "md:grid-cols-[minmax(0,1fr)_minmax(0,16.5rem)] md:gap-12",
+              "relative grid gap-8 md:gap-10",
+              feature ? "md:grid-cols-[minmax(0,1fr)_minmax(0,19.5rem)]" : "md:grid-cols-[minmax(0,1fr)_minmax(0,19rem)]",
             )}
           >
             <div className="flex min-w-0 flex-col">
-              {heading}
-              <div className={feature ? "mt-8" : "mt-6"}>
-                <Evidence rec={rec} light={false} />
+              {title}
+              {alsoLine}
+              <div className={feature ? "mt-9" : "mt-7"}>
+                <Evidence rec={rec} density={density} />
               </div>
               <div className={cn("mt-auto", feature ? "pt-8" : "pt-6")}>{postings}</div>
             </div>

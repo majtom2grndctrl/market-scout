@@ -60,13 +60,13 @@ export function TierSection({
         transition={drift(index === 0 ? FIRST_CARD - 0.2 : 0, 1.1)}
       >
         <Ripples strength={copy.strength} />
-        <h2 id={headingId} className="mt-4 font-display text-[1.75rem] leading-[1.1] font-normal tracking-[-0.02em] text-content-primary">
+        <h2 id={headingId} className="mt-4 font-display text-[1.875rem] leading-[1.1] font-normal tracking-[-0.02em] text-content-primary">
           {copy.name}
         </h2>
-        <p className="mt-1.5 text-sm text-content-muted">
+        <p className="mt-2 text-[0.9375rem] text-content-muted">
           {capitalize(countWord(recs.length))} {plural(recs.length, "role")}
         </p>
-        {copy.note && <p className="mt-4 text-[0.9375rem] leading-relaxed text-pretty text-content-secondary">{copy.note}</p>}
+        {copy.note && <p className="mt-5 text-base leading-relaxed text-pretty text-content-secondary">{copy.note}</p>}
       </motion.header>
 
       <div

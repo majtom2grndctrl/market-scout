@@ -36,11 +36,13 @@ export function Trail({ data }: { data: DiscoveryData }) {
     >
       {past.length > 0 && (
         <section>
-          <h2 className="font-sans text-[0.8125rem] font-medium text-content-muted">Where you&apos;ve been</h2>
+          <h2 className="font-display text-[1.25rem] leading-tight font-normal tracking-[-0.012em] text-content-primary">
+            Where you&apos;ve been
+          </h2>
           <ol className="relative mt-3">
             <motion.span
               aria-hidden
-              className="absolute top-4 bottom-4 left-[5px] w-px origin-top bg-(--airy-thread)"
+              className="absolute top-5 bottom-5 left-[5px] w-px origin-top bg-(--airy-thread)"
               initial={{ scaleY: 0 }}
               animate={{ scaleY: 1 }}
               transition={drift(ITEMS_AT - 0.1, 0.4 + past.length * ITEM_STEP * 1.6)}
@@ -64,12 +66,12 @@ export function Trail({ data }: { data: DiscoveryData }) {
                   <span
                     aria-hidden
                     className={cn(
-                      "absolute top-[0.75rem] left-0 size-[11px] rounded-full border-2",
+                      "absolute top-[0.72rem] left-0 size-[11px] rounded-full border-2",
                       n > 0 ? "border-(--airy-ember) bg-(--airy-glow)" : "border-(--airy-thread) bg-surface-raised",
                     )}
                   />
-                  <p className="text-[0.9375rem] leading-snug font-medium text-content-primary">{p.titleText}</p>
-                  {note && <p className="mt-0.5 text-[0.8125rem] text-content-muted">{note}</p>}
+                  <p className="text-base leading-snug font-medium text-content-primary">{p.titleText}</p>
+                  {note && <p className="mt-0.5 text-sm text-content-muted">{note}</p>}
                 </motion.li>
               );
             })}
@@ -79,18 +81,20 @@ export function Trail({ data }: { data: DiscoveryData }) {
 
       {skills.length > 0 && (
         <motion.section
-          className={cn(past.length > 0 && "mt-4 border-t border-edge-hairline pt-4")}
+          className={cn(past.length > 0 && "mt-5 border-t border-edge-hairline pt-5")}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={drift(skillsAt, 1)}
         >
-          <h2 className="font-sans text-[0.8125rem] font-medium text-content-muted">What you named</h2>
-          <ul className="mt-3 flex flex-wrap gap-1.5">
+          <h2 className="font-display text-[1.25rem] leading-tight font-normal tracking-[-0.012em] text-content-primary">
+            What you named
+          </h2>
+          <ul className="mt-3.5 flex flex-wrap gap-1.5">
             {skills.map((s, i) => (
               <li
                 key={`${s.text}-${i}`}
                 className={cn(
-                  "inline-flex h-6.5 items-center rounded-full px-2.5 text-[0.75rem]",
+                  "inline-flex h-7.5 items-center rounded-full px-3 text-sm",
                   s.carries > 0
                     ? "bg-(--airy-glow) text-content-primary ring-1 ring-(--airy-glow-edge) ring-inset"
                     : "text-content-secondary ring-1 ring-edge ring-inset",
@@ -98,13 +102,13 @@ export function Trail({ data }: { data: DiscoveryData }) {
               >
                 {s.text}
                 {s.carries > 0 && (
-                  <span className="ml-1.5 text-[0.75rem] font-medium text-(--airy-ember) tabular-nums">{s.carries}</span>
+                  <span className="ml-2 text-sm font-medium text-(--airy-ember) tabular-nums">{s.carries}</span>
                 )}
               </li>
             ))}
           </ul>
           {anyCarries && (
-            <p className="mt-3 text-[0.75rem] leading-relaxed text-content-muted">
+            <p className="mt-4 text-sm leading-relaxed text-content-muted">
               The number is how many of the roles below count the skill among their ten defining skills.
             </p>
           )}
