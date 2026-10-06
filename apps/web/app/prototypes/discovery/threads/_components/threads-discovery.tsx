@@ -5,20 +5,28 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { DiscoveryData, Recommendation } from "../../_data/query";
 import { reachedSlugs } from "../_lib/copy";
+import { effectiveLineMode, type LineMode } from "../_lib/modes";
 import { ENTRANCE } from "../_lib/motion";
 import { useThreads } from "../_lib/use-threads";
 import styles from "../threads.module.css";
 import { Connectors } from "./connectors";
 import { Intro } from "./intro";
+import { Pieces } from "./pieces";
 import { RoleCard } from "./role-card";
 import { SkillColumn } from "./skill-column";
 import { cn } from "@/lib/utils";
 
 const NO_LIGHT: ReadonlyMap<string, number> = new Map();
 
-export function ThreadsDiscovery({ data }: { data: DiscoveryData }) {
+export function ThreadsDiscovery({ data, lines }: { data: DiscoveryData; lines: LineMode }) {
   const recs = data.recommendations;
   const reduce = useReducedMotion() ?? false;
+
+  // The server renders the requested mode; the browser falls back to fade
+  // where it lacks scroll-driven animations. No line draws before the first
+  // light, so the switch is never seen.
+  const [mode, setMode] = useState<LineMode>(lines);
+  useEffect(() => setMode(effectiveLineMode(lines)), [lines]);
 
   // One role holds the light at a time. It stays with the last role hovered,
   // focused, or tapped, so the reader can move to the skills without losing it.
@@ -41,7 +49,7 @@ export function ThreadsDiscovery({ data }: { data: DiscoveryData }) {
   }, [first, reduce]);
 
   const active = useMemo(() => recs.find((r) => r.roleSlug === activeSlug) ?? null, [recs, activeSlug]);
-  const { light: lighting, threads, bind, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole } = useThreads(active, reduce);
+  const { light: lighting, threads, bind, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole } = useThreads(active, reduce, mode);
 
   // Pins are local by contract: seeded from the profile, never written back.
   const [order, setOrder] = useState<string[]>(() => recs.filter((r) => r.pinned).map((r) => r.roleSlug));
@@ -91,7 +99,8 @@ export function ThreadsDiscovery({ data }: { data: DiscoveryData }) {
             barRef={barRef}
             registerRole={registerRole}
           />
-          <Connectors store={threads} bind={bind} />
+          <Connectors store={threads} bind={bind} mode={mode} />
+          {mode === "compositor" && <Pieces store={threads} bind={bind} />}
         </div>
       </div>
     </MotionConfig>

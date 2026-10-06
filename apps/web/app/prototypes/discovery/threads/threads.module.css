@@ -122,7 +122,8 @@
   }
 }
 
-.gutter {
+.gutter,
+.pieces {
   display: none;
 }
 
@@ -149,5 +150,24 @@
     grid-column: 3;
     grid-row: 2;
     align-self: start;
+  }
+
+  /* Compositor lines (see pieces.tsx). Sticks exactly as the column does, in
+     the same grid rows, so it moves with the column on the compositor; it
+     reaches across the gutter and a little into the card for the port. It
+     clips like the column, so no line runs past what the column shows. */
+  .pieces {
+    display: block;
+    grid-column: 1 / span 2;
+    grid-row: 1 / span 2;
+    position: sticky;
+    top: 3.5rem;
+    align-self: start;
+    height: calc(100svh - 3.5rem);
+    min-width: 0;
+    margin-right: -0.5rem;
+    overflow: clip;
+    pointer-events: none;
+    z-index: 10;
   }
 }

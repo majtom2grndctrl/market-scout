@@ -3,187 +3,35 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefCallback } from "react";
 
 import type { Recommendation } from "../../_data/query";
-import { routeBundle, SPACING, type Target } from "./geometry";
-import { arrivalOf } from "./motion";
+import { composeFrame, reachOf, shownMarks, trackOf } from "./compose";
+import { createDriver, type Drive } from "./drive";
+import { routeBundle, type Target } from "./geometry";
+import { HEADER, readLayout, seen, useRegistry, type Layout } from "./layout";
+import type { LineMode } from "./modes";
+import { arrivalOf, DRAW_DELAY, drawDuration } from "./motion";
+import { createStore, lineKey, paint, portKey, sameThreads, type Attrs, type Bind, type Light, type Threads, type ThreadsStore } from "./store";
+import { translateKeyframes, valueAt, type Track } from "./track";
 
-/** The app layout's sticky header; a port tucked under it has nothing to draw from. */
-const HEADER = 56;
-/** Narrower than this between the columns, the layout has stacked and lines are off. */
-const MIN_GUTTER = 48;
 const SCROLL_SETTLE_MS = 140;
-/** Half the column's 3rem soft edge: a marker past this is too faded to aim a line at. */
-const FADE = 24;
 /** The bundle's fade-out (see Connectors) plus a frame. A bundle hidden longer than this stops following the scroll. */
 const HIDDEN_MS = 300;
 
-/** The role holding the light, and the skills it lights. Changes only when the role does. */
-export interface Light {
-  readonly role: string;
-  /** Lit skills, each with the seconds until its line arrives. */
-  readonly lit: ReadonlyMap<string, number>;
-}
-
-export interface Line {
-  readonly slug: string;
-  /** Length when the line appeared, so it draws at the shared speed. */
-  readonly length: number;
-}
-
-/**
- * Which lines exist and whether they show. Changes when a role lights, a line
- * appears or drops, or the bundle fades. Line geometry is not here: it
- * changes every scroll frame, so the hook writes it straight to the SVG
- * (see `bind`).
- */
-export interface Threads {
-  readonly role: string;
-  /** Lines in port order. Null when the layout is stacked: skills still light, but nothing is drawn. */
-  readonly lines: readonly Line[] | null;
-  /** False once too little of the role shows between the header and the pin bar to hold its port. */
-  readonly visible: boolean;
-}
-
-/**
- * Holds `Threads` outside React state, so a change mid-scroll re-renders the
- * connectors alone (through useSyncExternalStore), not the whole page.
- */
-export interface ThreadsStore {
-  readonly get: () => Threads | null;
-  readonly subscribe: (onChange: () => void) => () => void;
-}
-
-/** Ref for an SVG element whose geometry the hook writes. */
-export type Bind = (key: string) => RefCallback<SVGElement>;
-
-export const lineKey = (role: string, slug: string) => `${role}/${slug}`;
-export const portKey = (role: string) => `${role}#port`;
-
-type Attrs = Readonly<Record<string, string>>;
-
-function paint(el: Element, attrs: Attrs) {
-  for (const name in attrs) if (el.getAttribute(name) !== attrs[name]) el.setAttribute(name, attrs[name]);
-}
-
-function createStore() {
-  let value: Threads | null = null;
-  const subs = new Set<() => void>();
-  return {
-    get: () => value,
-    set: (next: Threads | null) => {
-      value = next;
-      subs.forEach((f) => f());
-    },
-    subscribe: (f: () => void) => {
-      subs.add(f);
-      return () => void subs.delete(f);
-    },
-  };
-}
-
-const sameThreads = (a: Threads | null, b: Threads | null) =>
-  a === b ||
-  (a !== null &&
-    b !== null &&
-    a.role === b.role &&
-    a.visible === b.visible &&
-    (a.lines === b.lines ||
-      (a.lines !== null && b.lines !== null && a.lines.length === b.lines.length && a.lines.every((l, i) => l.slug === b.lines?.[i].slug))));
-
-/**
- * Offsets that move only when the layout does. The roles card scrolls with
- * the container, so the role's anchor is fixed in container space; the skill
- * markers ride in the column's own scroll, so they are fixed in its content
- * space. A scroll frame then needs only where the container and the column
- * sit now.
- */
-interface Layout {
-  readonly role: string | null;
-  readonly viewH: number;
-  readonly colClient: number;
-  readonly colScroll: number;
-  readonly stacked: boolean;
-  /** The card's left edge, in container x. */
-  readonly originX: number;
-  /** The column's right edge, in container x. */
-  readonly gutterLeft: number;
-  /** The headline's middle and its row's extent, in container y. */
-  readonly anchor: { readonly mid: number; readonly top: number; readonly bottom: number } | null;
-  /** Each connected skill's marker: x in container space, y in the column's scroll content. */
-  readonly marks: readonly Target[];
-}
-
-function readLayout(
-  active: Recommendation | null,
-  container: HTMLElement,
-  column: HTMLElement,
-  card: HTMLElement,
-  skillEls: ReadonlyMap<string, HTMLElement>,
-  roleEls: ReadonlyMap<string, HTMLElement>,
-): Layout {
-  const box = container.getBoundingClientRect();
-  const col = column.getBoundingClientRect();
-  const cardBox = card.getBoundingClientRect();
-  const head = active ? roleEls.get(active.roleSlug) : undefined;
-  const anchor = head?.getBoundingClientRect();
-  const item = head?.closest("li")?.getBoundingClientRect();
-  const scrollTop = column.scrollTop;
-  const marks = (active?.connects ?? []).flatMap((c): Target[] => {
-    const r = skillEls.get(c.slug)?.getBoundingClientRect();
-    return r ? [{ slug: c.slug, x: r.right - box.left - 0.5, y: r.top + r.height / 2 - col.top + scrollTop }] : [];
-  });
-  return {
-    role: active?.roleSlug ?? null,
-    viewH: window.innerHeight,
-    colClient: column.clientHeight,
-    colScroll: column.scrollHeight,
-    stacked: cardBox.left - col.right < MIN_GUTTER,
-    originX: cardBox.left - box.left,
-    gutterLeft: col.right - box.left,
-    anchor: anchor && item ? { mid: anchor.top + anchor.height / 2 - box.top, top: item.top - box.top, bottom: item.bottom - box.top } : null,
-    marks,
-  };
-}
-
-/** The band of the skill column that shows, in viewport y, short of any soft edge. */
-function seen(col: DOMRect, moreAbove: boolean, moreBelow: boolean) {
-  return { top: col.top + (moreAbove ? FADE : 0), bottom: col.bottom - (moreBelow ? FADE : 0) };
-}
-
-type Register = (key: string) => (el: HTMLElement | null) => void;
-
-function useRegistry(): [Map<string, HTMLElement>, Register] {
-  const [els] = useState(() => new Map<string, HTMLElement>());
-  const [refs] = useState(() => new Map<string, (el: HTMLElement | null) => void>());
-  const register = useCallback<Register>(
-    (key) => {
-      let ref = refs.get(key);
-      if (!ref) {
-        ref = (el) => {
-          if (el) els.set(key, el);
-          else els.delete(key);
-        };
-        refs.set(key, ref);
-      }
-      return ref;
-    },
-    [els, refs],
-  );
-  return [els, register];
-}
+const roleOf = (key: string) => key.split(/[/#]/)[0];
 
 /**
  * Routes a bundle from the active role to the skills it connects, and keeps
- * it on them through scroll, resize, and font load.
+ * it on them through scroll, resize, and font load. `mode` sets what happens
+ * while the page scrolls (see `modes.ts`).
  *
  * A scroll frame is cheap by construction. Offsets only a layout change can
  * move are cached (see `Layout`) and re-read on resize, on any size change of
  * the columns, on font load, and once when a scroll settles. A scroll frame
- * reads four values, all before any write, so none forces a layout; routes in
- * pure code; and writes path geometry to the SVG directly. React renders the
+ * reads a few values, all before any write, so none forces a layout; routes in
+ * pure code; and writes geometry to the DOM directly. React renders the
  * connectors only when the set of lines or their visibility changes, and the
  * page only when the light moves to another role.
  */
-export function useThreads(active: Recommendation | null, reduceMotion: boolean) {
+export function useThreads(active: Recommendation | null, reduceMotion: boolean, mode: LineMode) {
   const containerRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLElement>(null);
   const cardRef = useRef<HTMLElement>(null);
@@ -192,6 +40,7 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
   const [roleEls, registerRole] = useRegistry();
   const [light, setLight] = useState<Light | null>(null);
   const [store] = useState(createStore);
+  const [driver] = useState(createDriver);
   const layout = useRef<Layout | null>(null);
   /** Current geometry by element key, for the active role only. */
   const geometry = useRef<ReadonlyMap<string, Attrs>>(new Map());
@@ -200,29 +49,44 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
   /** True while the page is mid-scroll: a role sliding under a still pointer is not a hover. */
   const isScrolling = useCallback(() => performance.now() - lastScroll.current < SCROLL_SETTLE_MS, []);
 
+  // Fade mode: lines hide while the page scrolls; each settle redraws them.
+  const quiet = useRef(false);
+  const epoch = useRef(0);
+  /** Set while the hook scrolls the skill column itself, so fade mode doesn't take it for the reader's scroll. */
+  const ownScroll = useRef(false);
+  // Compositor mode: the port's track per layout, each line's last rise, and
+  // whether the draw-in has handed over to the pieces.
+  const track = useRef<{ layout: Layout; reach: number; track: Track | null } | null>(null);
+  const rises = useRef(new Map<string, number>());
+  const drawn = useRef(true);
+  const drawTimer = useRef(0);
+
   // Keyed by role as well as slug, so the outgoing bundle keeps its last
   // geometry while it fades and only the active one follows the scroll.
-  const [svgEls] = useState(() => new Map<string, SVGElement>());
-  const [binds] = useState(() => new Map<string, RefCallback<SVGElement>>());
+  const [els] = useState(() => new Map<string, Element>());
+  const [binds] = useState(() => new Map<string, RefCallback<Element>>());
   const bind = useCallback<Bind>(
-    (key) => {
-      let ref = binds.get(key);
+    (key, drive?: Drive) => {
+      const id = drive ? `${key}@${drive}` : key;
+      let ref = binds.get(id);
       if (!ref) {
         ref = (el) => {
           if (!el) return;
-          svgEls.set(key, el);
-          // A line mounting mid-scroll takes the latest geometry before paint.
+          els.set(key, el);
+          // A piece mounting mid-scroll takes the latest geometry before paint.
           const attrs = geometry.current.get(key);
           if (attrs) paint(el, attrs);
+          const detach = drive ? driver.attach(el as HTMLElement, drive, roleOf(key)) : null;
           return () => {
-            if (svgEls.get(key) === el) svgEls.delete(key);
+            detach?.();
+            if (els.get(key) === el) els.delete(key);
           };
         };
-        binds.set(key, ref);
+        binds.set(id, ref);
       }
       return ref;
     },
-    [binds, svgEls],
+    [binds, els, driver],
   );
 
   /** One pass: read, route, write. `relayout` re-reads the cached offsets; `relight` re-times the skills' arrival. */
@@ -233,26 +97,67 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
       const card = cardRef.current;
       if (!container || !column || !card) return;
       if (relayout || layout.current?.role !== (active?.roleSlug ?? null)) {
-        layout.current = readLayout(active, container, column, card, skillEls, roleEls);
+        layout.current = readLayout(active, container, column, card, barRef.current, skillEls, roleEls);
       }
       const L = layout.current;
 
       // Reads first, all of them, so no write in this pass forces a layout.
       const scrollTop = column.scrollTop;
       const live = active !== null && !L.stacked;
-      const box = live ? container.getBoundingClientRect() : null;
-      const col = live ? column.getBoundingClientRect() : null;
-      const barTop = live ? (barRef.current?.getBoundingClientRect().top ?? Infinity) : Infinity;
+      const composite = mode === "compositor";
+      const pageY = composite ? window.scrollY : 0;
+      const box = live && !composite ? container.getBoundingClientRect() : null;
+      const col = live && !composite ? column.getBoundingClientRect() : null;
+      const barTop = live && !composite ? (barRef.current?.getBoundingClientRect().top ?? Infinity) : Infinity;
 
       const moreAbove = scrollTop > 1;
       const moreBelow = scrollTop + L.colClient < L.colScroll - 1;
+      const hush = mode === "fade" && quiet.current;
       let next: Threads | null = null;
       let lit: Map<string, number> | null = null;
-      const attrs = new Map<string, Attrs>();
+      let arrival: ReadonlyMap<string, number> = new Map();
+      let attrs: ReadonlyMap<string, Attrs> = new Map();
+
+      if (relight) {
+        rises.current.clear();
+        window.clearTimeout(drawTimer.current);
+        drawn.current = true;
+      }
 
       if (active && L.stacked) {
-        next = { role: active.roleSlug, lines: null, visible: false };
-        if (relight) lit = new Map(active.connects.map((c) => [c.slug, 0]));
+        next = { role: active.roleSlug, lines: null, visible: false, quiet: false, epoch: epoch.current, drawn: true };
+      } else if (active && composite) {
+        const marks = shownMarks(L, scrollTop, moreAbove, moreBelow);
+        const reach = reachOf(marks.length);
+        if (track.current?.layout !== L || track.current.reach !== reach) {
+          const t = trackOf(L, reach);
+          track.current = { layout: L, reach, track: t };
+          if (t) driver.setPage(active.roleSlug, translateKeyframes(t.offset, L.range), valueAt(t.offset, L.at));
+        }
+        driver.setColumn(column, Math.max(0, L.colScroll - L.colClient));
+        const t = track.current.track;
+        if (t) {
+          const frame = composeFrame(active, L, t, marks, pageY, scrollTop, rises.current, relight || !drawn.current);
+          attrs = frame.attrs;
+          if (relight) {
+            arrival = new Map(frame.routes.map((r) => [r.slug, reduceMotion ? 0 : arrivalOf(r.length)]));
+            // The draw-in path shows until its longest line lands; then the
+            // compositor's pieces take over.
+            const end = Math.max(0, ...frame.routes.map((r) => DRAW_DELAY + drawDuration(r.length)));
+            drawn.current = reduceMotion || frame.routes.length === 0;
+            if (!drawn.current) {
+              const role = active.roleSlug;
+              drawTimer.current = window.setTimeout(() => {
+                drawn.current = true;
+                const cur = store.get();
+                if (cur?.role === role) store.set({ ...cur, drawn: true });
+              }, end * 1000 + 40);
+            }
+          }
+          next = { role: active.roleSlug, lines: frame.lines, visible: frame.visible, quiet: false, epoch: 0, drawn: drawn.current };
+        } else {
+          next = { role: active.roleSlug, lines: [], visible: false, quiet: false, epoch: 0, drawn: true };
+        }
       } else if (active && box && col) {
         // A skill scrolled out of its own column, or under the column's soft
         // edge (only when the column overflows), gets no line: a line to
@@ -266,7 +171,7 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
         // The port sits level with the role's headline, and slides along the
         // role's visible edge as it scrolls under the header or the pin bar,
         // so the bundle leaves from what the reader can still see of the role.
-        const reach = ((Math.max(targets.length, 1) - 1) * SPACING) / 2 + 16;
+        const reach = reachOf(targets.length);
         const floor = Math.min(L.viewH, barTop);
         let visible = false;
         let originY = box.top;
@@ -278,33 +183,42 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
         }
 
         const bundle = routeBundle({ x: L.originX, y: originY - box.top }, L.gutterLeft, targets);
-        next = { role: active.roleSlug, lines: bundle.routes.map((r) => ({ slug: r.slug, length: r.length })), visible };
-        if (relight) {
-          const arrival = new Map(bundle.routes.map((r) => [r.slug, reduceMotion ? 0 : arrivalOf(r.length)]));
-          lit = new Map(active.connects.map((c) => [c.slug, arrival.get(c.slug) ?? 0]));
-        }
+        next = {
+          role: active.roleSlug,
+          lines: bundle.routes.map((r) => ({ slug: r.slug, length: r.length })),
+          visible,
+          quiet: hush,
+          epoch: epoch.current,
+          drawn: true,
+        };
+        if (relight) arrival = new Map(bundle.routes.map((r) => [r.slug, reduceMotion ? 0 : arrivalOf(r.length)]));
 
-        attrs.set(portKey(active.roleSlug), {
+        const a = new Map<string, Attrs>();
+        a.set(portKey(active.roleSlug), {
           x: String(L.originX - 1.5),
           y: String(bundle.portTop - 7),
           height: String(bundle.portBottom - bundle.portTop + 14),
         });
-        for (const r of bundle.routes) attrs.set(lineKey(active.roleSlug, r.slug), { d: r.d });
+        for (const r of bundle.routes) a.set(lineKey(active.roleSlug, r.slug), { d: r.d });
+        attrs = a;
       }
+      if (relight && active) lit = new Map(active.connects.map((c) => [c.slug, arrival.get(c.slug) ?? 0]));
 
       // Writes. The soft-edge hint is styling, not state worth a render.
       if (column.dataset.moreAbove !== String(moreAbove)) column.dataset.moreAbove = String(moreAbove);
       if (column.dataset.moreBelow !== String(moreBelow)) column.dataset.moreBelow = String(moreBelow);
 
-      geometry.current = attrs;
+      // Fade mode draws nothing mid-scroll: the hidden bundle keeps its last
+      // geometry, and the redraw after the settle takes fresh geometry on mount.
+      if (!hush) geometry.current = attrs;
       const now = performance.now();
       if (next?.visible) hiddenSince.current = null;
       else hiddenSince.current ??= now;
       // Once the bundle has faded out its lines need not follow the scroll;
       // the frame it shows again writes them all.
-      if (now - (hiddenSince.current ?? now) <= HIDDEN_MS) {
+      if (!hush && now - (hiddenSince.current ?? now) <= HIDDEN_MS) {
         for (const [key, a] of attrs) {
-          const el = svgEls.get(key);
+          const el = els.get(key);
           if (el) paint(el, a);
         }
       }
@@ -312,7 +226,7 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
       if (relight) setLight(active && lit ? { role: active.roleSlug, lit } : null);
       if (!sameThreads(store.get(), next)) store.set(next);
     },
-    [active, reduceMotion, roleEls, skillEls, store, svgEls],
+    [active, reduceMotion, mode, roleEls, skillEls, store, els, driver],
   );
 
   // Before paint, so a newly lit role never shows a frame of stale lines.
@@ -330,12 +244,16 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
         const band = seen(col, column.dataset.moreAbove === "true", column.dataset.moreBelow === "true");
         if (top < band.top || bottom > band.bottom) {
           const mid = (top + bottom) / 2 - col.top + column.scrollTop;
+          ownScroll.current = true;
+          requestAnimationFrame(() => requestAnimationFrame(() => (ownScroll.current = false)));
           column.scrollTo({ top: mid - column.clientHeight / 2 });
         }
       }
     }
     update(true, true);
   }, [active, update, skillEls]);
+
+  useEffect(() => () => window.clearTimeout(drawTimer.current), []);
 
   useEffect(() => {
     let frame = 0;
@@ -351,14 +269,31 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
       relayout ||= stale;
       if (!frame) frame = requestAnimationFrame(run);
     };
-    const onScroll = () => {
-      lastScroll.current = performance.now();
-      // Insurance for anything that moves the layout without resizing an
-      // observed box: one full re-read per gesture, not per frame.
+    // Insurance for anything that moves the layout without resizing an
+    // observed box: one full re-read per gesture, not per frame. In fade
+    // mode the settle is also what brings the lines back.
+    const arm = () => {
       window.clearTimeout(settle);
-      settle = window.setTimeout(() => schedule(true), SCROLL_SETTLE_MS);
+      settle = window.setTimeout(() => {
+        if (quiet.current) {
+          quiet.current = false;
+          epoch.current += 1;
+        }
+        schedule(true);
+      }, SCROLL_SETTLE_MS);
+    };
+    const onScroll = (e: Event) => {
+      lastScroll.current = performance.now();
+      if (mode === "fade" && !quiet.current) {
+        if (ownScroll.current && e.target === columnRef.current) ownScroll.current = false;
+        else quiet.current = true;
+      }
+      arm();
       schedule(false);
     };
+    // This effect re-runs when the light moves, and its cleanup drops a
+    // pending settle; a gesture still in flight needs one again.
+    if (quiet.current || isScrolling()) arm();
     const onLayout = () => schedule(true);
     window.addEventListener("scroll", onScroll, { passive: true, capture: true });
     window.addEventListener("resize", onLayout);
@@ -375,7 +310,7 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
       window.removeEventListener("resize", onLayout);
       ro.disconnect();
     };
-  }, [update]);
+  }, [update, mode, isScrolling]);
 
   return { light, threads: store as ThreadsStore, bind, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole };
 }

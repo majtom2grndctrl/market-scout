@@ -104,6 +104,8 @@ The review fixed a title-display bug in `_data/query.ts` (a head absent from its
 
 **Readable-type pass** (Invariant 9, after the owner's review of all six). Every variant now passes the type audit in each reviewable state; the only remaining failure anywhere is a disabled "Continue" control before the first pin, named as the exemption in code. Ledger kept none: its disabled label explains what pinning unlocks, so it reads. Eyebrows are gone from all six. Starting counts at 1440 wide: Threads 215, Airy 157, Constellation 60, Ledger 45, Marquee 41, Letter 27 across beats. Two audit gaps surfaced: a gradient painted on a sibling layer is invisible to an ancestor-walking contrast check, so Airy and Constellation measured against screenshot pixels instead; and states behind a click (pinned, expanded, hovered) need a driver that clicks first.
 
+**Threads connector modes.** `?lines=compositor` (default), `fade`, `js`. JS-routed lines lag the compositor's scroll by a frame, because the markers are sticky and the SVG scrolls with the page: measured drift 20.5 px median, 40.5 max. Compositor mode cuts each line into pieces that each sit still in one frame — port end on a page `ScrollTimeline`, skill end with the sticky column, the vertical run as a bar from one clipped by a box from the other — and measures 0.5 px, the resting offset. Direction flips, lanes, and radii stay in JS, timed for when corners have shrunk to nothing. Browsers without scroll-driven animations fall back to `fade`. A production version would carry this construction, not the JS router.
+
 **Outstanding manual proof** — none of this is visible headless:
 
 - Real-time motion feel: spring tension, stagger pacing, and Letter's ~2.5s first beat.
