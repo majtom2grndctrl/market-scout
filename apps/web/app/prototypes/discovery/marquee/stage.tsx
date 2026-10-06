@@ -5,7 +5,7 @@
 // postings also ask for, and how much of it there is.
 
 import { motion, useReducedMotion } from "motion/react";
-import { useRef, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useRef, type CSSProperties, type ReactNode } from "react";
 
 import type { Strength } from "../_data/query";
 import { AlsoCalled } from "./also-called";
@@ -13,6 +13,7 @@ import { article, percentOfPostings, plural } from "./copy";
 import { Headline } from "./fit-headline";
 import { EASE_OUT, useSeen } from "./motion";
 import { PinToggle } from "./pin-toggle";
+import { FOLIO, LIST, STATEMENT, SUPPORT } from "./scale";
 import type { Role } from "./types";
 
 const STRENGTH_COPY: Record<Strength, string> = {
@@ -43,13 +44,15 @@ export function Stage({ role, total, plate, pinned, onToggle }: StageProps) {
       style={{ "--marquee-plate": plate } as CSSProperties}
     >
       <div className="mx-auto max-w-[96rem] px-5 pt-6 pb-16 [container-type:inline-size] sm:px-10 md:pb-24">
+        {/* The folio runs at one size: rank, how far the step is, and the pin.
+            Strength reads as a running line, not a label over the headline. */}
         <Reveal seen={seen} delay={0} className="flex items-start justify-between gap-6">
-          <p className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <span className="font-display text-2xl font-semibold tabular-nums tracking-[-0.02em]">
+          <p className={`${FOLIO} text-pretty`}>
+            <span className="font-semibold tabular-nums">
               {role.rank}
               <span className="font-light text-content-secondary">/{total}</span>
             </span>
-            <span className="font-sans text-sm text-content-secondary">{STRENGTH_COPY[role.strength]}</span>
+            <span className="ml-[0.6em] font-light text-content-secondary">{STRENGTH_COPY[role.strength]}</span>
           </p>
           <PinToggle label={role.headline} pinned={pinned} onToggle={() => onToggle(role.roleSlug)} />
         </Reveal>
@@ -67,19 +70,22 @@ export function Stage({ role, total, plate, pinned, onToggle }: StageProps) {
             <div className="@[48rem]:col-span-5">
               {role.closestPast && (
                 <Reveal seen={seen} delay={0.75}>
-                  <p className="font-display text-[clamp(1.625rem,3.2cqi,2.625rem)] leading-[1.04] font-medium tracking-[-0.02em] text-balance">
+                  <p className={`${STATEMENT} font-medium text-balance`}>
                     Because you were {article(role.closestPast.titleText)}&nbsp;{role.closestPast.titleText}.
                   </p>
                 </Reveal>
               )}
               {role.bring.length > 0 && (
-                <Reveal seen={seen} delay={0.85} className={role.closestPast ? "mt-8" : undefined}>
-                  <p className="font-sans text-sm text-content-secondary">You bring</p>
-                  <ul className="mt-1 font-display text-[clamp(1.625rem,3.2cqi,2.625rem)] leading-[1.04] font-bold tracking-[-0.025em]">
-                    {role.bring.map((s) => (
-                      <li key={s.slug}>{s.name}</li>
+                <Reveal seen={seen} delay={0.85} className={role.closestPast ? "mt-[0.9em]" : undefined}>
+                  <p className={`${STATEMENT} font-medium text-balance`}>
+                    You bring{" "}
+                    {role.bring.map((s, i) => (
+                      <Fragment key={s.slug}>
+                        <span className="font-bold tracking-[-0.025em]">{s.name}</span>
+                        {i < role.bring.length - 2 ? ", " : i === role.bring.length - 2 ? " and " : "."}
+                      </Fragment>
                     ))}
-                  </ul>
+                  </p>
                 </Reveal>
               )}
             </div>
@@ -87,22 +93,20 @@ export function Stage({ role, total, plate, pinned, onToggle }: StageProps) {
 
           {role.grow.length > 0 && (
             <Reveal seen={seen} delay={0.95} className={hasWhy ? "@[48rem]:col-span-4" : "@[48rem]:col-span-9"}>
-              <p className="font-sans text-sm text-content-secondary">
+              {/* The list's own first line, set at its size in the receding ink:
+                  it names what the percentages are a share of (P(skill | role)). */}
+              <p className={`${LIST} text-pretty text-content-secondary`}>
                 Also asked for, as a share of its {role.openPostings.toLocaleString("en-US")}{" "}
                 {plural(role.openPostings, "posting", "postings")}
               </p>
-              <ul className="mt-2">
+              <ul className="mt-[0.4em]">
                 {role.grow.map((s) => (
                   <li
                     key={s.slug}
-                    className="flex items-baseline justify-between gap-4 border-b border-content-primary/20 py-2 last:border-b-0"
+                    className={`${LIST} flex items-baseline justify-between gap-4 border-t border-content-primary/20 py-[0.4em]`}
                   >
-                    <span className="font-display text-[clamp(1.25rem,1.9cqi,1.625rem)] leading-tight tracking-[-0.015em] text-balance">
-                      {s.name}
-                    </span>
-                    <span className="shrink-0 font-display text-[clamp(1.25rem,1.9cqi,1.625rem)] font-light tabular-nums">
-                      {percentOfPostings(s.share)}
-                    </span>
+                    <span className="text-balance">{s.name}</span>
+                    <span className="shrink-0 font-light tabular-nums">{percentOfPostings(s.share)}</span>
                   </li>
                 ))}
               </ul>
@@ -125,7 +129,7 @@ function Count({ n, label }: { readonly n: number; readonly label: string }) {
       <span className="block font-display text-[clamp(2.75rem,5.5cqi,4.5rem)] leading-[0.9] font-extrabold tabular-nums tracking-[-0.04em]">
         {n.toLocaleString("en-US")}
       </span>
-      <span className="mt-1 block font-sans text-sm text-content-secondary">{label}</span>
+      <span className={`${SUPPORT} mt-[0.3em] block text-content-secondary`}>{label}</span>
     </p>
   );
 }

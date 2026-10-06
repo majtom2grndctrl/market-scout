@@ -15,6 +15,7 @@ import { article, joinList, numberWord, plural } from "./copy";
 import { FullStop } from "./fit-headline";
 import { EASE_OUT, EASE_SWELL, useSeen } from "./motion";
 import { plateOf, type Plates } from "./palette";
+import { SUPPORT } from "./scale";
 import type { MarqueeData } from "./types";
 
 const PAST_STEP = 0.32;
@@ -127,18 +128,19 @@ export function Opening({ data, plates, pinned }: OpeningProps) {
                   "--marquee-wght": { duration: t(1.1), ease: EASE_SWELL, delay: t(indexAt + i * 0.07) },
                 }}
               >
-                <sup className="mr-[0.12em] align-[0.9em] font-sans text-[0.3em] font-medium tracking-normal text-content-secondary tabular-nums">
+                {/* The rank keeps a 14px floor, so its raise is set from the
+                    index's own size (0.27 of it), not the rank's. */}
+                <sup className="mr-[0.12em] align-[clamp(0.4725rem,1.188cqi,1.2825rem)] font-sans text-[max(0.875rem,0.34em)] leading-none font-medium tracking-normal text-content-secondary tabular-nums">
                   {r.rank}
                 </sup>
-                {r.headline}
-                <FullStop on={pinned.has(r.roleSlug)} />
+                <IndexTitle text={r.headline} pinned={pinned.has(r.roleSlug)} />
               </motion.a>
             </li>
           ))}
         </ol>
       )}
 
-      <motion.p {...fade(indexAt + 0.4 + roles.length * 0.07)} className="mt-[clamp(2.5rem,5cqi,4rem)] max-w-[62ch] font-sans text-sm leading-relaxed text-content-secondary">
+      <motion.p {...fade(indexAt + 0.4 + roles.length * 0.07)} className={`${SUPPORT} mt-[clamp(2.5rem,5cqi,4rem)] max-w-[62ch] text-pretty text-content-secondary`}>
         Ranked by how closely each role&rsquo;s skills match{" "}
         {past.length > 0 && `the ${numberWord(past.length)} ${plural(past.length, "role", "roles")} you've held`}
         {past.length > 0 && skills.length > 0 && " and "}
@@ -146,9 +148,25 @@ export function Opening({ data, plates, pinned }: OpeningProps) {
         {past.length === 0 && skills.length === 0 && "your profile"}, read from{" "}
         {coverage.classifiedPostings.toLocaleString("en-US")} classified of {coverage.openPostings.toLocaleString("en-US")} open
         postings across {coverage.rolesConsidered.toLocaleString("en-US")} roles.
-        {past.length > 0 && " Each highlight matches the past role it sits closest to."} A full stop marks a role
+        {past.length > 0 && " Each highlight matches the past role it sits closest to."}{" "}
+        A full stop marks a role
         you&rsquo;ve pinned.
       </motion.p>
     </section>
+  );
+}
+
+// The last word carries the full stop, so a hidden stop never wraps onto a
+// line of its own and drags a stray piece of highlight with it.
+function IndexTitle({ text, pinned }: { readonly text: string; readonly pinned: boolean }) {
+  const cut = text.lastIndexOf(" ");
+  return (
+    <>
+      {text.slice(0, cut + 1)}
+      <span className="whitespace-nowrap">
+        {text.slice(cut + 1)}
+        <FullStop on={pinned} />
+      </span>
+    </>
   );
 }

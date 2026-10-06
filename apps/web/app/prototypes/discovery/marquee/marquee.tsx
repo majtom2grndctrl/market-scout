@@ -9,6 +9,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Opening } from "./opening";
 import { assignPlates, plateOf } from "./palette";
 import { PinTray } from "./pin-tray";
+import { SUPPORT } from "./scale";
 import { Stage } from "./stage";
 import type { MarqueeData } from "./types";
 
@@ -39,8 +40,8 @@ export function Marquee({ data }: { readonly data: MarqueeData }) {
           />
         ))}
 
-        <footer className="border-t border-content-primary px-5 py-10 font-sans text-sm text-content-secondary sm:px-10">
-          <p className="mx-auto max-w-[96rem]">
+        <footer className="border-t border-content-primary px-5 py-10 text-content-secondary [container-type:inline-size] sm:px-10">
+          <p className={`${SUPPORT} mx-auto max-w-[96rem] text-pretty`}>
             Ranked from {data.coverage.classifiedPostings.toLocaleString("en-US")} classified of{" "}
             {data.coverage.openPostings.toLocaleString("en-US")} open postings. Titles are spelled as employers wrote them;
             counts are open postings.

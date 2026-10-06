@@ -45,7 +45,7 @@ export function PinTray({ roles, pinned, plates }: PinTrayProps) {
               </motion.span>
             </AnimatePresence>
           </span>
-          <span className="font-sans text-sm text-content-secondary">pinned</span>
+          <span className="font-sans text-lg text-content-secondary">pinned</span>
         </p>
 
         <p
@@ -53,7 +53,7 @@ export function PinTray({ roles, pinned, plates }: PinTrayProps) {
           aria-live="polite"
         >
           {count === 0 ? (
-            <span className="font-sans text-base font-normal tracking-normal text-content-secondary">
+            <span className="font-sans text-lg font-normal tracking-normal text-content-secondary">
               Pin the roles worth watching. They collect here.
             </span>
           ) : (
