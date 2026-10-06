@@ -41,8 +41,8 @@ function PinBar({
               </motion.span>
             </AnimatePresence>
           </span>
-          <span className="min-w-0 text-[0.8125rem] leading-tight">
-            <span className="block text-content-secondary">{plural(n, "role")} pinned</span>
+          <span className="min-w-0 text-sm leading-[1.3]">
+            <span className="block font-medium text-content-primary">{plural(n, "role")} pinned</span>
             <span className="block truncate text-content-muted">
               {ready ? pins.map((p) => p.headline).join(" · ") : "Pin the roles worth watching."}
             </span>
@@ -59,6 +59,8 @@ function PinBar({
           className={cn(
             "group/go inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-[0.9rem] px-4.5 text-[0.875rem] font-medium outline-none",
             "transition-[background-color,color] duration-300 ease-out focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2",
+            // With nothing pinned this is a genuinely disabled control, the one
+            // place content-disabled belongs (build contract, Invariant 9).
             ready
               ? "cursor-pointer bg-accent-solid text-on-solid hover:bg-accent-hover active:bg-accent-active"
               : "cursor-not-allowed bg-surface-sunken text-content-disabled",

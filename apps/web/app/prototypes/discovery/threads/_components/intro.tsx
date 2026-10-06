@@ -31,7 +31,7 @@ export function Intro({ data, className }: { data: DiscoveryData; className?: st
         <p className="mt-6 max-w-[35rem] text-[1.0625rem] leading-[1.6] text-pretty text-content-secondary">{ledeFor(data)}</p>
       </Rise>
       <Rise delay={ENTRANCE.lede + 0.12}>
-        <p className="mt-4 max-w-[35rem] text-[0.75rem] leading-relaxed text-content-muted">{coverageLine(data.coverage)}</p>
+        <p className="mt-5 max-w-[35rem] text-sm leading-relaxed text-pretty text-content-muted">{coverageLine(data.coverage)}</p>
       </Rise>
     </header>
   );

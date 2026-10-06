@@ -120,6 +120,21 @@ export function coverageLine(c: DiscoveryData["coverage"]): string {
   return `Ranked from ${n(c.classifiedPostings)} classified of ${n(c.openPostings)} open postings, across ${n(c.rolesConsidered)} roles: what has been read so far, not the whole market.`;
 }
 
+/** Every slug some recommendation draws on: the only skills a line can reach. */
+export function reachedSlugs(recs: readonly Recommendation[]): ReadonlySet<string> {
+  return new Set(recs.flatMap((r) => r.connects.map((c) => c.slug)));
+}
+
+/**
+ * Labels the inherited skills no role here draws on, in the card's own term
+ * for a role's top ten ("defining skills"). `more` when reached ones are
+ * listed above them.
+ */
+export function outsideNote(count: number, more: boolean): string {
+  if (!more) return `None ${count === 1 ? "is" : "are"} among the defining skills of these roles.`;
+  return `${capitalize(countWord(count))} more, outside every role's defining skills`;
+}
+
 export function inheritedNote(skill: PersonSkill): string {
   return skill.fromPast.length > 0 ? `Comes with ${listJoin(skill.fromPast)}` : "Comes with roles you've held";
 }

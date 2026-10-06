@@ -24,6 +24,17 @@ export interface Threads {
   readonly visible: boolean;
 }
 
+/** Half the column's 3rem soft edge: a marker past this is too faded to aim a line at. */
+const FADE = 24;
+
+/** The band of the skill column that shows, in viewport y, short of any soft edge. */
+function seen(column: HTMLElement, col: DOMRect) {
+  return {
+    top: col.top + (column.dataset.moreAbove === "true" ? FADE : 0),
+    bottom: col.bottom - (column.dataset.moreBelow === "true" ? FADE : 0),
+  };
+}
+
 type Register = (key: string) => (el: HTMLElement | null) => void;
 
 function useRegistry(): [Map<string, HTMLElement>, Register] {
@@ -87,12 +98,15 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
       return;
     }
 
-    // A skill scrolled out of its own column (only when the column overflows)
-    // gets no line: a line to something off screen points at nothing.
+    // A skill scrolled out of its own column, or under the column's soft edge
+    // (only when the column overflows), gets no line: a line to something off
+    // screen points at nothing.
+    const { top: seenTop, bottom: seenBottom } = seen(column, col);
     const targets = active.connects.flatMap((c): Target[] => {
       const r = skillEls.get(c.slug)?.getBoundingClientRect();
-      if (!r || r.bottom < col.top || r.top > col.bottom) return [];
-      return [{ slug: c.slug, x: r.right - box.left - 0.5, y: r.top + r.height / 2 - box.top }];
+      const y = r ? r.top + r.height / 2 : NaN;
+      if (!r || !(y >= seenTop && y <= seenBottom)) return [];
+      return [{ slug: c.slug, x: r.right - box.left - 0.5, y: y - box.top }];
     });
 
     // The port sits level with the role's headline, and slides along the
@@ -117,15 +131,21 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean)
 
   // Before paint, so a newly lit role never shows a frame of stale lines.
   useLayoutEffect(() => {
-    // When the skill column overflows a short viewport, bring the lit skills
-    // into it before measuring.
+    // When the skill column overflows a short viewport and a lit skill sits
+    // outside the part of it that shows, centre the lit skills before
+    // measuring. If they already show, leave the reader's scroll alone.
     const column = columnRef.current;
     if (active && column && column.scrollHeight > column.clientHeight + 1) {
-      const rows = active.connects.flatMap((c) => skillEls.get(c.slug) ?? []);
-      if (rows.length > 0) {
-        const top = Math.min(...rows.map((r) => r.offsetTop));
-        const bottom = Math.max(...rows.map((r) => r.offsetTop + r.offsetHeight));
-        column.scrollTo({ top: (top + bottom) / 2 - column.clientHeight / 2 });
+      const col = column.getBoundingClientRect();
+      const marks = active.connects.flatMap((c) => skillEls.get(c.slug)?.getBoundingClientRect() ?? []);
+      if (marks.length > 0) {
+        const top = Math.min(...marks.map((r) => r.top));
+        const bottom = Math.max(...marks.map((r) => r.bottom));
+        const { top: seenTop, bottom: seenBottom } = seen(column, col);
+        if (top < seenTop || bottom > seenBottom) {
+          const mid = (top + bottom) / 2 - col.top + column.scrollTop;
+          column.scrollTo({ top: mid - column.clientHeight / 2 });
+        }
       }
     }
     measure();

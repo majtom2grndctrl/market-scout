@@ -28,7 +28,7 @@ export function PinButton({
       whileTap={{ scale: 0.94 }}
       transition={SETTLE}
       className={cn(
-        "group/pin inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full pr-3.5 pl-1.5 text-[0.8125rem] font-medium outline-none",
+        "group/pin inline-flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full pr-3.5 pl-1.5 text-sm font-medium outline-none",
         "transition-[background-color,box-shadow,color] duration-300 ease-out",
         "focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised",
         pinned

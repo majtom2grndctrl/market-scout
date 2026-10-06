@@ -4,6 +4,7 @@ import { MotionConfig, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { DiscoveryData, Recommendation } from "../../_data/query";
+import { reachedSlugs } from "../_lib/copy";
 import { ENTRANCE } from "../_lib/motion";
 import { useThreads } from "../_lib/use-threads";
 import styles from "../threads.module.css";
@@ -55,6 +56,7 @@ export function ThreadsDiscovery({ data }: { data: DiscoveryData }) {
     [order, recs],
   );
 
+  const reached = useMemo(() => reachedSlugs(recs), [recs]);
   const skillsBySlug = useMemo(() => new Map(data.personSkills.map((s) => [s.slug, s])), [data.personSkills]);
 
   return (
@@ -66,6 +68,7 @@ export function ThreadsDiscovery({ data }: { data: DiscoveryData }) {
           <Intro data={data} className={cn(styles.intro, "pt-12 @min-[60rem]/threads:pt-14 @min-[60rem]/threads:pb-10")} />
           <SkillColumn
             skills={data.personSkills}
+            reached={reached}
             lit={threads?.lit ?? NO_LIGHT}
             hasActive={threads !== null}
             columnRef={columnRef}
