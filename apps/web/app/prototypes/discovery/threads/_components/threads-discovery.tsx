@@ -41,7 +41,7 @@ export function ThreadsDiscovery({ data }: { data: DiscoveryData }) {
   }, [first, reduce]);
 
   const active = useMemo(() => recs.find((r) => r.roleSlug === activeSlug) ?? null, [recs, activeSlug]);
-  const { threads, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole } = useThreads(active, reduce);
+  const { light: lighting, threads, bind, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole } = useThreads(active, reduce);
 
   // Pins are local by contract: seeded from the profile, never written back.
   const [order, setOrder] = useState<string[]>(() => recs.filter((r) => r.pinned).map((r) => r.roleSlug));
@@ -69,8 +69,8 @@ export function ThreadsDiscovery({ data }: { data: DiscoveryData }) {
           <SkillColumn
             skills={data.personSkills}
             reached={reached}
-            lit={threads?.lit ?? NO_LIGHT}
-            hasActive={threads !== null}
+            lit={lighting?.lit ?? NO_LIGHT}
+            hasActive={lighting !== null}
             columnRef={columnRef}
             registerSkill={registerSkill}
           />
@@ -91,7 +91,7 @@ export function ThreadsDiscovery({ data }: { data: DiscoveryData }) {
             barRef={barRef}
             registerRole={registerRole}
           />
-          <Connectors threads={threads} />
+          <Connectors store={threads} bind={bind} />
         </div>
       </div>
     </MotionConfig>

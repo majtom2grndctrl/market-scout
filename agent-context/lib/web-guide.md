@@ -333,6 +333,7 @@ Stop the worktree's server before removing the worktree. Removal deletes the fol
 - Trust screenshots over the accessibility tree for what is visible. The tree can lag content in portaled popups: comboboxes, menus.
 - Reproduce before fixing. Positioning bugs can hide in a narrow band of geometry: a popup may collapse with a small gap below its trigger yet flip correctly with none. Sweep a few positions, not one extreme.
 - Capture animation in real time. Headless Chrome's `--virtual-time-budget` does not advance the compositor, and Motion runs opacity, transform, and filter animations there, so a budgeted screenshot freezes mid-fade whatever the budget. Drive headless Chrome over the DevTools protocol with real waits instead.
+- Stop what you started by its recorded pid, never by a name pattern. `pkill -f chrome` also matches the MCP servers and the owner's own browser tooling, which other sessions depend on.
 - Save screenshots under the repo-root `tmp/`, which is gitignored. Browser tools may refuse paths outside the repo.
 
 ## Frontend Definition of Done
