@@ -2,8 +2,9 @@
 //
 // Question: does Threads' story land harder lit as first light? Dawn keeps
 // Threads' layout, data, and lines (skills left, roles right, a role lighting
-// the skills it draws on) and re-lights them in Airy's dawn palette: a cool
-// sky over the skills, the sun rising over the roles as the first role
+// the skills it draws on) and re-lights them in Airy's dawn palette: a sky
+// held to the viewport that the roles card scrolls across, blue overhead and
+// warm at the horizon, the sun rising behind the roles as the first role
 // lights, threads that warm from lilac at the skills to rose at the role's
 // gold port, and lit skills that catch the light. The page meets someone at
 // the low point of a job search; it should feel like morning, earned by what

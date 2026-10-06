@@ -41,11 +41,12 @@ export const arrivalOf = (length: number) => DRAW_DELAY + drawDuration(length) *
 export const HOVER_DWELL_MS = 70;
 
 /**
- * The sun over the roles. It waits low and faint, then rises as the first
- * thread lands: a beat after the light, slow enough to stay in the corner of
- * the eye while the line draws.
+ * The sun behind the roles card. It waits below the horizon, faint, then
+ * rises `below` px as the first thread lands while the blue clears overhead:
+ * a beat after the light, slow enough to stay in the corner of the eye while
+ * the line draws.
  */
-export const SUNRISE = { below: 64, before: 0.16, delay: 0.25, duration: 2.6 } as const;
+export const SUNRISE = { below: 120, before: 0.16, delay: 0.25, duration: 2.6 } as const;
 
 /** How far the sun's centre sits below the pin bar's bottom edge, per pin: set, then a step up per pin, to three. */
 export const HORIZON = [80, 14, 4, -6] as const;

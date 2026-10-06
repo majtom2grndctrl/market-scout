@@ -1,20 +1,34 @@
 /*
- * Dawn's mood palette: first light. A cool sky over the skills (where you've
- * been), the sun low over the roles (where you're going), and threads that
- * warm from one to the other. Prototype-local by contract; a winner becomes a
- * token proposal. Ink, surfaces, and data marks still come from theme.css.
+ * Dawn's mood palette: first light. A sky held to the viewport, clear blue
+ * overhead and warm at the horizon, where the pin bar sits; the sun rising
+ * behind the roles (where you're going); and threads that warm from the
+ * skills (where you've been) to the roles. Prototype-local by contract; a
+ * winner becomes a token proposal. Ink, surfaces, and data marks still come
+ * from theme.css.
  *
  * Every hue here is atmosphere or light, never data. Nothing on the page is a
- * measure that moves, so no gradient can read as a direction of change, and
- * the thread's ends are lilac and rose rather than the trend pair's blue and
- * orange. Status hues (green, amber, red) and the info violet stay clear.
+ * measure that moves, so no gradient can read as a direction of change. Blue
+ * is only ever sky, behind everything; the thread's ends are lilac and rose
+ * rather than the trend pair's blue and orange. Status hues (green, amber,
+ * red) and the info violet stay clear.
  */
 .root {
-  /* Sky. Low chroma; it only ever sits behind type. */
-  --dawn-sky: oklch(0.94 0.035 238);
-  --dawn-lilac: oklch(0.955 0.03 312);
+  /* Sky, top to bottom. Every stop holds L >= 0.953, the floor at which
+     content-muted still clears 4.5:1 on it, and stays in sRGB: the skill
+     column and intro sit straight on the sky. Blue here is air, never a
+     mark: pale, low chroma, and on a sky hue (232) clear of the trend
+     pair's 255. */
+  --dawn-zenith: oklch(0.953 0.027 232);
+  --dawn-twilight: oklch(0.953 0.022 288);
+  --dawn-lilac: oklch(0.958 0.026 315);
+  --dawn-haze: oklch(0.962 0.017 15);
+  --dawn-peach: oklch(0.958 0.026 64);
+  --dawn-sunlight: oklch(0.978 0.028 86);
+  /* The sun's centre: under the roles card. */
+  --dawn-sun-x: 50%;
+
+  /* Sunlight on things: the pin bar's glow, a lit wash. */
   --dawn-sun: oklch(0.915 0.07 66);
-  --dawn-haze: oklch(0.972 0.022 20);
   --dawn-horizon: oklch(0.968 0.028 72);
 
   /* The thread: lilac where it meets the skills, warming to rose where it
@@ -39,18 +53,23 @@
     0 1px 0 oklch(1 0 0 / 0.9) inset,
     0 8px 24px -12px oklch(0.4 0.06 55 / 0.16),
     0 24px 48px -24px oklch(0.5 0.07 235 / 0.16);
-  /* A lit skill's halo: sunlight on its near edge. */
-  --dawn-halo: 0 0 0 1px var(--dawn-glow-edge), 0 2px 14px -3px oklch(0.84 0.1 66 / 0.85);
-  --dawn-halo-soft: 0 2px 14px -3px oklch(0.84 0.1 66 / 0.7);
+  /* A lit skill's halo: sunlight blooming off it. Brighter than the sky it
+     spills onto, so it lifts its neighbours' contrast rather than shading
+     it; a darker glow reads as a shadow on a blue sky. */
+  --dawn-halo: 0 0 0 1px var(--dawn-glow-edge), 0 1px 12px 1px oklch(0.99 0.03 88 / 0.95);
+  --dawn-halo-soft: 0 1px 12px 1px oklch(0.99 0.03 88 / 0.85);
 
   container: dawn / inline-size;
 }
 
 :global(.dark) .root {
-  --dawn-sky: oklch(0.27 0.05 250);
-  --dawn-lilac: oklch(0.25 0.04 310);
+  --dawn-zenith: oklch(0.25 0.04 235);
+  --dawn-twilight: oklch(0.22 0.03 288);
+  --dawn-lilac: oklch(0.23 0.03 315);
+  --dawn-haze: oklch(0.22 0.02 15);
+  --dawn-peach: oklch(0.25 0.035 60);
+  --dawn-sunlight: oklch(0.29 0.045 70);
   --dawn-sun: oklch(0.34 0.07 55);
-  --dawn-haze: oklch(0.23 0.025 20);
   --dawn-horizon: oklch(0.26 0.035 65);
   --dawn-thread-cool: oklch(0.72 0.09 310);
   --dawn-thread-rose: oklch(0.76 0.11 2);
@@ -65,23 +84,40 @@
 }
 
 /*
- * The sky, in two layers. Before first light only the cool sky shows: high
- * at the left, over the skills. The sun layer rises once the first role
- * lights (see sky.tsx), low at the right, over the roles.
+ * The sky, held to the viewport. The frame sticks under the app header for
+ * the whole page and takes no space (its negative margin cancels its
+ * height), so it is one composited layer the compositor keeps in place while
+ * the page scrolls over it: no repaint and no script per frame. It stays
+ * inside the root, so it never reaches under the sidebar.
+ *
+ * Three layers. The twilight base is there from the start. With the first
+ * light (see sky.tsx) the blue clears overhead, and the sun layer, a warm
+ * band at the horizon with the sun behind the roles card, climbs into place.
+ * Gradients mix in oklab, so no stop between two light colours dips darker
+ * than either end.
  */
+.skyFrame {
+  position: sticky;
+  top: 3.5rem;
+  z-index: -10;
+  height: calc(100svh - 3.5rem);
+  margin-bottom: calc(3.5rem - 100svh);
+  overflow: hidden;
+  will-change: transform;
+}
+
 .sky {
-  background:
-    radial-gradient(64% 64% at 2% -22%, var(--dawn-sky) 0%, transparent 74%),
-    radial-gradient(46% 52% at 40% 6%, var(--dawn-lilac) 0%, transparent 78%);
-  mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
+  background: linear-gradient(in oklab to bottom, var(--dawn-twilight) 0%, var(--dawn-lilac) 58%, var(--dawn-haze) 100%);
+}
+
+.clear {
+  background: linear-gradient(in oklab to bottom, var(--dawn-zenith) 0%, var(--dawn-zenith) 34%, transparent 72%);
 }
 
 .sun {
   background:
-    radial-gradient(34% 58% at 93% -2%, var(--dawn-sun) 0%, transparent 72%),
-    radial-gradient(48% 54% at 72% 10%, var(--dawn-haze) 0%, transparent 78%),
-    radial-gradient(56% 36% at 84% 0%, var(--dawn-horizon) 0%, transparent 85%);
-  mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
+    radial-gradient(ellipse 44% 36% at var(--dawn-sun-x) 100% in oklab, var(--dawn-sunlight) 0%, transparent 100%),
+    linear-gradient(in oklab to top, var(--dawn-peach) 0%, var(--dawn-peach) 6%, transparent 36%);
 }
 
 /* The lit role: light falls on it from the port, at the card's left edge,
@@ -137,6 +173,10 @@
 }
 
 @container dawn (min-width: 60rem) {
+  .skyFrame {
+    --dawn-sun-x: 66%;
+  }
+
   .grid {
     grid-template-columns: minmax(0, 20.5rem) 6.5rem minmax(0, 1fr);
     gap: 0;
