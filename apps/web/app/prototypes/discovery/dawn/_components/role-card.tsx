@@ -6,7 +6,8 @@ import type { Ref } from "react";
 
 import type { PersonSkill, Recommendation } from "../../_data/query";
 import { capitalize, countWord, plural, rolesHeading } from "../_lib/copy";
-import { drift, ENTRANCE, SETTLE } from "../_lib/motion";
+import { drift, ENTRANCE, HORIZON, SETTLE } from "../_lib/motion";
+import styles from "../dawn.module.css";
 import { RoleItem } from "./role-item";
 import { cn } from "@/lib/utils";
 
@@ -26,7 +27,16 @@ function PinBar({
 
   return (
     <div ref={barRef} className="sticky bottom-4 z-20 mx-3 mt-1 mb-3">
-      <div className="flex items-center gap-4 rounded-[1.25rem] bg-surface-raised/85 p-2.5 pl-5 shadow-(--threads-float) ring-1 ring-edge-hairline backdrop-blur-xl backdrop-saturate-150">
+      <div className="relative isolate flex items-center gap-4 overflow-hidden rounded-[1.25rem] bg-surface-raised/85 p-2.5 pl-5 shadow-(--dawn-float) ring-1 ring-edge-hairline backdrop-blur-xl backdrop-saturate-150">
+        {/* The bar is the horizon. Each pin lifts the sun behind the count a
+            step, so a pin lands as light where pins collect. */}
+        <motion.span
+          aria-hidden
+          className={cn(styles.horizon, "pointer-events-none absolute -bottom-16 -left-8 -z-10 h-32 w-40")}
+          initial={false}
+          animate={{ y: HORIZON[Math.min(n, HORIZON.length - 1)], opacity: ready ? 1 : 0 }}
+          transition={drift(0.2, 1.2)}
+        />
         <div className="flex min-w-0 flex-1 items-center gap-3" aria-live="polite">
           <span className="relative inline-grid h-8 min-w-[1.5ch] overflow-hidden font-display text-[1.75rem] leading-8 font-light tracking-[-0.03em] text-content-primary tabular-nums">
             <AnimatePresence mode="popLayout" initial={false}>
@@ -43,7 +53,7 @@ function PinBar({
           </span>
           <span className="min-w-0 text-sm leading-[1.3]">
             <span className="block font-medium text-content-primary">{plural(n, "role")} pinned</span>
-            <span className="block truncate text-content-muted">
+            <span className={cn("block truncate", ready ? "text-content-secondary" : "text-content-muted")}>
               {ready ? pins.map((p) => p.headline).join(" · ") : "Pin the roles worth watching."}
             </span>
           </span>
@@ -135,13 +145,13 @@ export function RoleCard({
   return (
     <motion.section
       ref={cardRef}
-      aria-labelledby="threads-roles"
-      className={cn("relative rounded-[1.75rem] bg-surface-raised shadow-(--threads-lift) ring-1 ring-edge-hairline/70", className)}
+      aria-labelledby="dawn-roles"
+      className={cn("relative rounded-[1.75rem] bg-surface-raised shadow-(--dawn-lift) ring-1 ring-edge-hairline/70", className)}
       initial={{ opacity: 0, y: 28 }}
       animate={{ opacity: 1, y: 0 }}
       transition={drift(ENTRANCE.card, 1.1)}
     >
-      <h2 id="threads-roles" className="px-6 pt-7 pb-2 font-display sm:px-9 sm:pt-8 text-[1.25rem] font-normal tracking-[-0.015em] text-content-primary">
+      <h2 id="dawn-roles" className="px-6 pt-7 pb-2 font-display sm:px-9 sm:pt-8 text-[1.25rem] font-normal tracking-[-0.015em] text-content-primary">
         {rolesHeading(recs.length)}
       </h2>
       {recs.length === 0 ? (

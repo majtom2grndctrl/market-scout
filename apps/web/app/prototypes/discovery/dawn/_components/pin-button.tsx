@@ -33,7 +33,7 @@ export function PinButton({
         "focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-2 focus-visible:ring-offset-surface-raised",
         pinned
           ? "bg-accent-solid text-on-solid hover:bg-accent-hover active:bg-accent-active"
-          : "bg-surface-raised text-content-primary ring-1 ring-edge hover:bg-surface-row-hover hover:ring-edge-strong/50",
+          : "bg-surface-raised text-content-primary ring-1 ring-edge hover:bg-(--dawn-horizon) hover:ring-(--dawn-glow-edge)",
         className,
       )}
     >
@@ -43,7 +43,8 @@ export function PinButton({
             key={pinned ? "on" : "off"}
             className={cn(
               "absolute inset-0 grid place-items-center rounded-full",
-              pinned ? "bg-on-solid/15" : "bg-surface-sunken text-content-secondary",
+              // Unpinned, the pin sits in a small warm disc: Airy's seed.
+              pinned ? "bg-on-solid/15" : "bg-(--dawn-glow) text-(--dawn-ember) ring-1 ring-(--dawn-glow-edge) ring-inset",
             )}
             initial={{ scale: 0.4, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}

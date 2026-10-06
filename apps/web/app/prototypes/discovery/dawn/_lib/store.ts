@@ -1,6 +1,7 @@
 import type { RefCallback } from "react";
 
 import type { Drive } from "./drive";
+import { sameSpan, type Span } from "./light";
 
 /** The role holding the light, and the skills it lights. Changes only when the role does. */
 export interface Light {
@@ -21,7 +22,7 @@ export interface Line {
  * changes every scroll frame, so the hook writes it straight to the DOM
  * (see `Bind`).
  */
-export interface Threads {
+export interface LineSet {
   readonly role: string;
   /** Lines in port order. Null when the layout is stacked: skills still light, but nothing is drawn. */
   readonly lines: readonly Line[] | null;
@@ -33,14 +34,16 @@ export interface Threads {
   readonly epoch: number;
   /** Compositor mode: the draw-in has finished and the compositor's pieces have taken over. */
   readonly drawn: boolean;
+  /** Where the thread's gradient runs. Moves only with the layout. */
+  readonly span: Span | null;
 }
 
 /**
- * Holds `Threads` outside React state, so a change mid-scroll re-renders the
+ * Holds `LineSet` outside React state, so a change mid-scroll re-renders the
  * connectors alone (through useSyncExternalStore), not the whole page.
  */
-export interface ThreadsStore {
-  readonly get: () => Threads | null;
+export interface LineStore {
+  readonly get: () => LineSet | null;
   readonly subscribe: (onChange: () => void) => () => void;
 }
 
@@ -61,11 +64,11 @@ export function paint(el: Element, attrs: Attrs) {
 }
 
 export function createStore() {
-  let value: Threads | null = null;
+  let value: LineSet | null = null;
   const subs = new Set<() => void>();
   return {
     get: () => value,
-    set: (next: Threads | null) => {
+    set: (next: LineSet | null) => {
       value = next;
       subs.forEach((f) => f());
     },
@@ -76,7 +79,7 @@ export function createStore() {
   };
 }
 
-export const sameThreads = (a: Threads | null, b: Threads | null) =>
+export const sameLineSet = (a: LineSet | null, b: LineSet | null) =>
   a === b ||
   (a !== null &&
     b !== null &&
@@ -85,5 +88,6 @@ export const sameThreads = (a: Threads | null, b: Threads | null) =>
     a.quiet === b.quiet &&
     a.epoch === b.epoch &&
     a.drawn === b.drawn &&
+    sameSpan(a.span, b.span) &&
     (a.lines === b.lines ||
       (a.lines !== null && b.lines !== null && a.lines.length === b.lines.length && a.lines.every((l, i) => l.slug === b.lines?.[i].slug))));

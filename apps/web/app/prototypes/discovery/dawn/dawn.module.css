@@ -1,0 +1,231 @@
+/*
+ * Dawn's mood palette: first light. A cool sky over the skills (where you've
+ * been), the sun low over the roles (where you're going), and threads that
+ * warm from one to the other. Prototype-local by contract; a winner becomes a
+ * token proposal. Ink, surfaces, and data marks still come from theme.css.
+ *
+ * Every hue here is atmosphere or light, never data. Nothing on the page is a
+ * measure that moves, so no gradient can read as a direction of change, and
+ * the thread's ends are lilac and rose rather than the trend pair's blue and
+ * orange. Status hues (green, amber, red) and the info violet stay clear.
+ */
+.root {
+  /* Sky. Low chroma; it only ever sits behind type. */
+  --dawn-sky: oklch(0.94 0.035 238);
+  --dawn-lilac: oklch(0.955 0.03 312);
+  --dawn-sun: oklch(0.915 0.07 66);
+  --dawn-haze: oklch(0.972 0.022 20);
+  --dawn-horizon: oklch(0.968 0.028 72);
+
+  /* The thread: lilac where it meets the skills, warming to rose where it
+     leaves the role. Set by x, which never scrolls, so the pieces of a line
+     in different scroll frames agree where they meet. Gold is kept for what
+     the sun touches: the port, and what a role lights. */
+  --dawn-thread-cool: oklch(0.62 0.1 310);
+  --dawn-thread-rose: oklch(0.645 0.13 2);
+  --dawn-port: oklch(0.78 0.14 82);
+
+  /* Catching the light: what a role lights, and the lit role itself. */
+  --dawn-glow: oklch(0.958 0.042 74);
+  --dawn-glow-edge: oklch(0.855 0.08 68);
+  --dawn-ember: oklch(0.48 0.09 64);
+
+  /* Elevation tinted by the light: warm near, cool far. */
+  --dawn-lift:
+    0 1px 1px oklch(0.45 0.04 60 / 0.04),
+    0 10px 24px -12px oklch(0.45 0.06 55 / 0.14),
+    0 32px 64px -32px oklch(0.55 0.06 235 / 0.22);
+  --dawn-float:
+    0 1px 0 oklch(1 0 0 / 0.9) inset,
+    0 8px 24px -12px oklch(0.4 0.06 55 / 0.16),
+    0 24px 48px -24px oklch(0.5 0.07 235 / 0.16);
+  /* A lit skill's halo: sunlight on its near edge. */
+  --dawn-halo: 0 0 0 1px var(--dawn-glow-edge), 0 2px 14px -3px oklch(0.84 0.1 66 / 0.85);
+  --dawn-halo-soft: 0 2px 14px -3px oklch(0.84 0.1 66 / 0.7);
+
+  container: dawn / inline-size;
+}
+
+:global(.dark) .root {
+  --dawn-sky: oklch(0.27 0.05 250);
+  --dawn-lilac: oklch(0.25 0.04 310);
+  --dawn-sun: oklch(0.34 0.07 55);
+  --dawn-haze: oklch(0.23 0.025 20);
+  --dawn-horizon: oklch(0.26 0.035 65);
+  --dawn-thread-cool: oklch(0.72 0.09 310);
+  --dawn-thread-rose: oklch(0.76 0.11 2);
+  --dawn-port: oklch(0.84 0.12 82);
+  --dawn-glow: oklch(0.31 0.05 62);
+  --dawn-glow-edge: oklch(0.5 0.08 62);
+  --dawn-ember: oklch(0.84 0.09 66);
+  --dawn-lift: 0 24px 48px -24px oklch(0 0 0 / 0.6);
+  --dawn-float: 0 24px 56px -16px oklch(0 0 0 / 0.7);
+  --dawn-halo: 0 0 0 1px var(--dawn-glow-edge), 0 2px 14px -3px oklch(0.5 0.08 60 / 0.6);
+  --dawn-halo-soft: 0 2px 14px -3px oklch(0.5 0.08 60 / 0.5);
+}
+
+/*
+ * The sky, in two layers. Before first light only the cool sky shows: high
+ * at the left, over the skills. The sun layer rises once the first role
+ * lights (see sky.tsx), low at the right, over the roles.
+ */
+.sky {
+  background:
+    radial-gradient(64% 64% at 2% -22%, var(--dawn-sky) 0%, transparent 74%),
+    radial-gradient(46% 52% at 40% 6%, var(--dawn-lilac) 0%, transparent 78%);
+  mask-image: linear-gradient(to bottom, black 45%, transparent 100%);
+}
+
+.sun {
+  background:
+    radial-gradient(34% 58% at 93% -2%, var(--dawn-sun) 0%, transparent 72%),
+    radial-gradient(48% 54% at 72% 10%, var(--dawn-haze) 0%, transparent 78%),
+    radial-gradient(56% 36% at 84% 0%, var(--dawn-horizon) 0%, transparent 85%);
+  mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
+}
+
+/* The lit role: light falls on it from the port, at the card's left edge,
+   and fades before the reading column. */
+.litTile {
+  background:
+    radial-gradient(34% 70% at 0% 20%, var(--dawn-horizon) 0%, transparent 100%),
+    linear-gradient(to right, oklch(from var(--dawn-horizon) l c h / 0.5), transparent 42%);
+  box-shadow: inset 0 0 0 1px oklch(from var(--dawn-glow-edge) l c h / 0.3);
+}
+
+/* The pin bar is the horizon: each pin lifts the sun a step (see role-card). */
+.horizon {
+  background: radial-gradient(
+    closest-side,
+    var(--dawn-sun) 0%,
+    var(--dawn-sun) 34%,
+    oklch(from var(--dawn-sun) l c h / 0.5) 64%,
+    transparent 100%
+  );
+}
+
+/*
+ * Two layouts. Wide: skills in a sticky column, a gutter for the lines, the
+ * roles card scrolling beside them. Narrow: stacked, skills as a wrapped
+ * cloud, no lines (the role's own card still names what it draws on).
+ */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2.5rem;
+}
+
+.column {
+  /* One row per skill a line can land on, sized so all of them fit under the
+     app header: every lit skill stays on screen wherever the roles have
+     scrolled. The chrome term is the padding, headings, and note above and
+     between the rows, plus the 3rem fade that appears when the unreached
+     skills below run past the viewport. The floor keeps 14px type legible;
+     below it the column scrolls instead (see use-lines). */
+  --dawn-row: clamp(1.375rem, calc((100svh - 3.5rem - 15rem) / var(--dawn-rows, 18)), 1.625rem);
+}
+
+.skillList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.skillRow {
+  display: flex;
+  align-items: center;
+}
+
+@container dawn (min-width: 60rem) {
+  .grid {
+    grid-template-columns: minmax(0, 20.5rem) 6.5rem minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .column {
+    position: sticky;
+    top: 3.5rem;
+    height: calc(100svh - 3.5rem);
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+
+  .skillList {
+    display: block;
+  }
+
+  /* Only on a viewport too short for every row: the column scrolls, and a
+     soft edge says there is more beyond it. */
+  .column[data-more-above="true"] {
+    mask-image: linear-gradient(to bottom, transparent 0, black 3rem);
+  }
+
+  .column[data-more-below="true"] {
+    mask-image: linear-gradient(to top, transparent 0, black 3rem);
+  }
+
+  .column[data-more-above="true"][data-more-below="true"] {
+    mask-image: linear-gradient(to bottom, transparent 0, black 3rem, black calc(100% - 3rem), transparent 100%);
+  }
+
+  .skillRow {
+    height: var(--dawn-row);
+  }
+
+  /* On a short viewport the rows tighten; the pill tightens with them so a
+     lit pill never overlaps its neighbours. */
+  .pill {
+    height: min(var(--dawn-row), 1.5rem);
+    padding-block: 0;
+  }
+}
+
+.gutter,
+.pieces {
+  display: none;
+}
+
+/* Wide placement: the column and gutter span both rows, so the column can
+   stick for the whole length of the roles card. */
+@container dawn (min-width: 60rem) {
+  .intro {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .column {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+  }
+
+  .gutter {
+    display: block;
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .card {
+    grid-column: 3;
+    grid-row: 2;
+    align-self: start;
+  }
+
+  /* Compositor lines (see pieces.tsx). Sticks exactly as the column does, in
+     the same grid rows, so it moves with the column on the compositor; it
+     reaches across the gutter and a little into the card for the port. It
+     clips like the column, so no line runs past what the column shows. */
+  .pieces {
+    display: block;
+    grid-column: 1 / span 2;
+    grid-row: 1 / span 2;
+    position: sticky;
+    top: 3.5rem;
+    align-self: start;
+    height: calc(100svh - 3.5rem);
+    min-width: 0;
+    margin-right: -0.5rem;
+    overflow: clip;
+    pointer-events: none;
+    z-index: 10;
+  }
+}

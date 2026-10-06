@@ -7,9 +7,10 @@ import { composeFrame, reachOf, shownMarks, trackOf } from "./compose";
 import { createDriver, type Drive } from "./drive";
 import { routeBundle, type Target } from "./geometry";
 import { HEADER, readLayout, seen, useRegistry, type Layout } from "./layout";
+import { spanOf } from "./light";
 import type { LineMode } from "./modes";
 import { arrivalOf, DRAW_DELAY, drawDuration } from "./motion";
-import { createStore, lineKey, paint, portKey, sameThreads, type Attrs, type Bind, type Light, type Threads, type ThreadsStore } from "./store";
+import { createStore, lineKey, paint, portKey, sameLineSet, type Attrs, type Bind, type Light, type LineSet, type LineStore } from "./store";
 import { translateKeyframes, valueAt, type Track } from "./track";
 
 const SCROLL_SETTLE_MS = 140;
@@ -31,7 +32,7 @@ const roleOf = (key: string) => key.split(/[/#]/)[0];
  * connectors only when the set of lines or their visibility changes, and the
  * page only when the light moves to another role.
  */
-export function useThreads(active: Recommendation | null, reduceMotion: boolean, mode: LineMode) {
+export function useLines(active: Recommendation | null, reduceMotion: boolean, mode: LineMode) {
   const containerRef = useRef<HTMLDivElement>(null);
   const columnRef = useRef<HTMLElement>(null);
   const cardRef = useRef<HTMLElement>(null);
@@ -100,6 +101,7 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean,
         layout.current = readLayout(active, container, column, card, barRef.current, skillEls, roleEls);
       }
       const L = layout.current;
+      const span = spanOf(L);
 
       // Reads first, all of them, so no write in this pass forces a layout.
       const scrollTop = column.scrollTop;
@@ -113,7 +115,7 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean,
       const moreAbove = scrollTop > 1;
       const moreBelow = scrollTop + L.colClient < L.colScroll - 1;
       const hush = mode === "fade" && quiet.current;
-      let next: Threads | null = null;
+      let next: LineSet | null = null;
       let lit: Map<string, number> | null = null;
       let arrival: ReadonlyMap<string, number> = new Map();
       let attrs: ReadonlyMap<string, Attrs> = new Map();
@@ -125,7 +127,7 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean,
       }
 
       if (active && L.stacked) {
-        next = { role: active.roleSlug, lines: null, visible: false, quiet: false, epoch: epoch.current, drawn: true };
+        next = { role: active.roleSlug, lines: null, visible: false, quiet: false, epoch: epoch.current, drawn: true, span: null };
       } else if (active && composite) {
         const marks = shownMarks(L, scrollTop, moreAbove, moreBelow);
         const reach = reachOf(marks.length);
@@ -137,7 +139,7 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean,
         driver.setColumn(column, Math.max(0, L.colScroll - L.colClient));
         const t = track.current.track;
         if (t) {
-          const frame = composeFrame(active, L, t, marks, pageY, scrollTop, rises.current, relight || !drawn.current);
+          const frame = composeFrame(active, L, t, marks, pageY, scrollTop, rises.current, relight || !drawn.current, span);
           attrs = frame.attrs;
           if (relight) {
             arrival = new Map(frame.routes.map((r) => [r.slug, reduceMotion ? 0 : arrivalOf(r.length)]));
@@ -154,9 +156,9 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean,
               }, end * 1000 + 40);
             }
           }
-          next = { role: active.roleSlug, lines: frame.lines, visible: frame.visible, quiet: false, epoch: 0, drawn: drawn.current };
+          next = { role: active.roleSlug, lines: frame.lines, visible: frame.visible, quiet: false, epoch: 0, drawn: drawn.current, span };
         } else {
-          next = { role: active.roleSlug, lines: [], visible: false, quiet: false, epoch: 0, drawn: true };
+          next = { role: active.roleSlug, lines: [], visible: false, quiet: false, epoch: 0, drawn: true, span };
         }
       } else if (active && box && col) {
         // A skill scrolled out of its own column, or under the column's soft
@@ -190,6 +192,7 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean,
           quiet: hush,
           epoch: epoch.current,
           drawn: true,
+          span,
         };
         if (relight) arrival = new Map(bundle.routes.map((r) => [r.slug, reduceMotion ? 0 : arrivalOf(r.length)]));
 
@@ -224,7 +227,7 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean,
       }
 
       if (relight) setLight(active && lit ? { role: active.roleSlug, lit } : null);
-      if (!sameThreads(store.get(), next)) store.set(next);
+      if (!sameLineSet(store.get(), next)) store.set(next);
     },
     [active, reduceMotion, mode, roleEls, skillEls, store, els, driver],
   );
@@ -312,5 +315,5 @@ export function useThreads(active: Recommendation | null, reduceMotion: boolean,
     };
   }, [update, mode, isScrolling]);
 
-  return { light, threads: store as ThreadsStore, bind, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole };
+  return { light, store: store as LineStore, bind, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole };
 }

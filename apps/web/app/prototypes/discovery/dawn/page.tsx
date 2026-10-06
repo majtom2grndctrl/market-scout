@@ -1,11 +1,13 @@
 // Prototype — asked 2026-10-05.
 //
-// Question: does Discovery land harder when it shows the person their own
-// skills first, then how each recommended role draws on them? Threads lists
-// the skills they named and the ones that come with roles they've held, and
-// lets a role light the skills it draws on, with connector lines from role to
-// skill. The story: the skills are already there; you hadn't seen how they
-// come together.
+// Question: does Threads' story land harder lit as first light? Dawn keeps
+// Threads' layout, data, and lines (skills left, roles right, a role lighting
+// the skills it draws on) and re-lights them in Airy's dawn palette: a cool
+// sky over the skills, the sun rising over the roles as the first role
+// lights, threads that warm from lilac at the skills to rose at the role's
+// gold port, and lit skills that catch the light. The page meets someone at
+// the low point of a job search; it should feel like morning, earned by what
+// they already have.
 //
 // Data and invariants: `../_data/query.ts` and
 // agent-context/plans/in-progress/discovery-prototypes/index.md.
@@ -14,10 +16,10 @@
 // scrolls (see `_lib/modes.ts`); compositor is the default.
 
 import { getDiscoveryData } from "../_data/query";
-import { ThreadsDiscovery } from "./_components/threads-discovery";
+import { DawnDiscovery } from "./_components/dawn-discovery";
 import { parseLineMode } from "./_lib/modes";
 
-export default async function ThreadsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+export default async function DawnPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const [data, params] = await Promise.all([getDiscoveryData(), searchParams]);
-  return <ThreadsDiscovery data={data} lines={parseLineMode(params.lines)} />;
+  return <DawnDiscovery data={data} lines={parseLineMode(params.lines)} />;
 }

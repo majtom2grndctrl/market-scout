@@ -1,4 +1,4 @@
-// How the threads behave while the page scrolls, chosen by `?lines=`.
+// How the lines behave while the page scrolls, chosen by `?lines=`.
 //
 // Chrome scrolls on the compositor thread. The role card and the skill column
 // move at once; anything the main thread draws arrives a frame later. So a

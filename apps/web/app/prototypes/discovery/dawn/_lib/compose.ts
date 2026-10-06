@@ -30,6 +30,7 @@ import type { Recommendation } from "../../_data/query";
 import { piecesOf, routeBundle, SPACING, type Route, type Target } from "./geometry";
 import type { Layout } from "./layout";
 import { FADE, HEADER } from "./layout";
+import { threadAt, type Span } from "./light";
 import { frameKey, lineKey, pieceKey, portKey, type Attrs, type Line } from "./store";
 import { portTrack, valueAt, type Track } from "./track";
 
@@ -82,6 +83,8 @@ export function composeFrame(
   /** Each line's rise at the last pass; updated in place. */
   rises: Map<string, number>,
   withPath: boolean,
+  /** The thread's gradient, so each run takes the colour of the x it stands at. */
+  span: Span,
 ): Frame {
   const role = active.roleSlug;
   const offset = valueAt(track.offset, s);
@@ -112,13 +115,14 @@ export function composeFrame(
     attrs.set(pieceKey(role, r.slug, "port"), { d: p.port });
     attrs.set(pieceKey(role, r.slug, "mark"), { d: p.mark, transform: `translate(0 ${Math.round(y * 100) / 100})` });
     const meet = y + p.runTo;
+    const tone = threadAt(span, r.lane + L.colLeft);
     for (const down of [true, false]) {
       const dir = down ? "down" : "up";
       const clipTop = down ? meet - big : meet;
       attrs.set(pieceKey(role, r.slug, `clip-${dir}`), { style: `top:${px(clipTop)};height:${px(big)}` });
       attrs.set(pieceKey(role, r.slug, `unclip-${dir}`), { style: `top:${px(-clipTop)}` });
       attrs.set(pieceKey(role, r.slug, `bar-${dir}`), {
-        style: `left:${px(r.lane - 0.75)};top:${px(down ? p.runFrom : p.runFrom - big)};height:${px(big)}`,
+        style: `left:${px(r.lane - 0.75)};top:${px(down ? p.runFrom : p.runFrom - big)};height:${px(big)};background:${tone}`,
       });
     }
   }

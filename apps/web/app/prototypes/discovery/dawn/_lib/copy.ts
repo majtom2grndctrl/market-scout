@@ -1,4 +1,4 @@
-// Every sentence Threads shows is assembled here from DiscoveryData, so a new
+// Every sentence Dawn shows is assembled here from DiscoveryData, so a new
 // profile rewrites the page without a copy edit. Encouragement cites the data
 // or it does not appear; an inherited skill is never phrased as one the person
 // claimed (build contract, Invariants 6 and 7).

@@ -6,7 +6,7 @@ import type { CSSProperties, Ref } from "react";
 import type { PersonSkill } from "../../_data/query";
 import { inheritedNote, outsideNote, splitSkills } from "../_lib/copy";
 import { drift, ENTRANCE } from "../_lib/motion";
-import styles from "../threads.module.css";
+import styles from "../dawn.module.css";
 import { SkillMark } from "./skill-mark";
 import { cn } from "@/lib/utils";
 
@@ -14,10 +14,12 @@ import { cn } from "@/lib/utils";
 type State = "rest" | "lit" | "dim";
 
 /*
- * Ink per state. A lit skill takes the thread colour, its pill, and the line;
- * everything else recedes to the last readable ink step, never below it
- * (build contract, Invariant 9). Weight and the marker keep claimed and
- * inherited apart in every state.
+ * Ink per state. A lit skill catches the light: its pill warms to the sun's
+ * glow and its marker turns ember where the line lands, while its ink stays
+ * full strength. Everything else recedes to the last readable ink step, never
+ * below it (build contract, Invariant 9). Weight, the pill's edge (solid or
+ * dashed), and the marker (dot or ring) keep claimed and inherited apart in
+ * every state.
  */
 const INK: Record<Exclude<State, "lit">, Record<"claimed" | "inherited", string>> = {
   rest: { claimed: "text-content-primary", inherited: "text-content-secondary" },
@@ -31,7 +33,7 @@ function Provenance({ skill }: { skill: PersonSkill }) {
       <span className="sr-only">, {inheritedNote(skill)}</span>
       <span
         aria-hidden
-        className="pointer-events-none absolute bottom-full left-1 z-20 mb-0.5 w-max max-w-[18rem] translate-y-1 rounded-lg bg-surface-overlay px-3 py-2 text-sm leading-snug text-content-secondary opacity-0 shadow-(--threads-float) ring-1 ring-edge-hairline transition-[opacity,transform] duration-200 ease-out group-hover/skill:translate-y-0 group-hover/skill:opacity-100"
+        className="pointer-events-none absolute bottom-full left-1 z-20 mb-0.5 w-max max-w-[18rem] translate-y-1 rounded-lg bg-surface-overlay px-3 py-2 text-sm leading-snug text-content-secondary opacity-0 shadow-(--dawn-float) ring-1 ring-edge-hairline transition-[opacity,transform] duration-200 ease-out group-hover/skill:translate-y-0 group-hover/skill:opacity-100"
       >
         {inheritedNote(skill)}
       </span>
@@ -69,12 +71,12 @@ function SkillRow({
         className={cn(
           styles.pill,
           "inline-flex max-w-full min-w-0 items-center gap-2 rounded-full border py-[0.1875rem] pr-2 pl-2.5 text-sm leading-[1.2]",
-          "transition-[background-color,border-color,color] duration-300 ease-out",
+          "transition-[background-color,border-color,color,box-shadow] duration-500 ease-out",
           skill.claimed && "font-medium",
           lit
             ? skill.claimed
-              ? "border-transparent bg-(--threads-tint) text-(--threads-ink)"
-              : "border-dashed border-(--threads-edge) bg-(--threads-wash) text-(--threads-ink)"
+              ? "border-transparent bg-(--dawn-glow) text-content-primary shadow-(--dawn-halo)"
+              : "border-dashed border-(--dawn-glow-edge) bg-(--dawn-horizon) text-content-primary shadow-(--dawn-halo-soft)"
             : cn("border-transparent", INK[state][kind]),
         )}
       >
@@ -83,7 +85,7 @@ function SkillRow({
           ref={markRef}
           claimed={skill.claimed}
           style={timing}
-          className={lit ? "text-(--threads-line)" : "text-content-muted"}
+          className={lit ? "text-(--dawn-ember)" : "text-content-muted"}
         />
       </span>
       {!skill.claimed && <Provenance skill={skill} />}
@@ -181,27 +183,27 @@ export function SkillColumn({
   const linked = inherited.filter((s) => reached.has(s.slug));
   const outside = inherited.filter((s) => !reached.has(s.slug));
   // Only rows a line can land on share the viewport; see `.column`.
-  const style = { "--threads-rows": Math.max(claimed.length + linked.length, 1) } as CSSProperties;
+  const style = { "--dawn-rows": Math.max(claimed.length + linked.length, 1) } as CSSProperties;
   const fade = (n: number) => ({ initial: { opacity: 0 }, animate: { opacity: 1 }, transition: drift(ENTRANCE.skills + n * ENTRANCE.skillStep, 0.8) });
 
   return (
-    <aside ref={columnRef} aria-label="Your skills" style={style} className={cn(styles.column, "pb-6 @min-[60rem]/threads:pt-14")}>
+    <aside ref={columnRef} aria-label="Your skills" style={style} className={cn(styles.column, "pb-6 @min-[60rem]/dawn:pt-14")}>
       {skills.length === 0 ? (
         <p className="pl-2.5 text-sm text-content-muted">No skills to show yet. Name a few on your profile and they appear here.</p>
       ) : (
         <>
           {claimed.length > 0 && (
-            <section aria-labelledby="threads-named">
+            <section aria-labelledby="dawn-named">
               <motion.div {...fade(0)}>
-                <Heading id="threads-named" title="Skills you named" count={claimed.length} />
+                <Heading id="dawn-named" title="Skills you named" count={claimed.length} />
               </motion.div>
               <Rows skills={claimed} offset={1} lit={lit} anyLit={hasActive} registerSkill={registerSkill} />
             </section>
           )}
           {inherited.length > 0 && (
-            <section aria-labelledby="threads-inherited" className={claimed.length > 0 ? "mt-6" : undefined}>
+            <section aria-labelledby="dawn-inherited" className={claimed.length > 0 ? "mt-6" : undefined}>
               <motion.div {...fade(claimed.length + 1)}>
-                <Heading id="threads-inherited" title="Come with roles you've held" count={inherited.length} />
+                <Heading id="dawn-inherited" title="Come with roles you've held" count={inherited.length} />
                 <p className="mt-1 pl-2.5 text-sm leading-[1.45] text-pretty text-content-muted">
                   Common in postings for your past titles. Read from the market, not something you said.
                 </p>

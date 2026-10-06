@@ -1,6 +1,8 @@
-// Threads' motion vocabulary. The entrance reads in story order: the headline,
-// then the skills (what you have), then the roles (where it leads), then the
-// first thread drawn between them. After that, motion only follows the reader.
+// Dawn's motion vocabulary. The entrance reads in story order: the cool sky
+// and the headline, then the skills (what you have), then the roles (where it
+// leads), then the first thread drawn between them, and with it the sunrise.
+// After that, light only answers the reader: a role they light, a pin they
+// make.
 
 import type { Transition } from "motion/react";
 
@@ -37,3 +39,13 @@ export const arrivalOf = (length: number) => DRAW_DELAY + drawDuration(length) *
 
 /** Hover dwell before a role takes the light, so sweeping across the list doesn't strobe. */
 export const HOVER_DWELL_MS = 70;
+
+/**
+ * The sun over the roles. It waits low and faint, then rises as the first
+ * thread lands: a beat after the light, slow enough to stay in the corner of
+ * the eye while the line draws.
+ */
+export const SUNRISE = { below: 64, before: 0.16, delay: 0.25, duration: 2.6 } as const;
+
+/** How far the sun's centre sits below the pin bar's bottom edge, per pin: set, then a step up per pin, to three. */
+export const HORIZON = [80, 14, 4, -6] as const;
