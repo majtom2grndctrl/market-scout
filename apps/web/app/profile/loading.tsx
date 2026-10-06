@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function ProfileLoading() {
   return (
     <div
-      className="mx-auto w-full max-w-content space-y-10 px-4 py-8 sm:px-6 lg:px-8"
+      className="mx-auto w-full max-w-content space-y-10 px-4 pt-2 pb-8 sm:px-6 lg:px-8"
       aria-busy="true"
       aria-label="Loading profile"
     >

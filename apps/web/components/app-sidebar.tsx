@@ -28,7 +28,9 @@ export function AppSidebar() {
   const pathname = usePathname();
 
   return (
-    <Sidebar collapsible="icon">
+    // Borderless on the page surface: the sidebar reads as part of the page,
+    // so the content column, not the chrome, is the focus.
+    <Sidebar collapsible="icon" className="group-data-[side=left]:border-r-0">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -37,8 +39,8 @@ export function AppSidebar() {
                 <Telescope className="size-4" />
               </div>
               <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate font-display font-semibold">Market Scout</span>
-                <span className="truncate text-xs text-content-muted">
+                <span className="truncate font-display text-base font-semibold">Market Scout</span>
+                <span className="truncate text-sm text-content-muted">
                   Job market intelligence
                 </span>
               </div>

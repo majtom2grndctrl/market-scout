@@ -346,7 +346,7 @@
  * these names directly. They are aliases, never independent values, so the
  * sidebar cannot drift from the palette above. */
 :root, .dark {
-  --sidebar:                    var(--surface-sunken);
+  --sidebar:                    var(--surface-page);
   --sidebar-foreground:         var(--content-primary);
   --sidebar-primary:            var(--accent-solid);
   --sidebar-primary-foreground: var(--on-solid);
