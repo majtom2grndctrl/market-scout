@@ -93,11 +93,13 @@
  * is clipped by the root, so the page never widens.
  *
  * Dusk, faint and close, is there from the start. Morning blooms out with
- * the first light (see sky.tsx), in three parts:
+ * the first light (see sky.tsx), in four parts:
  * - a halo, the card's own shape blurred, at its peak along the card's
  *   edges and gone by the end of the gutter, before the skill column;
  * - a dome, a radial rising from behind the card's top edge into the intro;
- * - a deeper bloom right of the card, where nothing is read.
+ * - a deeper bloom right of the card, where nothing is read;
+ * - a round bloom left of the card, high where the right one is low, as
+ *   deep as the lines crossing it allow.
  * The frame's top and bottom edges glow too, but a stuck frame's top sits
  * under the app header and its bottom below the viewport, so only the card's
  * real top and bottom edges show light. Gradients mix in oklab, so no stop
@@ -172,6 +174,31 @@
   background-repeat: no-repeat;
 }
 
+/* The bloom left of the card: the same light as the deep bloom on the right,
+   curving out from behind the card's left edge into the gutter. Lines cross
+   the gutter, so it peaks at morning, never deeper: the thread's rose end
+   needs Y >= 0.844 for 3:1, and morning is the bluest sRGB colour at that
+   lightness on the sky hue. Its roundness carries it instead. It sits high
+   where the right bloom sits low, and is gone by the gutter's left edge, so
+   the skill column keeps the plain page. Wide layout only (see below). The
+   box reaches up with the dome, so the frame's top edge never cuts it. */
+.morning::after {
+  content: "";
+  position: absolute;
+  display: none;
+  top: calc(-1 * var(--dawn-spill-t));
+  bottom: 0;
+  left: calc(-1 * var(--dawn-bloom-x));
+  width: calc(2 * var(--dawn-bloom-x));
+  background: radial-gradient(
+    ellipse var(--dawn-bloom-x) var(--dawn-bloom-ry) at 50% calc(var(--dawn-spill-t) + var(--dawn-bloom-y)) in oklab,
+    var(--dawn-morning) 0,
+    var(--dawn-morning) 46%,
+    oklch(from var(--dawn-morning) l c h / 0.5) 72%,
+    transparent 100%
+  );
+}
+
 /* The lit role: light falls on it from the port, at the card's left edge,
    and fades before the reading column. */
 .litTile {
@@ -210,7 +237,7 @@
      between the rows, plus the 3rem fade that appears when the unreached
      skills below run past the viewport. The floor keeps 14px type legible;
      below it the column scrolls instead (see use-lines). */
-  --dawn-row: clamp(1.375rem, calc((100svh - 3.5rem - 15rem) / var(--dawn-rows, 18)), 1.625rem);
+  --dawn-row: clamp(1.375rem, calc((100svh - 3.5rem - 13.5rem) / var(--dawn-rows, 18)), 1.625rem);
 }
 
 .skillList {
@@ -230,9 +257,19 @@
     /* As far as the page's right margin reaches, up to 16rem. */
     --dawn-spill-r: clamp(2.5rem, calc((100cqw - 76rem) / 2 + 2.5rem), 16rem);
     --dawn-spill-t: 14rem;
-    /* Peak at the card's edge, faded out a spill's width from it. */
-    --dawn-halo-glow: 0 0 3.5rem 2rem;
+    /* Peak at the card's edge, faded out a spill's width from it. Set 1rem
+       right, so on the left the flat halo stays close to the card and the
+       round bloom carries the light out into the gutter. */
+    --dawn-halo-glow: 1rem 0 3.5rem 2rem;
     --dawn-dusk-glow: 0 0 2.5rem 0.5rem;
+    /* The left bloom: as wide as the gutter, centred high in the frame. */
+    --dawn-bloom-x: 6.5rem;
+    --dawn-bloom-y: 30svh;
+    --dawn-bloom-ry: 36svh;
+  }
+
+  .morning::after {
+    display: block;
   }
 
   .grid {
@@ -240,10 +277,19 @@
     gap: 0;
   }
 
+  /* The column scrolls, and a scroll box clips on both axes, at its padding
+     edge. A lit pill's halo paints past the pill, and the pills sit flush
+     with the column's edges, so the column carries --dawn-clip of room on
+     each side and gives it back in margin: the pills stay where they were and
+     their halos paint whole. Line geometry reads the content edges (see
+     readLayout), which are the column's old edges. */
   .column {
+    --dawn-clip: 1rem;
     position: sticky;
     top: 3.5rem;
     height: calc(100svh - 3.5rem);
+    padding-inline: var(--dawn-clip);
+    margin-inline: calc(-1 * var(--dawn-clip));
     overflow-y: auto;
     scrollbar-width: none;
   }

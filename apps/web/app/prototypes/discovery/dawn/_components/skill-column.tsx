@@ -187,15 +187,15 @@ export function SkillColumn({
   const fade = (n: number) => ({ initial: { opacity: 0 }, animate: { opacity: 1 }, transition: drift(ENTRANCE.skills + n * ENTRANCE.skillStep, 0.8) });
 
   return (
-    <aside ref={columnRef} aria-label="Your skills" style={style} className={cn(styles.column, "pb-6 @min-[60rem]/dawn:pt-14")}>
+    <aside ref={columnRef} aria-label="Your skills" style={style} className={cn(styles.column, "pb-6 @min-[60rem]/dawn:pt-8")}>
       {skills.length === 0 ? (
-        <p className="pl-2.5 text-sm text-content-muted">No skills to show yet. Name a few on your profile and they appear here.</p>
+        <p className="pl-2.5 text-sm text-content-muted">No skills yet. Add them on your profile.</p>
       ) : (
         <>
           {claimed.length > 0 && (
             <section aria-labelledby="dawn-named">
               <motion.div {...fade(0)}>
-                <Heading id="dawn-named" title="Skills you named" count={claimed.length} />
+                <Heading id="dawn-named" title="Skills you added" count={claimed.length} />
               </motion.div>
               <Rows skills={claimed} offset={1} lit={lit} anyLit={hasActive} registerSkill={registerSkill} />
             </section>
@@ -203,9 +203,9 @@ export function SkillColumn({
           {inherited.length > 0 && (
             <section aria-labelledby="dawn-inherited" className={claimed.length > 0 ? "mt-6" : undefined}>
               <motion.div {...fade(claimed.length + 1)}>
-                <Heading id="dawn-inherited" title="Come with roles you've held" count={inherited.length} />
+                <Heading id="dawn-inherited" title="From your past roles" count={inherited.length} />
                 <p className="mt-1 pl-2.5 text-sm leading-[1.45] text-pretty text-content-muted">
-                  Common in postings for your past titles. Read from the market, not something you said.
+                  {"Common in postings for titles you've held."}
                 </p>
               </motion.div>
               <Rows skills={linked} offset={claimed.length + 2} lit={lit} anyLit={hasActive} registerSkill={registerSkill} />

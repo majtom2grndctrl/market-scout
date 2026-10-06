@@ -61,7 +61,13 @@ export function readLayout(
   roleEls: ReadonlyMap<string, HTMLElement>,
 ): Layout {
   const box = container.getBoundingClientRect();
-  const col = column.getBoundingClientRect();
+  // The column's content edges: it carries side padding as room for the lit
+  // pills' halos (see `.column`), and the lines frame on where the pills sit.
+  const colBox = column.getBoundingClientRect();
+  const colStyle = getComputedStyle(column);
+  const padL = parseFloat(colStyle.paddingLeft) || 0;
+  const padR = parseFloat(colStyle.paddingRight) || 0;
+  const col = { top: colBox.top, left: colBox.left + padL, right: colBox.right - padR, height: colBox.height };
   const cardBox = card.getBoundingClientRect();
   const barBox = bar?.getBoundingClientRect();
   const head = active ? roleEls.get(active.roleSlug) : undefined;

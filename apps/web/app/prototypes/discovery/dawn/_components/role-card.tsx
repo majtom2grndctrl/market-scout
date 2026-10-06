@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import type { Ref } from "react";
 
 import type { PersonSkill, Recommendation } from "../../_data/query";
-import { capitalize, countWord, plural, rolesHeading } from "../_lib/copy";
+import { plural, rolesHeading } from "../_lib/copy";
 import { drift, ENTRANCE, HORIZON, SETTLE } from "../_lib/motion";
 import styles from "../dawn.module.css";
 import { RoleItem } from "./role-item";
@@ -54,7 +54,7 @@ function PinBar({
           <span className="min-w-0 text-sm leading-[1.3]">
             <span className="block font-medium text-content-primary">{plural(n, "role")} pinned</span>
             <span className={cn("block truncate", ready ? "text-content-secondary" : "text-content-muted")}>
-              {ready ? pins.map((p) => p.headline).join(" · ") : "Pin the roles worth watching."}
+              {ready ? pins.map((p) => p.headline).join(" · ") : "Pin a role to watch it."}
             </span>
           </span>
         </div>
@@ -87,7 +87,7 @@ function PinBar({
                 transition={SETTLE}
               >
                 <Check className="size-4" strokeWidth={2.5} />
-                {`${capitalize(countWord(n))} ${plural(n, "role")} ready to watch`}
+                {`Watching ${n} ${plural(n, "role")}`}
               </motion.span>
             ) : (
               <motion.span
@@ -156,7 +156,7 @@ export function RoleCard({
       </h2>
       {recs.length === 0 ? (
         <p className="px-6 pb-8 text-sm sm:px-9 text-content-muted">
-          Nothing in the postings read so far sits near your profile. More appear as more postings are classified.
+          More show up as more postings are classified.
         </p>
       ) : (
         <ol className="pb-1">

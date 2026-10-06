@@ -4,7 +4,7 @@ import { motion } from "motion/react";
 import type { ReactNode } from "react";
 
 import type { DiscoveryData } from "../../_data/query";
-import { coverageLine, ledeFor } from "../_lib/copy";
+import { coverageLine } from "../_lib/copy";
 import { drift, ENTRANCE } from "../_lib/motion";
 
 function Rise({ delay, children, className }: { delay: number; children: ReactNode; className?: string }) {
@@ -24,14 +24,13 @@ export function Intro({ data, className }: { data: DiscoveryData; className?: st
   return (
     <header className={className}>
       <h1 className="font-display text-[clamp(2.5rem,1.4rem+2.4vw,3.75rem)] leading-[0.98] font-light tracking-[-0.035em] text-content-primary">
-        <Rise delay={ENTRANCE.headline}>Where your skills</Rise>
-        <Rise delay={ENTRANCE.headline + 0.1}>come together.</Rise>
+        <Rise delay={ENTRANCE.headline}>Roles that use</Rise>
+        <Rise delay={ENTRANCE.headline + 0.1}>your skills.</Rise>
       </h1>
+      {/* Coverage stands as the lede, so the ranking never reads as the
+          whole market (build contract, Invariant 4). */}
       <Rise delay={ENTRANCE.lede}>
-        <p className="mt-6 max-w-[35rem] text-[1.0625rem] leading-[1.6] text-pretty text-content-secondary">{ledeFor(data)}</p>
-      </Rise>
-      <Rise delay={ENTRANCE.lede + 0.12}>
-        <p className="mt-5 max-w-[35rem] text-sm leading-relaxed text-pretty text-content-muted">{coverageLine(data.coverage)}</p>
+        <p className="mt-6 max-w-[35rem] text-[1.0625rem] leading-[1.6] text-pretty text-content-secondary">{coverageLine(data.coverage)}</p>
       </Rise>
     </header>
   );

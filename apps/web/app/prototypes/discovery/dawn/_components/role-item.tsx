@@ -36,14 +36,14 @@ function DrawsOn({ rec, skills, lit }: { rec: Recommendation; skills: ReadonlyMa
   if (claimed.length + inherited.length === 0) {
     return (
       <p className="mt-4 text-sm leading-relaxed text-pretty text-content-muted">
-        None of its ten defining skills are on your list
-        {rec.closestPast ? `. It sits nearest your time as ${rec.closestPast.titleText}.` : "."}
+        None of its top 10 skills are on your list.
+        {rec.closestPast && ` Closest to your ${rec.closestPast.titleText} role.`}
       </p>
     );
   }
   const rows = [
-    { label: "You named", list: claimed },
-    { label: "From roles you've held", list: inherited },
+    { label: "You added", list: claimed },
+    { label: "From past roles", list: inherited },
   ].filter((r) => r.list.length > 0);
 
   return (
@@ -73,7 +73,7 @@ function AlsoAsks({ rec }: { rec: Recommendation }) {
       {grow.map((g, i) => (
         <span key={g.slug}>
           <span className="text-content-secondary">{g.name}</span>{" "}
-          <span className="tabular-nums">({i === 0 ? `in ${shareLabel(g.share)} of postings` : shareLabel(g.share)})</span>
+          <span className="tabular-nums">({i === 0 ? `${shareLabel(g.share)} of postings` : shareLabel(g.share)})</span>
           {i < grow.length - 1 ? ", " : ""}
         </span>
       ))}
@@ -181,7 +181,7 @@ export function RoleItem({
 
           <p className="mt-4 text-sm text-content-muted tabular-nums">
             {postingsLine(rec)}
-            {rec.closestPast && rec.connects.length > 0 && <> · nearest your time as {rec.closestPast.titleText}</>}
+            {rec.closestPast && rec.connects.length > 0 && <> · closest to your {rec.closestPast.titleText} role</>}
           </p>
         </div>
 
