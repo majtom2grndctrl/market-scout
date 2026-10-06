@@ -29,6 +29,7 @@ export function StarNode({ star, label, rec, order, total, pinned, emphasis, ent
   const ignite = k * starDelay(order);
   const settle = entered ? 0 : k * settleDelay(total);
   const lit = emphasis === "lit";
+  const dim = emphasis === "dim";
 
   return (
     <g
@@ -46,11 +47,13 @@ export function StarNode({ star, label, rec, order, total, pinned, emphasis, ent
           onTogglePin();
         }
       }}
-      style={{ opacity: emphasis === "dim" ? 0.36 : 1, transition: "opacity 220ms ease" }}
     >
       <g transform={`translate(${star.x},${star.y})`}>
         {/* Generous hit area: a 3px star is not a target. */}
         <circle r={16} fill="transparent" />
+        {/* Out of focus, the mark shrinks and fades. The label beside it
+            steps down an ink instead: text never takes opacity. */}
+        <g style={{ opacity: dim ? 0.4 : 1, transform: `scale(${dim ? 0.7 : 1})`, transition: "opacity 220ms ease, transform 220ms ease" }}>
         <motion.g
           initial={{ scale: 0, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
@@ -78,6 +81,7 @@ export function StarNode({ star, label, rec, order, total, pinned, emphasis, ent
             <circle r={star.r} fill="var(--constellation-star)" />
           )}
         </motion.g>
+        </g>
       </g>
 
       {label && (
@@ -93,11 +97,12 @@ export function StarNode({ star, label, rec, order, total, pinned, emphasis, ent
               x2={label.leader[1].x}
               y2={label.leader[1].y}
               stroke="var(--constellation-orbit)"
-              strokeOpacity={0.5}
+              strokeOpacity={dim ? 0.2 : 0.5}
               strokeWidth={0.75}
+              style={{ transition: "stroke-opacity 220ms ease" }}
             />
           )}
-          <LabelText label={label} meta={`${pinned ? "Pinned · " : ""}${postings(rec.openPostings)}`} pinned={pinned} lit={lit} />
+          <LabelText label={label} meta={`${pinned ? "Pinned · " : ""}${postings(rec.openPostings)}`} pinned={pinned} emphasis={emphasis} />
         </motion.g>
       )}
     </g>
@@ -106,10 +111,23 @@ export function StarNode({ star, label, rec, order, total, pinned, emphasis, ent
 
 const HALO = { close: 0.55, adjacent: 0.38, stretch: 0.26 } as const;
 
-function LabelText({ label, meta, pinned, lit }: { label: StarLabel; meta: string; pinned: boolean; lit: boolean }) {
+// Ink steps per emphasis, all inside the sky's dark scope. Lit lifts the
+// count to secondary; dim sends name and count to the sky-tinted recede ink.
+const HEADLINE_INK: Record<Emphasis, string> = {
+  lit: "var(--content-primary)",
+  normal: "var(--content-primary)",
+  dim: "var(--constellation-ink-recede)",
+};
+const META_INK: Record<Emphasis, string> = {
+  lit: "var(--content-secondary)",
+  normal: "var(--content-muted)",
+  dim: "var(--constellation-ink-recede)",
+};
+
+function LabelText({ label, meta, pinned, emphasis }: { label: StarLabel; meta: string; pinned: boolean; emphasis: Emphasis }) {
   const x = label.anchor === "start" ? label.box.x : label.anchor === "end" ? label.box.x + label.box.w : label.box.x + label.box.w / 2;
   const lh = TYPE.headline.lineHeight;
-  const metaY = label.box.y + label.lines.length * lh + 3 + TYPE.meta.size;
+  const metaY = label.box.y + label.lines.length * lh + 3 + TYPE.meta.size * 0.86;
   return (
     <text textAnchor={label.anchor} className="select-none">
       {label.lines.map((line, i) => (
@@ -117,10 +135,11 @@ function LabelText({ label, meta, pinned, lit }: { label: StarLabel; meta: strin
           key={i}
           x={x}
           y={label.box.y + i * lh + TYPE.headline.size * 0.86}
-          className="font-display fill-content-primary"
+          className="font-display"
+          fill={HEADLINE_INK[emphasis]}
           fontSize={TYPE.headline.size}
-          fontWeight={lit ? 600 : TYPE.headline.weight}
-          style={{ transition: "font-weight 200ms" }}
+          fontWeight={emphasis === "lit" ? 600 : TYPE.headline.weight}
+          style={{ transition: "fill 220ms ease, font-weight 200ms" }}
         >
           {line}
         </tspan>
@@ -131,9 +150,8 @@ function LabelText({ label, meta, pinned, lit }: { label: StarLabel; meta: strin
         fontSize={TYPE.meta.size}
         fontWeight={TYPE.meta.weight}
         letterSpacing={`${TYPE.meta.tracking}em`}
-        className={pinned ? "" : "fill-content-muted"}
-        fill={pinned ? "var(--constellation-pin)" : undefined}
-        style={{ fontVariantNumeric: "tabular-nums" }}
+        fill={pinned && emphasis !== "dim" ? "var(--constellation-pin)" : META_INK[emphasis]}
+        style={{ fontVariantNumeric: "tabular-nums", transition: "fill 220ms ease" }}
       >
         {meta}
       </tspan>

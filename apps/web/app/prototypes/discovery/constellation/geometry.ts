@@ -23,16 +23,21 @@ export interface Box {
   h: number;
 }
 
-export type FontRole = "headline" | "meta" | "home" | "caption" | "orbit";
+export type FontRole = "headline" | "meta" | "home" | "orbit";
 export type Measure = (text: string, role: FontRole) => number;
 
-/** Canvas font strings mirror the SVG text styles, so measured widths match rendered ones. */
+/**
+ * Canvas font strings mirror the SVG text styles, so measured widths match
+ * rendered ones. The scale steps as a set: the past titles at the centre are
+ * the largest type on the map, role names next, and the posting counts and
+ * orbit names sit at the 14px floor, set apart by face and ink rather than
+ * by shrinking further.
+ */
 export const TYPE: Record<FontRole, { size: number; lineHeight: number; font: string; tracking: number; weight: number }> = {
-  headline: { size: 14, lineHeight: 17, weight: 500, tracking: 0, font: '500 14px "Funnel Display Variable", sans-serif' },
-  meta: { size: 10.5, lineHeight: 13, weight: 500, tracking: 0.02, font: '500 10.5px "Schibsted Grotesk Variable", sans-serif' },
-  home: { size: 15, lineHeight: 19, weight: 500, tracking: 0, font: '500 15px "Funnel Display Variable", sans-serif' },
-  caption: { size: 9.5, lineHeight: 12, weight: 600, tracking: 0.16, font: '600 9.5px "Schibsted Grotesk Variable", sans-serif' },
-  orbit: { size: 9, lineHeight: 11, weight: 600, tracking: 0.18, font: '600 9px "Schibsted Grotesk Variable", sans-serif' },
+  home: { size: 18, lineHeight: 22, weight: 500, tracking: 0, font: '500 18px "Funnel Display Variable", sans-serif' },
+  headline: { size: 16, lineHeight: 19, weight: 500, tracking: 0, font: '500 16px "Funnel Display Variable", sans-serif' },
+  meta: { size: 14, lineHeight: 17, weight: 400, tracking: 0, font: '400 14px "Schibsted Grotesk Variable", sans-serif' },
+  orbit: { size: 14, lineHeight: 17, weight: 500, tracking: 0.04, font: '500 14px "Schibsted Grotesk Variable", sans-serif' },
 };
 
 /** Group key for roles whose closestPast is null: anchored to the person, not a title. */
@@ -55,7 +60,6 @@ export interface HomeLine {
 
 export interface Plaque {
   box: Box;
-  caption: { text: string; y: number; width: number };
   lines: HomeLine[];
 }
 
@@ -98,7 +102,7 @@ const TIERS: readonly Strength[] = ["close", "adjacent", "stretch"];
 // Space a sector keeps either side of its roles, in role-widths. Keeps fans
 // from different titles visibly apart.
 const SECTOR_PAD = 0.9;
-const HOME_WRAP = 210;
+const HOME_WRAP = 240;
 const HOME_GAP = 7;
 
 export function layoutConstellation(
@@ -116,7 +120,7 @@ export function layoutConstellation(
   const groups = buildGroups(data);
   const sectors = allocateSectors(groups.filter((g) => g.members.length > 0));
 
-  const plaque = layoutPlaque(groups, sectors, data.pastRoles.length > 0, cx, cy, measure);
+  const plaque = layoutPlaque(groups, sectors, cx, cy, measure);
 
   // The inner orbit has to clear the plaque, or the closest role sits on its text.
   const margin = 30;
@@ -254,7 +258,6 @@ function middleOutSlots(n: number): number[] {
 function layoutPlaque(
   groups: Group[],
   sectors: Sector[],
-  hasPast: boolean,
   cx: number,
   cy: number,
   measure: Measure,
@@ -269,8 +272,6 @@ function layoutPlaque(
     return Math.sin(a) - Math.sin(b);
   });
 
-  const captionText = hasPast ? "Where you've been" : "Where you stand";
-  const captionWidth = measure(captionText.toUpperCase(), "caption");
   const lh = TYPE.home.lineHeight;
 
   const blocks = ordered.map((g) => {
@@ -281,13 +282,11 @@ function layoutPlaque(
     return { g, whole, lines, width, h: lines.length * lh };
   });
 
-  const captionH = TYPE.caption.lineHeight + 12;
-  const bodyH = blocks.reduce((sum, b) => sum + b.h, 0) + HOME_GAP * Math.max(0, blocks.length - 1);
-  const h = captionH + bodyH;
-  const w = Math.max(captionWidth, ...blocks.map((b) => b.width), 60);
+  const h = blocks.reduce((sum, b) => sum + b.h, 0) + HOME_GAP * Math.max(0, blocks.length - 1);
+  const w = Math.max(...blocks.map((b) => b.width), 60);
   const top = cy - h / 2;
 
-  let y = top + captionH;
+  let y = top;
   const lines: HomeLine[] = blocks.map((b) => {
     const mid = y + b.h / 2;
     y += b.h + HOME_GAP;
@@ -303,11 +302,7 @@ function layoutPlaque(
     };
   });
 
-  return {
-    box: { x: cx - w / 2, y: top, w, h },
-    caption: { text: captionText, y: top + TYPE.caption.lineHeight, width: captionWidth },
-    lines,
-  };
+  return { box: { x: cx - w / 2, y: top, w, h }, lines };
 }
 
 // Leaves level and runs past the plaque's edge before turning, so a path

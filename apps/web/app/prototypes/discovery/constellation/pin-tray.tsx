@@ -30,13 +30,13 @@ export function PinTray({ className, pinned, delay, continued, onUnpin, onFocus,
       aria-label="Pinned roles"
     >
       <header className="flex items-baseline justify-between">
-        <h2 className="font-display text-base font-semibold">Pinned</h2>
+        <h2 className="font-display text-lg font-semibold">Pinned</h2>
         <motion.span
           key={pinned.length}
           initial={{ scale: 1.35, opacity: 0.4 }}
           animate={{ scale: 1, opacity: 1 }}
           transition={{ type: "spring", stiffness: 420, damping: 20 }}
-          className="text-xs font-medium text-content-muted tabular-nums"
+          className="text-sm text-content-muted tabular-nums"
         >
           {pinned.length} {pinned.length === 1 ? "role" : "roles"}
         </motion.span>
@@ -64,13 +64,13 @@ export function PinTray({ className, pinned, delay, continued, onUnpin, onFocus,
                   <PinGlyph />
                 </motion.span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{r.headline}</span>
-                  <span className="block truncate text-xs text-content-muted">From {r.closestPast?.titleText ?? "your profile as a whole"}</span>
+                  <span className="block truncate text-[15px] font-medium">{r.headline}</span>
+                  <span className="block truncate text-sm text-content-muted">From {r.closestPast?.titleText ?? "your profile as a whole"}</span>
                 </span>
                 <button
                   type="button"
                   onClick={() => onUnpin(r.roleSlug)}
-                  className="rounded-md px-1.5 py-0.5 text-xs text-content-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-content-primary focus-visible:opacity-100"
+                  className="rounded-md px-1.5 py-0.5 text-sm text-content-muted opacity-0 transition-opacity group-hover:opacity-100 hover:text-content-primary focus-visible:opacity-100"
                   aria-label={`Unpin ${r.headline}`}
                 >
                   Remove
@@ -81,8 +81,10 @@ export function PinTray({ className, pinned, delay, continued, onUnpin, onFocus,
         </AnimatePresence>
       </ul>
 
-      {!ready && <p className="mt-1 text-[13px] leading-snug text-content-muted">Click a star to pin it. Pinned roles collect here.</p>}
+      {!ready && <p className="mt-1 text-sm leading-snug text-content-muted">Click a star to pin it. Pinned roles collect here.</p>}
 
+      {/* The one text under 4.5:1 on the page: a genuinely disabled control,
+          the readable-type exemption, until a role is pinned. */}
       <button
         type="button"
         disabled={!ready}

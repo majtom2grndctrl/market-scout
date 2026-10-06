@@ -14,14 +14,26 @@
   --constellation-pin: oklch(0.86 0.125 82);
   --constellation-orbit: oklch(0.74 0.035 265);
   --constellation-home: oklch(0.95 0.045 78);
+  /* Receding inks for the sky. Focus dims by stepping down to these, never by
+     opacity on text, and each still clears 4.5:1 on the lightest sky behind
+     it: home-recede on the dawn glow at the centre, the other two on the sky
+     around the orbits. Tinted toward what sits behind them, so a receded
+     label sinks into the sky instead of turning grey. */
+  --constellation-home-recede: oklch(0.8 0.04 68);
+  --constellation-ink-recede: oklch(0.67 0.035 272);
+  --constellation-orbit-ink: oklch(0.68 0.045 268);
   /* The pin's gold, deepened to read as ink on the light rail. */
   --constellation-pin-ink: oklch(0.56 0.115 72);
   --constellation-pin-wash: oklch(0.965 0.03 85);
 }
 
 .constellation-sky {
-  background:
-    radial-gradient(ellipse 22% 20% at 50% 50%, color-mix(in oklch, var(--constellation-dawn) 62%, transparent), transparent 100%),
+  /* The sky's base colour, under the gradients: what shows if they fail. */
+  background-color: var(--constellation-sky);
+  /* The dawn glow is drawn in the map itself, centred on the past titles: a
+     panel-centred glow slides under role names when a narrow screen scrolls
+     the map sideways. */
+  background-image:
     radial-gradient(ellipse 48% 44% at 50% 52%, color-mix(in oklch, var(--constellation-dusk) 55%, transparent), transparent 100%),
     radial-gradient(ellipse 90% 85% at 50% 50%, var(--constellation-sky) 0%, var(--constellation-sky-edge) 100%);
   box-shadow:

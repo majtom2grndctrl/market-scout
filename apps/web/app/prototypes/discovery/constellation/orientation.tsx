@@ -34,12 +34,7 @@ export function Orientation({ data, activeGroup, onGroup }: Props) {
       transition={{ duration: 0.3, ease: EASE_OUT }}
       className="flex flex-col gap-4"
     >
-      <header className="space-y-1.5">
-        <p className="text-[11px] font-semibold tracking-[0.14em] text-content-muted uppercase">Paths from your past</p>
-        <h2 className="font-display text-xl leading-snug font-semibold text-balance">
-          {headingFor(data.recommendations)}
-        </h2>
-      </header>
+      <h2 className="font-display text-[1.375rem] leading-[1.2] font-semibold text-balance">{headingFor(data.recommendations)}</h2>
 
       {rows.length > 0 && (
         <ul className="-mx-2 flex flex-col" onMouseLeave={() => onGroup(null)}>
@@ -53,12 +48,12 @@ export function Orientation({ data, activeGroup, onGroup }: Props) {
                   className={`rounded-lg px-2 py-2.5 transition-colors ${on ? "bg-surface-row-hover" : ""}`}
                 >
                   <div className="flex items-baseline justify-between gap-3">
-                    <span className={`font-display text-[15px] font-medium ${row.key === WHOLE_KEY ? "italic" : ""}`}>{row.title}</span>
-                    <span className="shrink-0 text-xs text-content-muted tabular-nums">
+                    <span className={`font-display text-base font-medium ${row.key === WHOLE_KEY ? "italic" : ""}`}>{row.title}</span>
+                    <span className="shrink-0 text-sm text-content-muted tabular-nums">
                       {leads ? `${row.recs.length} ${plural(row.recs.length, "role")}` : "—"}
                     </span>
                   </div>
-                  <p className="mt-0.5 text-[13px] leading-snug text-content-secondary">
+                  <p className="mt-1 text-sm leading-snug text-content-secondary">
                     {leads ? row.recs.map((r) => r.headline).join(" · ") : "No role in this ranking builds on it most closely."}
                   </p>
                 </div>

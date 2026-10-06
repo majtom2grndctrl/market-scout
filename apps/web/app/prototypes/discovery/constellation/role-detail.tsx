@@ -26,20 +26,20 @@ export function RoleDetail({ rec, pinned, claimedCount, onTogglePin }: Props) {
       transition={{ duration: 0.22, ease: EASE_OUT }}
       className="flex flex-col gap-4"
     >
-      <header className="space-y-1.5">
-        <p className="text-[11px] font-semibold tracking-[0.14em] text-content-muted uppercase">
-          No. {rec.rank} · {ORBIT_NAME[rec.strength]} orbit
-        </p>
-        <h2 className="font-display text-[1.7rem] leading-[1.1] font-semibold tracking-tight text-balance">{rec.headline}</h2>
-        <p className="text-[13px] text-content-muted tabular-nums">
-          {postings(rec.openPostings)} open at {rec.companies.toLocaleString("en-US")} {plural(rec.companies, "company", "companies")}
+      <header className="space-y-2">
+        <h2 className="font-display text-[1.75rem] leading-[1.1] font-semibold tracking-tight text-balance">{rec.headline}</h2>
+        {/* Rank and orbit read as a sentence under the name, where the map's
+            encoding is spelled out, rather than as a label above it. */}
+        <p className="text-[15px] leading-snug text-content-secondary">
+          No. {rec.rank}, in the {ORBIT_NAME[rec.strength].toLowerCase()} orbit. {postings(rec.openPostings)} open at{" "}
+          {rec.companies.toLocaleString("en-US")} {plural(rec.companies, "company", "companies")}.
         </p>
         {also.length > 0 && (
-          <p className="text-[13px] leading-snug text-content-secondary">
+          <p className="text-sm leading-snug text-content-secondary">
             <span className="text-content-muted">Also called </span>
             {also.map((t, i) => (
               <span key={t.title}>
-                {i > 0 && <span className="text-content-disabled"> · </span>}
+                {i > 0 && <span className="text-content-muted"> · </span>}
                 {t.title}
               </span>
             ))}
@@ -47,7 +47,7 @@ export function RoleDetail({ rec, pinned, claimedCount, onTogglePin }: Props) {
         )}
       </header>
 
-      <dl className="space-y-3.5 text-sm">
+      <dl className="space-y-4 text-[15px]">
         <Field term="Builds on">
           {rec.closestPast ? (
             <>
@@ -62,7 +62,7 @@ export function RoleDetail({ rec, pinned, claimedCount, onTogglePin }: Props) {
           {rec.bring.length > 0 ? (
             <ul className="flex flex-wrap gap-1.5">
               {rec.bring.map((s) => (
-                <li key={s.slug} className="rounded-full bg-(--constellation-pin-wash) px-2.5 py-0.5 text-[13px] text-content-primary ring-1 ring-(--constellation-pin-ink)/25">
+                <li key={s.slug} className="rounded-full bg-(--constellation-pin-wash) px-2.5 py-0.5 text-sm text-content-primary ring-1 ring-(--constellation-pin-ink)/25">
                   {s.name}
                 </li>
               ))}
@@ -81,9 +81,9 @@ export function RoleDetail({ rec, pinned, claimedCount, onTogglePin }: Props) {
           <Field term="It also asks for">
             <ul className="divide-y divide-edge-hairline">
               {rec.grow.map((s) => (
-                <li key={s.slug} className="flex items-baseline justify-between gap-4 py-1 first:pt-0 last:pb-0">
-                  <span className="text-content-primary">{s.name}</span>
-                  <span className="shrink-0 text-xs text-content-muted tabular-nums">{shareOfPostings(s.share)}</span>
+                <li key={s.slug} className="flex items-baseline justify-between gap-4 py-1.5 first:pt-0 last:pb-0">
+                  <span className="leading-snug text-content-primary">{s.name}</span>
+                  <span className="shrink-0 text-sm text-content-muted tabular-nums">{shareOfPostings(s.share)}</span>
                 </li>
               ))}
             </ul>
@@ -119,7 +119,7 @@ export function RoleDetail({ rec, pinned, claimedCount, onTogglePin }: Props) {
 function Field({ term, children }: { term: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <dt className="text-[11px] font-semibold tracking-[0.12em] text-content-muted uppercase">{term}</dt>
+      <dt className="font-display text-base font-semibold text-content-primary">{term}</dt>
       <dd className="leading-relaxed text-content-secondary">{children}</dd>
     </div>
   );

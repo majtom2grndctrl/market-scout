@@ -4,6 +4,7 @@
 // how far it turns from "outward". Rank 1 gets the best seat; a label only
 // moves off its star, with a leader line, when no adjacent seat is free.
 
+import { ORBIT_NAME } from "./copy";
 import { type Box, type Layout, type Measure, type Point, type Star, TYPE, pointOnCurve, wrapText } from "./geometry";
 
 export type Anchor = "start" | "middle" | "end";
@@ -23,7 +24,7 @@ export interface OrbitLabel {
   y: number;
 }
 
-const WRAP = 160;
+const WRAP = 190;
 const META_GAP = 3;
 
 interface Candidate {
@@ -96,7 +97,7 @@ export function placeOrbitLabels(layout: Layout, labels: Map<string, StarLabel>,
     const at = new Map<string, OrbitLabel>();
     let cost = i * 2;
     for (const o of layout.orbits) {
-      const w = measure(o.strength.toUpperCase(), "orbit");
+      const w = measure(ORBIT_NAME[o.strength], "orbit");
       const x = layout.cx + layout.rx * o.rho * Math.cos(a);
       const below = Math.sin(a) > 0;
       const y = layout.cy + layout.ry * o.rho * Math.sin(a) + (below ? TYPE.orbit.size + 4 : -5);
@@ -110,7 +111,9 @@ export function placeOrbitLabels(layout: Layout, labels: Map<string, StarLabel>,
 }
 
 function boxFor(star: Star, c: Candidate, w: number, h: number): Box {
-  const gap = (star.r + 9) * (c.far ? 3 : 1);
+  // Clear the pinned mark's ring (radius ~10.5) whether or not the star is
+  // pinned, so pinning never crowds or moves a label.
+  const gap = Math.max(star.r + 9, 16) * (c.far ? 3 : 1);
   const line = TYPE.headline.lineHeight;
   if (c.dir.y === 0) {
     // Beside the star: centre the first line of the headline on it.

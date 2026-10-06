@@ -22,9 +22,10 @@ interface Props {
 }
 
 // Below this the map scrolls sideways inside its panel rather than crushing
-// twelve labels into a phone width.
-const MIN_WIDTH = 660;
-// The legend strip under the map, plus breathing room above the fold.
+// twelve labels into a phone width. Wide enough that the inner orbit clears
+// the past titles at their 18px size.
+const MIN_WIDTH = 760;
+// The coverage strip under the map, plus breathing room above the fold.
 const FOOTER = 64;
 
 export function SkyPanel({ data, pinned, focus, entered, onFocus, onTogglePin }: Props) {
@@ -63,14 +64,27 @@ export function SkyPanel({ data, pinned, focus, entered, onFocus, onTogglePin }:
 
   return (
     <div className="constellation-sky dark relative overflow-hidden rounded-2xl">
-      <motion.p
-        className="px-5 pt-4 text-[11px] text-content-muted"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: k * 2.6, duration: k * 0.8 }}
-      >
-        Hover or Tab to a star to read it. Click or press Enter to pin it.
-      </motion.p>
+      {/* At the 14px floor, how-to and key share one row above the map and
+          leave the strip below to coverage, so neither wraps at desktop width. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-5 pt-4 text-sm text-content-muted">
+        <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: k * 2.6, duration: k * 0.8 }}>
+          Hover or Tab to a star to read it. Click or press Enter to pin it.
+        </motion.p>
+        {tiers.length > 0 && (
+          <ul className="flex items-center gap-4" aria-label="Legend">
+            {tiers.map((t) => (
+              <li key={t} className="flex items-center gap-1.5">
+                <TierDot strength={t} />
+                {ORBIT_NAME[t]}
+              </li>
+            ))}
+            <li className="flex items-center gap-1.5">
+              <PinGlyph className="text-(--constellation-pin)" />
+              Pinned
+            </li>
+          </ul>
+        )}
+      </div>
       <div ref={ref} className="overflow-x-auto" style={{ minHeight: height }}>
         {chart && (
           <StarMap
@@ -87,26 +101,10 @@ export function SkyPanel({ data, pinned, focus, entered, onFocus, onTogglePin }:
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-t border-edge-hairline/60 px-5 py-3 text-[11px] text-content-muted">
-        <p>
-          Ranked from {coverage.classifiedPostings.toLocaleString("en-US")} classified of {coverage.openPostings.toLocaleString("en-US")} open
-          postings · {coverage.rolesConsidered} roles considered
-        </p>
-        {tiers.length > 0 && (
-          <ul className="flex items-center gap-4" aria-label="Legend">
-            {tiers.map((t) => (
-              <li key={t} className="flex items-center gap-1.5">
-                <TierDot strength={t} />
-                {ORBIT_NAME[t]}
-              </li>
-            ))}
-            <li className="flex items-center gap-1.5">
-              <PinGlyph className="text-(--constellation-pin)" />
-              Pinned
-            </li>
-          </ul>
-        )}
-      </div>
+      <p className="border-t border-edge-hairline/60 px-5 py-3 text-sm text-content-muted">
+        Ranked from {coverage.classifiedPostings.toLocaleString("en-US")} classified of {coverage.openPostings.toLocaleString("en-US")} open
+        postings · {coverage.rolesConsidered} roles considered
+      </p>
     </div>
   );
 }

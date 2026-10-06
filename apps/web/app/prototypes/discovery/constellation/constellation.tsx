@@ -138,13 +138,12 @@ function Intro({ data }: { data: DiscoveryData }) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6, ease: EASE_OUT }}
-      className="max-w-[48rem] space-y-2.5"
+      className="max-w-[48rem] space-y-3"
     >
-      <p className="text-[11px] font-semibold tracking-[0.16em] text-content-muted uppercase">Discovery</p>
       <h1 className="font-display text-[2rem] leading-[1.1] font-semibold tracking-tight text-balance">
         Here&rsquo;s where you stand, and what&rsquo;s within reach.
       </h1>
-      <p className="text-[15px] leading-relaxed text-pretty text-content-secondary">
+      <p className="text-base leading-relaxed text-pretty text-content-secondary">
         {centre}
         {orbit}
         {leadKey && leadCount > 1 && (

@@ -5,6 +5,7 @@ import { useMemo } from "react";
 
 import type { Recommendation } from "../_data/query";
 import { ENTER, EASE_OUT, pathDelay, settleDelay, useTempo } from "./choreography";
+import { ORBIT_NAME } from "./copy";
 import { type Layout, type Star, TYPE } from "./geometry";
 import type { OrbitLabel, StarLabel } from "./labels";
 import { type Emphasis, StarNode } from "./star-node";
@@ -50,6 +51,10 @@ export function StarMap({ layout, labels, orbitLabels, recs, pinned, focus, ente
       onMouseLeave={() => focus?.kind === "group" && onFocus(null)}
     >
       <defs>
+        <radialGradient id="constellation-dawn">
+          <stop offset="0%" stopColor="var(--constellation-dawn)" stopOpacity={0.5} />
+          <stop offset="100%" stopColor="var(--constellation-dawn)" stopOpacity={0} />
+        </radialGradient>
         <radialGradient id="constellation-halo">
           <stop offset="0%" stopColor="var(--constellation-star)" stopOpacity={0.9} />
           <stop offset="35%" stopColor="var(--constellation-star)" stopOpacity={0.25} />
@@ -59,6 +64,10 @@ export function StarMap({ layout, labels, orbitLabels, recs, pinned, focus, ente
 
       {/* Clicking open sky lets go of the selection. */}
       <rect width={width} height={height} fill="transparent" onClick={() => onFocus(null)} />
+
+      {/* Dawn over the past titles. Kept to the plaque's surround so the role
+          names around it always sit on night sky. */}
+      <ellipse cx={cx} cy={cy} rx={width * 0.22} ry={height * 0.22} fill="url(#constellation-dawn)" pointerEvents="none" aria-hidden />
 
       <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: k * 1.2 }} aria-hidden>
         {dust.map((d, i) => (
@@ -92,12 +101,12 @@ export function StarMap({ layout, labels, orbitLabels, recs, pinned, focus, ente
                   fontSize={TYPE.orbit.size}
                   fontWeight={TYPE.orbit.weight}
                   letterSpacing={`${TYPE.orbit.tracking}em`}
-                  fill="var(--constellation-orbit)"
+                  fill="var(--constellation-orbit-ink)"
                   initial={{ opacity: 0 }}
-                  animate={{ opacity: 0.85 }}
+                  animate={{ opacity: 1 }}
                   transition={{ delay: k * (ENTER.orbits + 0.5 + i * 0.12), duration: k * 0.6 }}
                 >
-                  {o.strength.toUpperCase()}
+                  {ORBIT_NAME[o.strength]}
                 </motion.text>
               )}
             </g>
@@ -149,27 +158,17 @@ export function StarMap({ layout, labels, orbitLabels, recs, pinned, focus, ente
         transition={{ delay: k * ENTER.home, duration: k * 0.9, ease: EASE_OUT }}
         style={{ originX: `${cx}px`, originY: `${cy}px` }}
       >
-        <text
-          x={cx}
-          y={plaque.caption.y}
-          textAnchor="middle"
-          fontSize={TYPE.caption.size}
-          fontWeight={TYPE.caption.weight}
-          letterSpacing={`${TYPE.caption.tracking}em`}
-          fill="var(--constellation-home)"
-          opacity={0.6}
-        >
-          {plaque.caption.text.toUpperCase()}
-        </text>
         {plaque.lines.map((line) => {
           const quiet = line.members === 0;
           const on = focusGroup === undefined || focusGroup === line.key;
+          // A title no role builds on, or one outside the focus, recedes by
+          // ink; only its exit marks fade.
+          const bright = on && !quiet;
           return (
             <g
               key={line.key}
               onMouseEnter={line.members > 0 ? () => onFocus({ kind: "group", key: line.key }) : undefined}
               className={line.members > 0 ? "cursor-default" : undefined}
-              style={{ opacity: on ? (quiet ? 0.55 : 1) : 0.35, transition: "opacity 220ms ease" }}
             >
               <text
                 textAnchor="middle"
@@ -177,7 +176,8 @@ export function StarMap({ layout, labels, orbitLabels, recs, pinned, focus, ente
                 fontSize={TYPE.home.size}
                 fontWeight={TYPE.home.weight}
                 fontStyle={line.whole ? "italic" : undefined}
-                fill="var(--constellation-home)"
+                fill={bright ? "var(--constellation-home)" : "var(--constellation-home-recede)"}
+                style={{ transition: "fill 220ms ease" }}
               >
                 {line.lines.map((l, i) => (
                   <tspan key={i} x={cx} y={line.y - (line.lines.length * TYPE.home.lineHeight) / 2 + i * TYPE.home.lineHeight + TYPE.home.size * 0.88}>
@@ -193,6 +193,7 @@ export function StarMap({ layout, labels, orbitLabels, recs, pinned, focus, ente
                     cy={line.y}
                     r={2.4}
                     fill="var(--constellation-pin)"
+                    style={{ opacity: on ? 1 : 0.3, transition: "opacity 220ms ease" }}
                   />
                 ) : null,
               )}

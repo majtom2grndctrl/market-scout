@@ -102,6 +102,8 @@ All five variants are built, reviewed in one pass, and pass `pnpm preflight` (26
 
 The review fixed a title-display bug in `_data/query.ts` (a head absent from its raw title recovered a truncated prefix), guarded three divisions, and corrected copy that claimed more than the data supports: pluralities phrased as "most", a capped title count phrased as a total, broken grammar at zero or one claimed skill, and headlines that implied lineage when no role has any. Client number formatting now pins `en-US` to avoid hydration mismatches.
 
+**Readable-type pass** (Invariant 9, after the owner's review of all six). Every variant now passes the type audit in each reviewable state; the only remaining failure anywhere is a disabled "Continue" control before the first pin, named as the exemption in code. Ledger kept none: its disabled label explains what pinning unlocks, so it reads. Eyebrows are gone from all six. Starting counts at 1440 wide: Threads 215, Airy 157, Constellation 60, Ledger 45, Marquee 41, Letter 27 across beats. Two audit gaps surfaced: a gradient painted on a sibling layer is invisible to an ancestor-walking contrast check, so Airy and Constellation measured against screenshot pixels instead; and states behind a click (pinned, expanded, hovered) need a driver that clicks first.
+
 **Outstanding manual proof** — none of this is visible headless:
 
 - Real-time motion feel: spring tension, stagger pacing, and Letter's ~2.5s first beat.
