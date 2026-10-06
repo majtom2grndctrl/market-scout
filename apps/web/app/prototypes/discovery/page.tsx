@@ -16,6 +16,7 @@ const VARIANTS = [
   { href: "/prototypes/discovery/constellation", name: "Constellation", note: "Where you have been, and what orbits it." },
   { href: "/prototypes/discovery/letter", name: "Letter", note: "A paced narrative, one idea per screen." },
   { href: "/prototypes/discovery/threads", name: "Threads", note: "Your skills, and the roles they come together in." },
+  { href: "/prototypes/discovery/dawn", name: "Dawn", note: "Threads, in the light of a new day." },
 ] as const;
 
 export default async function DiscoveryIndex() {

@@ -65,6 +65,7 @@ All five run concurrently on this branch in the main checkout — no worktrees, 
 | Constellation | `discovery/constellation/**` | Spatial. Past roles at the centre, recommendations at distances set by rank; paths draw from where you've been to where you could go. |
 | Letter | `discovery/letter/**` | Paced narrative, one idea per screen, ending in the roles to pin. |
 | Threads | `discovery/threads/**` | Skills left, roles right; a role lights the skills it draws on, with rounded connector lines. Airy's card style. |
+| Dawn | `discovery/dawn/**` | Threads duplicated, then re-lit with Airy's dawn palette and iterated on as "a new dawn". Same data, layout, and line modes. |
 
 Coordinator owns `_data/**`, `discovery/page.tsx`, `package.json`, and this file.
 
