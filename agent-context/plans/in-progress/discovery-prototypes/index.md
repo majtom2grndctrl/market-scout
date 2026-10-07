@@ -129,3 +129,43 @@ The review fixed a title-display bug in `_data/query.ts` (a head absent from its
 - Classified counts drift during enrichment, so the ranking shifts between loads.
 - **Skills match only by exact term, so a role can stay buried behind synonyms.** Solutions Engineer asks for `communication`, `technical-communication`, `technical-demos`, `api-integration`; the profile holds `communication-skills`, `presentation-skills`, `public-speaking`, `rest-api-design-integration`. Similarity from shared roles was tested and rejected: it finds context, not meaning (`communication-skills` sits nearest `prospecting`; `ui-design` nearest `cad-software`), which is also why sales roles rise. Meaning-level matching needs skill embeddings (pgvector is enabled; no skill has one) — a schema change and a write path, so it goes through `/draft-session`. Two companions: repair the near-duplicate terms through the taxonomy repair functions, and pin a fixture profile whose expected top roles include Solutions Engineer, so the mechanism is tested rather than the result tilted.
 - Threads (added after the first five) passes the same gates. `grow` excludes only claimed skills, so an inherited skill can sit in both `connects` and `grow`; Threads filters it. Its agent wished for the past title each connection comes through, per role, and P(skill | role) per connection for line weight.
+
+## Dawn refinement, round 1 (2026-10-07)
+
+Dawn is the chosen direction. The session's end goal is a problem brief for a production Discovery page, distilled from Dawn once it reads right. This round acts on `dawn-feasibility.md`. Everything above still binds.
+
+**Decisions**
+
+| Decision | Consequence |
+|---|---|
+| **Desktop only.** The app runs against a local Postgres; no phone form is planned. | The stacked layout below 60rem stays as built. No new narrow-viewport work. |
+| **Two skill sections, by where a skill came from:** skills the person added, and skills common in their past roles. The "outside" tier is removed. | One rule for both sections. Whether a role draws on a skill is a row state, never a section. |
+| **Every skill gets a row**, reached or not. A row shows how many of the listed roles draw on it. A skill no listed role draws on rests muted, in its section. | The design skills stay with the person instead of being greyed out under a cutoff. |
+| **The column scrolls; rows are not sized to the viewport.** `--dawn-rows` and its chrome term go. | Scales to any skill count. Lines to scrolled-out skills need edge markers. |
+| **Edge markers.** When the lit role draws on skills scrolled out of the column's visible band, their lines end at a marker pinned to the column's top or bottom edge, carrying the count beyond it. Activating the marker scrolls those skills into view. | Every lit connection keeps a visible line. No lit skill disappears without a trace. |
+| **`compositor` stays the default line mode.** `fade` stays as the automatic fallback. | Edge markers must work in both. `js` is a comparison baseline only and needs no edge markers. |
+| **Unmatched claimed skills are shown** in "skills you added", after the matched ones, muted, with a short plain note that they don't match a skill in postings yet. | Nothing the person typed vanishes. They never connect, so they take no reach count. |
+| **Ranking is out of scope.** The owner will work with the data directly after prototyping. | No change to `_data/query.ts` ordering, cutoffs, or recommendation set. |
+| **Proper design tokens come first, in their own brief.** | Dawn keeps its `--dawn-*` properties this round. |
+
+**Invariants added this round**
+
+11. **Order within a section is stable for a page load.** Within each section, rows sort by reach count, most first, ties in data order. The lit role never reorders rows.
+12. **Nothing sits between a skill's marker and the gutter.** The reach count must not lie in a line's path.
+13. **Never scroll the skill column while the pointer is in it.** Auto-scrolling to bring lit skills into view is allowed otherwise. The edge marker is the reader's own way to get there.
+14. **Graphic marks clear 3:1** against what they sit on, in light and dark, including the gold port (2.03:1 in light at review).
+
+**Copy, this round** (plain product copy; Invariants 6 and 7):
+
+- Inherited section heading: "Common in your past roles", keeping the note below it.
+- No copy names an internal cutoff ("top 10"). The role card's empty-bring line becomes "Closest to your {closestPast} role. Its most-asked skills aren't on your list.", with the second sentence alone when `closestPast` is null.
+- Page headline "Roles that use your skills" becomes "Roles near what you've done".
+
+**Track: Dawn round 1.** One agent. Owns `apps/web/app/prototypes/discovery/dawn/**`. Reads `_data/query.ts`, never edits it.
+
+**Acceptance**
+
+- `pnpm typecheck` and `pnpm theme:check` pass from `apps/web/`.
+- `grep -rn "top 10\|outside every\|--dawn-rows" app/prototypes/discovery/dawn` returns nothing.
+- Rendered on `/prototypes/discovery/dawn` at 1440×900 and 1280×680, light and dark, with screenshots looked at: two sections, every skill present, reach counts visible, unmatched claimed skills present, and at 1280×680 a lit role with a skill scrolled out shows an edge marker that scrolls to it when clicked. Checked in `compositor` and `?lines=fade`.
+- No file under `dawn/` over ~400 lines.
