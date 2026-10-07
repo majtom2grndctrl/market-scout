@@ -30,10 +30,13 @@
   /* The thread: lilac where it meets the skills, warming to rose where it
      leaves the role. Set by x, which never scrolls, so the pieces of a line
      in different scroll frames agree where they meet. Gold is kept for what
-     the sun touches: the port, and what a role lights. */
+     the sun touches: the port, and what a role lights. The port is a deep
+     gold: it straddles the card's edge, and clears 3:1 on both the card and
+     the morning beside it (Invariant 14); the sun's glow around it carries
+     the brightness. */
   --dawn-thread-cool: oklch(0.62 0.1 310);
   --dawn-thread-rose: oklch(0.645 0.13 2);
-  --dawn-port: oklch(0.78 0.14 82);
+  --dawn-port: oklch(0.62 0.13 74);
 
   /* Catching the light: what a role lights, and the lit role itself. */
   --dawn-glow: oklch(0.958 0.042 74);
@@ -230,16 +233,6 @@
   gap: 2.5rem;
 }
 
-.column {
-  /* One row per skill a line can land on, sized so all of them fit under the
-     app header: every lit skill stays on screen wherever the roles have
-     scrolled. The chrome term is the padding, headings, and note above and
-     between the rows, plus the 3rem fade that appears when the unreached
-     skills below run past the viewport. The floor keeps 14px type legible;
-     below it the column scrolls instead (see use-lines). */
-  --dawn-row: clamp(1.375rem, calc((100svh - 3.5rem - 13.5rem) / var(--dawn-rows, 18)), 1.625rem);
-}
-
 .skillList {
   display: flex;
   flex-wrap: wrap;
@@ -298,8 +291,9 @@
     display: block;
   }
 
-  /* Only on a viewport too short for every row: the column scrolls, and a
-     soft edge says there is more beyond it. */
+  /* One row per skill, at a fixed height; when the rows outrun the viewport
+     the column scrolls, and a soft edge says there is more beyond it. A lit
+     skill out past an edge gets an edge marker (see edge-markers.tsx). */
   .column[data-more-above="true"] {
     mask-image: linear-gradient(to bottom, transparent 0, black 3rem);
   }
@@ -313,19 +307,18 @@
   }
 
   .skillRow {
-    height: var(--dawn-row);
+    height: 1.75rem;
   }
 
-  /* On a short viewport the rows tighten; the pill tightens with them so a
-     lit pill never overlaps its neighbours. */
   .pill {
-    height: min(var(--dawn-row), 1.5rem);
+    height: 1.5rem;
     padding-block: 0;
   }
 }
 
 .gutter,
-.pieces {
+.pieces,
+.edges {
   display: none;
 }
 
@@ -363,6 +356,21 @@
 
   .card {
     align-self: start;
+  }
+
+  /* Edge markers (see edge-markers.tsx): the column's own box, sticking as
+     it does, so a marker's position is fixed in the column's frame. Above
+     the column, outside its soft-edge mask. */
+  .edges {
+    display: block;
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    position: sticky;
+    top: 3.5rem;
+    align-self: start;
+    height: calc(100svh - 3.5rem);
+    pointer-events: none;
+    z-index: 20;
   }
 
   /* Compositor lines (see pieces.tsx). Sticks exactly as the column does, in

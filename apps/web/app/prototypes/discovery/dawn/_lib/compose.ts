@@ -10,7 +10,10 @@
 //   with the card and slides at the header and the pin bar.
 // - Skill end (last corner, stub): in a layer inside a box that sticks exactly
 //   as the skill column does, shifted by the column's own scroll on a column
-//   scroll timeline. It never leaves its marker.
+//   scroll timeline. It never leaves its marker. A line whose skill is
+//   scrolled out ends on an edge marker instead (see `edges.ts`), which sits
+//   still in the column's box: its skill end lives in a layer of that box
+//   with no scroll timeline, and the column's scroll never moves it.
 // - Run: the vertical span between the two corners, whose ends live in
 //   different frames. It is a bar hung from the port end, clipped by a box
 //   hung from the skill end. Bar and clip each move with their own frame, so
@@ -27,9 +30,10 @@
 // than corners that overlap.
 
 import type { Recommendation } from "../../_data/query";
+import { endsOf, type Routing } from "./edges";
 import { piecesOf, routeBundle, SPACING, type Route, type Target } from "./geometry";
 import type { Layout } from "./layout";
-import { FADE, HEADER } from "./layout";
+import { HEADER } from "./layout";
 import { threadAt, type Span } from "./light";
 import { frameKey, lineKey, pieceKey, portKey, type Attrs, type Line } from "./store";
 import { portTrack, valueAt, type Track } from "./track";
@@ -64,20 +68,14 @@ export function trackOf(L: Layout, reach: number): Track | null {
   });
 }
 
-/** The skills whose markers show in the column, at column scroll `c`. */
-export function shownMarks(L: Layout, c: number, moreAbove: boolean, moreBelow: boolean) {
-  const top = moreAbove ? FADE : 0;
-  const bottom = L.colClient - (moreBelow ? FADE : 0);
-  return L.marks.filter((m) => m.y - c >= top && m.y - c <= bottom);
-}
-
 const px = (v: number) => `${Math.round(v * 100) / 100}px`;
 
 export function composeFrame(
   active: Recommendation,
   L: Layout,
   track: Track,
-  marks: readonly Target[],
+  /** Which lit skills land on an edge marker. */
+  routing: Routing,
   s: number,
   c: number,
   /** Each line's rise at the last pass; updated in place. */
@@ -92,10 +90,12 @@ export function composeFrame(
   const big = 2 * L.viewport + 200;
 
   // Everything below is in the skill column's frame: x from its left edge, y
-  // from the port's middle (port end) or from each marker (skill end).
+  // from the port's middle (port end) or from each marker (skill end). A
+  // skill's marker scrolls with the column; an edge marker does not.
   const originX = L.originX - L.colLeft;
-  const targets = marks.map((m): Target => {
-    const rise = m.y - c - offset;
+  const ends = endsOf(L, routing);
+  const targets = ends.map((m): Target => {
+    const rise = m.y - (m.edge ? 0 : c) - offset;
     const last = rises.get(m.slug);
     rises.set(m.slug, rise);
     // Only a shrinking run can outpace corners sized a pass ago; a growing
@@ -108,7 +108,8 @@ export function composeFrame(
   const attrs = new Map<string, Attrs>();
   const port = { x: String(originX - 1.5), y: String(bundle.portTop - 7), height: String(bundle.portBottom - bundle.portTop + 14) };
   attrs.set(pieceKey(role, "", "port"), port);
-  const markY = new Map(marks.map((m) => [m.slug, m.y]));
+  const markY = new Map(ends.map((m) => [m.slug, m.y]));
+  const edgeOf = new Map(ends.map((m) => [m.slug, m.edge]));
   for (const r of bundle.routes) {
     const p = piecesOf(r, originX);
     const y = markY.get(r.slug) ?? 0;
@@ -137,5 +138,10 @@ export function composeFrame(
     for (const r of bundle.routes) attrs.set(lineKey(role, r.slug), { d: r.d });
   }
 
-  return { lines: bundle.routes.map((r) => ({ slug: r.slug, length: r.length })), routes: bundle.routes, visible, attrs };
+  return {
+    lines: bundle.routes.map((r) => ({ slug: r.slug, length: r.length, edge: edgeOf.get(r.slug) ?? null })),
+    routes: bundle.routes,
+    visible,
+    attrs,
+  };
 }

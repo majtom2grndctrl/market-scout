@@ -157,7 +157,7 @@ Dawn is the chosen direction. The session's end goal is a problem brief for a pr
 
 **Copy, this round** (plain product copy; Invariants 6 and 7):
 
-- Inherited section heading: "Common in your past roles", keeping the note below it.
+- Inherited section heading: "Common in your past roles". Its note became "From postings for titles you've held." so "Common" does not repeat.
 - No copy names an internal cutoff ("top 10"). The role card's empty-bring line becomes "Closest to your {closestPast} role. Its most-asked skills aren't on your list.", with the second sentence alone when `closestPast` is null.
 - Page headline "Roles that use your skills" becomes "Roles near what you've done".
 
@@ -169,3 +169,9 @@ Dawn is the chosen direction. The session's end goal is a problem brief for a pr
 - `grep -rn "top 10\|outside every\|--dawn-rows" app/prototypes/discovery/dawn` returns nothing.
 - Rendered on `/prototypes/discovery/dawn` at 1440×900 and 1280×680, light and dark, with screenshots looked at: two sections, every skill present, reach counts visible, unmatched claimed skills present, and at 1280×680 a lit role with a skill scrolled out shows an edge marker that scrolls to it when clicked. Checked in `compositor` and `?lines=fade`.
 - No file under `dawn/` over ~400 lines.
+
+**Result, round 1.** Every acceptance row passed: typecheck, `theme:check`, the grep, file sizes (largest 394 lines), and screenshots at both sizes in both modes and themes. Compositor mode needed no per-frame script. Each line picks its end (skill or edge marker) once per layout pass. Lines to a skill leaving the column run off its clipped edge until the scroll settles, then move to the marker. The port is now 3.73:1 on the card. Reach counts sit inside the pill, between the name and the marker. Section headings dropped their counts.
+
+The review's four "unmatched" claimed skills are matched but reached by no listed role. The live profile has no unmatched claims, so that path was checked against injected local data only.
+
+Outstanding manual proof: trackpad momentum in headed Chrome and Safari, especially the snap when the settle moves a line from a clipped skill to the marker; a "below" marker against live data, since reach-first ordering keeps reached skills near the top; a dark-mode type audit.

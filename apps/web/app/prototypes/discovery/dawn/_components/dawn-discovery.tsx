@@ -4,12 +4,13 @@ import { MotionConfig, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { DiscoveryData, Recommendation } from "../../_data/query";
-import { reachedSlugs } from "../_lib/copy";
 import { effectiveLineMode, type LineMode } from "../_lib/modes";
 import { ENTRANCE } from "../_lib/motion";
+import { columnModel } from "../_lib/skills";
 import { useLines } from "../_lib/use-lines";
 import styles from "../dawn.module.css";
 import { Connectors } from "./connectors";
+import { EdgeMarkers } from "./edge-markers";
 import { Intro } from "./intro";
 import { Pieces } from "./pieces";
 import { RoleCard } from "./role-card";
@@ -51,7 +52,7 @@ export function DawnDiscovery({ data, lines }: { data: DiscoveryData; lines: Lin
   }, [first, reduce]);
 
   const active = useMemo(() => recs.find((r) => r.roleSlug === activeSlug) ?? null, [recs, activeSlug]);
-  const { light: lighting, store, bind, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole } = useLines(active, reduce, mode);
+  const { light: lighting, store, bind, reveal, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole } = useLines(active, reduce, mode);
 
   // Pins are local by contract: seeded from the profile, never written back.
   const [order, setOrder] = useState<string[]>(() => recs.filter((r) => r.pinned).map((r) => r.roleSlug));
@@ -66,7 +67,8 @@ export function DawnDiscovery({ data, lines }: { data: DiscoveryData; lines: Lin
     [order, recs],
   );
 
-  const reached = useMemo(() => reachedSlugs(recs), [recs]);
+  // Row order is fixed for the page load; lighting a role never moves a row.
+  const column = useMemo(() => columnModel(data), [data]);
   const skillsBySlug = useMemo(() => new Map(data.personSkills.map((s) => [s.slug, s])), [data.personSkills]);
 
   return (
@@ -75,13 +77,13 @@ export function DawnDiscovery({ data, lines }: { data: DiscoveryData; lines: Lin
         <div ref={containerRef} className={cn(styles.grid, "relative mx-auto max-w-[76rem] px-6 pb-16 md:px-10")}>
           <Intro data={data} className={cn(styles.intro, "pt-8 @min-[60rem]/dawn:pb-10")} />
           <SkillColumn
-            skills={data.personSkills}
-            reached={reached}
+            model={column}
             lit={lighting?.lit ?? NO_LIGHT}
             hasActive={lighting !== null}
             columnRef={columnRef}
             registerSkill={registerSkill}
           />
+          <EdgeMarkers store={store} mode={mode} onReveal={reveal} />
           <div aria-hidden className={styles.gutter} />
           <Sky risen={activeSlug !== null} />
           <RoleCard

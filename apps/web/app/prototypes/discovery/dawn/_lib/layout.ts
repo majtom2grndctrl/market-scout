@@ -7,8 +7,6 @@ import type { Target } from "./geometry";
 export const HEADER = 56;
 /** Narrower than this between the columns, the layout has stacked and lines are off. */
 const MIN_GUTTER = 48;
-/** Half the column's 3rem soft edge: a marker past this is too faded to aim a line at. */
-export const FADE = 24;
 
 /**
  * Offsets that move only when the layout does. The roles card scrolls with
@@ -28,7 +26,7 @@ export interface Layout {
   readonly stacked: boolean;
   /** The card's left edge, in container x. */
   readonly originX: number;
-  /** The column's left and right edges, in container x. */
+  /** The column's content left and right edges, in container x. */
   readonly colLeft: number;
   readonly gutterLeft: number;
   /** The headline's middle and its row's extent, in container y. */
@@ -105,11 +103,6 @@ export function readLayout(
     barStuck: barStyle ? viewport - (parseFloat(barStyle.bottom) || 0) - barH : Infinity,
     barFlow: barStyle ? cardBox.bottom - (parseFloat(barStyle.marginBottom) || 0) - barH : Infinity,
   };
-}
-
-/** The band of the skill column that shows, in viewport y, short of any soft edge. */
-export function seen(col: DOMRect, moreAbove: boolean, moreBelow: boolean) {
-  return { top: col.top + (moreAbove ? FADE : 0), bottom: col.bottom - (moreBelow ? FADE : 0) };
 }
 
 type Register = (key: string) => (el: HTMLElement | null) => void;

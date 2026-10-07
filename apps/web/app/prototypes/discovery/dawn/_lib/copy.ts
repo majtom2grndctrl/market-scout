@@ -78,20 +78,6 @@ export function coverageLine(c: DiscoveryData["coverage"]): string {
   return `Ranked from ${n(c.classifiedPostings)} classified of ${n(c.openPostings)} open postings, across ${n(c.rolesConsidered)} roles.`;
 }
 
-/** Every slug some recommendation draws on: the only skills a line can reach. */
-export function reachedSlugs(recs: readonly Recommendation[]): ReadonlySet<string> {
-  return new Set(recs.flatMap((r) => r.connects.map((c) => c.slug)));
-}
-
-/**
- * Labels the inherited skills no role here draws on: outside each role's top
- * ten skills, the card's own unit. `more` when reached ones are listed above
- * them.
- */
-export function outsideNote(count: number, more: boolean): string {
-  return more ? `${n(count)} more outside every role's top 10` : "Outside every role's top 10";
-}
-
 /** Where an inherited skill comes from: postings for the person's past titles, never their own word. */
 export function inheritedNote(skill: PersonSkill): string {
   return skill.fromPast.length > 0 ? `Common in ${listJoin(skill.fromPast)} postings` : "Common in postings for titles you've held";

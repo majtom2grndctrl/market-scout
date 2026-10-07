@@ -36,8 +36,8 @@ function DrawsOn({ rec, skills, lit }: { rec: Recommendation; skills: ReadonlyMa
   if (claimed.length + inherited.length === 0) {
     return (
       <p className="mt-4 text-sm leading-relaxed text-pretty text-content-muted">
-        None of its top 10 skills are on your list.
-        {rec.closestPast && ` Closest to your ${rec.closestPast.titleText} role.`}
+        {rec.closestPast && `Closest to your ${rec.closestPast.titleText} role. `}
+        {"Its most-asked skills aren't on your list."}
       </p>
     );
   }
@@ -162,6 +162,7 @@ export function RoleItem({
             {/* Stretched over the row, so a tap anywhere lights the role. */}
             <button
               type="button"
+              data-dawn-role={rec.roleSlug}
               aria-pressed={lit}
               onClick={() => onLight(rec.roleSlug)}
               className="cursor-pointer text-left outline-none after:absolute after:inset-x-2 after:inset-y-1 after:rounded-[1.25rem] after:transition-shadow focus-visible:after:ring-2 focus-visible:after:ring-focus"

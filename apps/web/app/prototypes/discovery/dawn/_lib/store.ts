@@ -1,6 +1,7 @@
 import type { RefCallback } from "react";
 
 import type { Drive } from "./drive";
+import type { Edge } from "./edges";
 import { sameSpan, type Span } from "./light";
 
 /** The role holding the light, and the skills it lights. Changes only when the role does. */
@@ -14,6 +15,8 @@ export interface Line {
   readonly slug: string;
   /** Length when the line appeared, so it draws at the shared speed. */
   readonly length: number;
+  /** The edge marker it lands on, when its skill is scrolled out of the column. */
+  readonly edge: Edge | null;
 }
 
 /**
@@ -36,6 +39,8 @@ export interface LineSet {
   readonly drawn: boolean;
   /** Where the thread's gradient runs. Moves only with the layout. */
   readonly span: Span | null;
+  /** Lit skills beyond each of the column's edges: what each edge marker counts. */
+  readonly edges: { readonly above: number; readonly below: number };
 }
 
 /**
@@ -89,5 +94,7 @@ export const sameLineSet = (a: LineSet | null, b: LineSet | null) =>
     a.epoch === b.epoch &&
     a.drawn === b.drawn &&
     sameSpan(a.span, b.span) &&
+    a.edges.above === b.edges.above &&
+    a.edges.below === b.edges.below &&
     (a.lines === b.lines ||
-      (a.lines !== null && b.lines !== null && a.lines.length === b.lines.length && a.lines.every((l, i) => l.slug === b.lines?.[i].slug))));
+      (a.lines !== null && b.lines !== null && a.lines.length === b.lines.length && a.lines.every((l, i) => l.slug === b.lines?.[i].slug && l.edge === b.lines?.[i]?.edge))));

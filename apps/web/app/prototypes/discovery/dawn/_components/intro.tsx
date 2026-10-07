@@ -24,8 +24,8 @@ export function Intro({ data, className }: { data: DiscoveryData; className?: st
   return (
     <header className={className}>
       <h1 className="font-display text-[clamp(2.5rem,1.4rem+2.4vw,3.75rem)] leading-[0.98] font-light tracking-[-0.035em] text-content-primary">
-        <Rise delay={ENTRANCE.headline}>Roles that use</Rise>
-        <Rise delay={ENTRANCE.headline + 0.1}>your skills.</Rise>
+        <Rise delay={ENTRANCE.headline}>Roles near</Rise>
+        <Rise delay={ENTRANCE.headline + 0.1}>{"what you've done."}</Rise>
       </h1>
       {/* Coverage stands as the lede, so the ranking never reads as the
           whole market (build contract, Invariant 4). */}

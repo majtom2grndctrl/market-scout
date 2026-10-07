@@ -54,6 +54,8 @@ export function Pieces({ store, bind }: { store: LineStore; bind: Bind }) {
 function Bundle({ role, lines, span, bind }: { role: string; lines: readonly Line[]; span: Span | null; bind: Bind }) {
   const id = `dawn-thread-${useId().replace(/:/g, "")}`;
   const stroke = (end: string) => ({ ...line, stroke: span ? `url(#${id}-${end})` : "var(--dawn-thread-rose)" });
+  const onSkills = lines.filter((l) => !l.edge);
+  const onEdges = lines.filter((l) => l.edge);
   return (
     <>
       {/* Port end: rides the port's track on the page's scroll. */}
@@ -67,29 +69,57 @@ function Bundle({ role, lines, span, bind }: { role: string; lines: readonly Lin
         </svg>
       </div>
 
-      {/* Skill end: rides the column's own scroll. */}
-      <div ref={bind(`${role}#marks`, "unscroll")} className="absolute inset-x-0 top-0">
-        <svg className="absolute top-0 left-0 overflow-visible" width={1} height={1} fill="none">
-          {span && <ThreadGradient id={`${id}-mark`} span={span} shift={span.origin} />}
-          {lines.map((l) => (
-            <path key={l.slug} ref={bind(pieceKey(role, l.slug, "mark"))} {...stroke("mark")} />
-          ))}
-        </svg>
-        {/* Runs: a bar hung from the port end, clipped by a box hung from the
-            skill end. The unclip layer undoes the column's scroll and the lift
-            layer replays the port's track, so the bar moves with the port. */}
-        {lines.map((l) =>
-          RUNS.map((dir) => (
-            <div key={`${l.slug}-${dir}`} ref={bind(pieceKey(role, l.slug, `clip-${dir}`))} className="absolute inset-x-0 overflow-clip">
-              <div ref={bind(pieceKey(role, l.slug, `unclip-${dir}`), "column")} className="absolute left-0">
-                <div ref={bind(pieceKey(role, l.slug, `lift-${dir}`), "page")} className="absolute top-0 left-0">
-                  <div ref={bind(pieceKey(role, l.slug, `bar-${dir}`))} className="absolute w-[1.5px]" />
-                </div>
+      {/* Skill end on a skill: rides the column's own scroll. */}
+      <SkillEnds role={role} lines={onSkills} gradient={span && `${id}-mark`} span={span} stroke={stroke("mark")} bind={bind} scrolls />
+      {/* Skill end on an edge marker: still in the column's box. */}
+      <SkillEnds role={role} lines={onEdges} gradient={span && `${id}-edge`} span={span} stroke={stroke("edge")} bind={bind} scrolls={false} />
+    </>
+  );
+}
+
+/**
+ * The skill ends of a set of lines, and their runs: a bar hung from the port
+ * end, clipped by a box hung from the skill end. In a layer that follows the
+ * column's scroll, the unclip layer undoes that scroll; in either, the lift
+ * layer replays the port's track, so the bar moves with the port.
+ */
+function SkillEnds({
+  role,
+  lines,
+  gradient,
+  span,
+  stroke,
+  bind,
+  scrolls,
+}: {
+  role: string;
+  lines: readonly Line[];
+  gradient: string | null;
+  span: Span | null;
+  stroke: typeof line & { stroke: string };
+  bind: Bind;
+  scrolls: boolean;
+}) {
+  if (lines.length === 0) return null;
+  return (
+    <div ref={scrolls ? bind(`${role}#marks`, "unscroll") : undefined} className="absolute inset-x-0 top-0">
+      <svg className="absolute top-0 left-0 overflow-visible" width={1} height={1} fill="none">
+        {span && gradient && <ThreadGradient id={gradient} span={span} shift={span.origin} />}
+        {lines.map((l) => (
+          <path key={l.slug} ref={bind(pieceKey(role, l.slug, "mark"))} {...stroke} />
+        ))}
+      </svg>
+      {lines.map((l) =>
+        RUNS.map((dir) => (
+          <div key={`${l.slug}-${dir}`} ref={bind(pieceKey(role, l.slug, `clip-${dir}`))} className="absolute inset-x-0 overflow-clip">
+            <div ref={bind(pieceKey(role, l.slug, `unclip-${dir}`), scrolls ? "column" : undefined)} className="absolute left-0">
+              <div ref={bind(pieceKey(role, l.slug, `lift-${dir}`), "page")} className="absolute top-0 left-0">
+                <div ref={bind(pieceKey(role, l.slug, `bar-${dir}`))} className="absolute w-[1.5px]" />
               </div>
             </div>
-          )),
-        )}
-      </div>
-    </>
+          </div>
+        )),
+      )}
+    </div>
   );
 }

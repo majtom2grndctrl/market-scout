@@ -1,17 +1,22 @@
 "use client";
 
 import { motion } from "motion/react";
-import type { CSSProperties, Ref } from "react";
+import type { CSSProperties, ReactNode, Ref } from "react";
 
 import type { PersonSkill } from "../../_data/query";
-import { inheritedNote, outsideNote, splitSkills } from "../_lib/copy";
+import { inheritedNote, plural } from "../_lib/copy";
 import { drift, ENTRANCE } from "../_lib/motion";
+import type { ColumnModel, SkillRowModel } from "../_lib/skills";
 import styles from "../dawn.module.css";
 import { SkillMark } from "./skill-mark";
 import { cn } from "@/lib/utils";
 
-/** rest: no role lit yet. lit: the active role draws on it. dim: a role is lit, and not through this skill. */
-type State = "rest" | "lit" | "dim";
+/**
+ * rest: no role lit yet. lit: the active role draws on it. dim: a role is
+ * lit, and not through this skill. idle: no listed role draws on it, so it
+ * rests muted whatever is lit.
+ */
+type State = "rest" | "lit" | "dim" | "idle";
 
 /*
  * Ink per state. A lit skill catches the light: its pill warms to the sun's
@@ -24,7 +29,14 @@ type State = "rest" | "lit" | "dim";
 const INK: Record<Exclude<State, "lit">, Record<"claimed" | "inherited", string>> = {
   rest: { claimed: "text-content-primary", inherited: "text-content-secondary" },
   dim: { claimed: "text-content-muted", inherited: "text-content-muted" },
+  idle: { claimed: "text-content-muted", inherited: "text-content-muted" },
 };
+
+const enter = (order: number) => ({
+  initial: { opacity: 0, x: -8 },
+  animate: { opacity: 1, x: 0 },
+  transition: drift(ENTRANCE.skills + order * ENTRANCE.skillStep, 0.8),
+});
 
 /** Where an inherited skill comes from, on hover: the past titles it rides in on. */
 function Provenance({ skill }: { skill: PersonSkill }) {
@@ -41,31 +53,31 @@ function Provenance({ skill }: { skill: PersonSkill }) {
   );
 }
 
+/*
+ * The reach count sits between the name and the marker, so nothing lies
+ * between the marker and the gutter, where lines arrive (Invariant 12).
+ */
 function SkillRow({
-  skill,
+  row,
   order,
   state,
   arrival,
   markRef,
 }: {
-  skill: PersonSkill;
+  row: SkillRowModel;
   order: number;
   state: State;
   arrival: number;
   markRef: (el: HTMLElement | null) => void;
 }) {
+  const { skill, reach } = row;
   const lit = state === "lit";
   const kind = skill.claimed ? "claimed" : "inherited";
   // Light on arrival of the line, so the eye lands with it; let go at once.
   const timing: CSSProperties = { transitionDelay: lit ? `${Math.round(arrival * 1000)}ms` : "0ms" };
 
   return (
-    <motion.li
-      className={cn(styles.skillRow, "group/skill relative min-w-0")}
-      initial={{ opacity: 0, x: -8 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={drift(ENTRANCE.skills + order * ENTRANCE.skillStep, 0.8)}
-    >
+    <motion.li className={cn(styles.skillRow, "group/skill relative min-w-0")} {...enter(order)}>
       <span
         style={timing}
         className={cn(
@@ -81,6 +93,18 @@ function SkillRow({
         )}
       >
         <span className="truncate">{skill.name}</span>
+        {reach > 0 && (
+          <span
+            style={timing}
+            className={cn(
+              "shrink-0 font-normal whitespace-nowrap tabular-nums transition-colors duration-500 ease-out",
+              lit ? "text-content-secondary" : "text-content-muted",
+            )}
+          >
+            <span className="sr-only">, used by </span>
+            {reach} {plural(reach, "role")}
+          </span>
+        )}
         <SkillMark
           ref={markRef}
           claimed={skill.claimed}
@@ -93,85 +117,38 @@ function SkillRow({
   );
 }
 
-function Heading({ id, title, count }: { id: string; title: string; count: number }) {
+/** A claimed skill no posting skill matches. It can never light, so it takes no marker a line could aim at. */
+function UnmatchedRow({ text, order }: { text: string; order: number }) {
   return (
-    <h2 id={id} className="flex items-baseline gap-2 pl-2.5 font-display text-[1.125rem] leading-6 font-normal tracking-[-0.01em] text-content-primary">
-      {title}
-      <span className="font-sans text-sm text-content-muted tabular-nums">{count}</span>
+    <motion.li className={cn(styles.skillRow, "relative min-w-0")} {...enter(order)}>
+      <span className={cn(styles.pill, "inline-flex max-w-full min-w-0 items-center gap-2 rounded-full border border-transparent py-[0.1875rem] pr-2 pl-2.5 text-sm leading-[1.2] font-medium text-content-muted")}>
+        <span className="truncate">{text}</span>
+        <SkillMark claimed className="text-content-muted" />
+      </span>
+    </motion.li>
+  );
+}
+
+function Heading({ id, children }: { id: string; children: ReactNode }) {
+  return (
+    <h2 id={id} className="pl-2.5 font-display text-[1.125rem] leading-6 font-normal tracking-[-0.01em] text-content-primary">
+      {children}
     </h2>
   );
 }
 
-function Rows({
-  skills,
-  offset,
-  lit,
-  anyLit,
-  registerSkill,
-}: {
-  skills: readonly PersonSkill[];
-  offset: number;
-  lit: ReadonlyMap<string, number>;
-  anyLit: boolean;
-  registerSkill: (slug: string) => (el: HTMLElement | null) => void;
-}) {
-  if (skills.length === 0) return null;
-  return (
-    <ul className={cn(styles.skillList, "mt-2")}>
-      {skills.map((s, i) => (
-        <SkillRow
-          key={s.slug}
-          skill={s}
-          order={offset + i}
-          state={lit.has(s.slug) ? "lit" : anyLit ? "dim" : "rest"}
-          arrival={lit.get(s.slug) ?? 0}
-          markRef={registerSkill(s.slug)}
-        />
-      ))}
-    </ul>
-  );
-}
-
-/*
- * Inherited skills no role here draws on. No line can reach them, so they
- * leave the one-row-per-skill list and wrap below it: the rows a line can
- * land on stay few enough to fit the viewport, and these may scroll.
- */
-function Outside({ skills, more, delay }: { skills: readonly PersonSkill[]; more: boolean; delay: number }) {
-  if (skills.length === 0) return null;
-  return (
-    <motion.div
-      className={cn(more ? "mt-4" : "mt-3", "pl-2.5")}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={drift(delay, 0.8)}
-    >
-      <p className="text-sm leading-[1.45] text-pretty text-content-muted">{outsideNote(skills.length, more)}</p>
-      <ul className="mt-1.5 flex flex-wrap gap-x-3.5 gap-y-1 text-sm leading-snug text-content-muted">
-        {skills.map((s) => (
-          <li key={s.slug} className="group/skill relative">
-            {s.name}
-            {/* Inline, so a name that wraps keeps its marker on its last line. */}
-            <SkillMark claimed={false} className="ml-1.5 align-middle" />
-            <Provenance skill={s} />
-          </li>
-        ))}
-      </ul>
-    </motion.div>
-  );
+function Note({ children, className }: { children: ReactNode; className?: string }) {
+  return <p className={cn("pl-2.5 text-sm leading-[1.45] text-pretty text-content-muted", className)}>{children}</p>;
 }
 
 export function SkillColumn({
-  skills,
-  reached,
+  model,
   lit,
   hasActive,
   columnRef,
   registerSkill,
 }: {
-  skills: readonly PersonSkill[];
-  /** Slugs some recommendation draws on: every skill a line can land on. */
-  reached: ReadonlySet<string>;
+  model: ColumnModel;
   /** Lit skills, each with the seconds until its thread arrives. */
   lit: ReadonlyMap<string, number>;
   /** A role holds the light, even one that lights nothing. */
@@ -179,41 +156,50 @@ export function SkillColumn({
   columnRef: Ref<HTMLElement>;
   registerSkill: (slug: string) => (el: HTMLElement | null) => void;
 }) {
-  const { claimed, inherited } = splitSkills(skills);
-  const linked = inherited.filter((s) => reached.has(s.slug));
-  const outside = inherited.filter((s) => !reached.has(s.slug));
-  // Only rows a line can land on share the viewport; see `.column`.
-  const style = { "--dawn-rows": Math.max(claimed.length + linked.length, 1) } as CSSProperties;
+  const { added, unmatched, common } = model;
+  const stateOf = (r: SkillRowModel): State => (lit.has(r.skill.slug) ? "lit" : r.reach === 0 ? "idle" : hasActive ? "dim" : "rest");
+  const row = (r: SkillRowModel, order: number) => (
+    <SkillRow key={r.skill.slug} row={r} order={order} state={stateOf(r)} arrival={lit.get(r.skill.slug) ?? 0} markRef={registerSkill(r.skill.slug)} />
+  );
   const fade = (n: number) => ({ initial: { opacity: 0 }, animate: { opacity: 1 }, transition: drift(ENTRANCE.skills + n * ENTRANCE.skillStep, 0.8) });
+  const hasAdded = added.length + unmatched.length > 0;
+  // Entrance order runs down the column: heading, rows, note, rows.
+  const unmatchedAt = added.length + 2;
+  const commonAt = hasAdded ? unmatchedAt + unmatched.length + 1 : 0;
 
   return (
-    <aside ref={columnRef} aria-label="Your skills" style={style} className={cn(styles.column, "pb-6 @min-[60rem]/dawn:pt-8")}>
-      {skills.length === 0 ? (
-        <p className="pl-2.5 text-sm text-content-muted">No skills yet. Add them on your profile.</p>
+    <aside ref={columnRef} aria-label="Your skills" className={cn(styles.column, "pb-6 @min-[60rem]/dawn:pt-8")}>
+      {!hasAdded && common.length === 0 ? (
+        <Note>No skills yet. Add them on your profile.</Note>
       ) : (
         <>
-          {claimed.length > 0 && (
-            <section aria-labelledby="dawn-named">
+          {hasAdded && (
+            <section aria-labelledby="dawn-added">
               <motion.div {...fade(0)}>
-                <Heading id="dawn-named" title="Skills you added" count={claimed.length} />
+                <Heading id="dawn-added">Skills you added</Heading>
               </motion.div>
-              <Rows skills={claimed} offset={1} lit={lit} anyLit={hasActive} registerSkill={registerSkill} />
+              {added.length > 0 && <ul className={cn(styles.skillList, "mt-2")}>{added.map((r, i) => row(r, i + 1))}</ul>}
+              {unmatched.length > 0 && (
+                <>
+                  <motion.div {...fade(unmatchedAt - 1)}>
+                    <Note className={added.length > 0 ? "mt-3" : "mt-1"}>{"These don't match a skill in postings yet."}</Note>
+                  </motion.div>
+                  <ul className={cn(styles.skillList, "mt-1.5")}>
+                    {unmatched.map((t, i) => (
+                      <UnmatchedRow key={t} text={t} order={unmatchedAt + i} />
+                    ))}
+                  </ul>
+                </>
+              )}
             </section>
           )}
-          {inherited.length > 0 && (
-            <section aria-labelledby="dawn-inherited" className={claimed.length > 0 ? "mt-6" : undefined}>
-              <motion.div {...fade(claimed.length + 1)}>
-                <Heading id="dawn-inherited" title="From your past roles" count={inherited.length} />
-                <p className="mt-1 pl-2.5 text-sm leading-[1.45] text-pretty text-content-muted">
-                  {"Common in postings for titles you've held."}
-                </p>
+          {common.length > 0 && (
+            <section aria-labelledby="dawn-common" className={hasAdded ? "mt-6" : undefined}>
+              <motion.div {...fade(commonAt)}>
+                <Heading id="dawn-common">Common in your past roles</Heading>
+                <Note className="mt-1">{"From postings for titles you've held."}</Note>
               </motion.div>
-              <Rows skills={linked} offset={claimed.length + 2} lit={lit} anyLit={hasActive} registerSkill={registerSkill} />
-              <Outside
-                skills={outside}
-                more={linked.length > 0}
-                delay={ENTRANCE.skills + (claimed.length + linked.length + 3) * ENTRANCE.skillStep}
-              />
+              <ul className={cn(styles.skillList, "mt-2")}>{common.map((r, i) => row(r, commonAt + 1 + i))}</ul>
             </section>
           )}
         </>

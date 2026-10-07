@@ -3,14 +3,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefCallback } from "react";
 
 import type { Recommendation } from "../../_data/query";
-import { composeFrame, reachOf, shownMarks, trackOf } from "./compose";
+import { composeFrame, reachOf, trackOf } from "./compose";
 import { createDriver, type Drive } from "./drive";
-import { routeBundle, type Target } from "./geometry";
-import { HEADER, readLayout, seen, useRegistry, type Layout } from "./layout";
+import { bandOf, centreScroll, NO_ROUTING, revealScroll, routingOf, type Edge, type Routing } from "./edges";
+import { readLayout, useRegistry, type Layout } from "./layout";
 import { spanOf } from "./light";
 import type { LineMode } from "./modes";
 import { arrivalOf, DRAW_DELAY, drawDuration } from "./motion";
-import { createStore, lineKey, paint, portKey, sameLineSet, type Attrs, type Bind, type Light, type LineSet, type LineStore } from "./store";
+import { routeOnPage } from "./page-route";
+import { createStore, paint, sameLineSet, type Attrs, type Bind, type Light, type LineSet, type LineStore } from "./store";
 import { translateKeyframes, valueAt, type Track } from "./track";
 
 const SCROLL_SETTLE_MS = 140;
@@ -49,6 +50,15 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
   const lastScroll = useRef(-Infinity);
   /** True while the page is mid-scroll: a role sliding under a still pointer is not a hover. */
   const isScrolling = useCallback(() => performance.now() - lastScroll.current < SCROLL_SETTLE_MS, []);
+
+  // Which lit skills land on an edge marker (see `edges.ts`). Compositor
+  // lines keep it from one layout pass to the next, so mid-scroll a line
+  // keeps its end; `released` routes every line to its own skill while an
+  // edge marker scrolls them into view.
+  const routing = useRef<Routing>(NO_ROUTING);
+  const released = useRef(false);
+  /** Arms the scroll settle from outside the effect that owns it. */
+  const settleSoon = useRef<() => void>(() => {});
 
   // Fade mode: lines hide while the page scrolls; each settle redraws them.
   const quiet = useRef(false);
@@ -126,11 +136,16 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
         drawn.current = true;
       }
 
+      // A layout pass ends a reveal: by then the skills it brought in show.
+      if (relayout || relight) released.current = false;
+      if (!live || released.current) routing.current = NO_ROUTING;
+      else if (relayout || relight || !composite) routing.current = routingOf(L, scrollTop, moreAbove, moreBelow);
+      const edges = { above: routing.current.above.length, below: routing.current.below.length };
+
       if (active && L.stacked) {
-        next = { role: active.roleSlug, lines: null, visible: false, quiet: false, epoch: epoch.current, drawn: true, span: null };
+        next = { role: active.roleSlug, lines: null, visible: false, quiet: false, epoch: epoch.current, drawn: true, span: null, edges };
       } else if (active && composite) {
-        const marks = shownMarks(L, scrollTop, moreAbove, moreBelow);
-        const reach = reachOf(marks.length);
+        const reach = reachOf(L.marks.length);
         if (track.current?.layout !== L || track.current.reach !== reach) {
           const t = trackOf(L, reach);
           track.current = { layout: L, reach, track: t };
@@ -139,7 +154,7 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
         driver.setColumn(column, Math.max(0, L.colScroll - L.colClient));
         const t = track.current.track;
         if (t) {
-          const frame = composeFrame(active, L, t, marks, pageY, scrollTop, rises.current, relight || !drawn.current, span);
+          const frame = composeFrame(active, L, t, routing.current, pageY, scrollTop, rises.current, relight || !drawn.current, span);
           attrs = frame.attrs;
           if (relight) {
             arrival = new Map(frame.routes.map((r) => [r.slug, reduceMotion ? 0 : arrivalOf(r.length)]));
@@ -156,54 +171,15 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
               }, end * 1000 + 40);
             }
           }
-          next = { role: active.roleSlug, lines: frame.lines, visible: frame.visible, quiet: false, epoch: 0, drawn: drawn.current, span };
+          next = { role: active.roleSlug, lines: frame.lines, visible: frame.visible, quiet: false, epoch: 0, drawn: drawn.current, span, edges };
         } else {
-          next = { role: active.roleSlug, lines: [], visible: false, quiet: false, epoch: 0, drawn: true, span };
+          next = { role: active.roleSlug, lines: [], visible: false, quiet: false, epoch: 0, drawn: true, span, edges };
         }
       } else if (active && box && col) {
-        // A skill scrolled out of its own column, or under the column's soft
-        // edge (only when the column overflows), gets no line: a line to
-        // something off screen points at nothing.
-        const band = seen(col, moreAbove, moreBelow);
-        const targets = L.marks.flatMap((m): Target[] => {
-          const y = col.top + m.y - scrollTop;
-          return y >= band.top && y <= band.bottom ? [{ slug: m.slug, x: m.x, y: y - box.top }] : [];
-        });
-
-        // The port sits level with the role's headline, and slides along the
-        // role's visible edge as it scrolls under the header or the pin bar,
-        // so the bundle leaves from what the reader can still see of the role.
-        const reach = reachOf(targets.length);
-        const floor = Math.min(L.viewH, barTop);
-        let visible = false;
-        let originY = box.top;
-        if (L.anchor) {
-          const lo = Math.max(box.top + L.anchor.top, HEADER) + reach;
-          const hi = Math.min(box.top + L.anchor.bottom, floor) - reach;
-          visible = lo <= hi;
-          originY = Math.min(Math.max(box.top + L.anchor.mid, lo), hi);
-        }
-
-        const bundle = routeBundle({ x: L.originX, y: originY - box.top }, L.gutterLeft, targets);
-        next = {
-          role: active.roleSlug,
-          lines: bundle.routes.map((r) => ({ slug: r.slug, length: r.length })),
-          visible,
-          quiet: hush,
-          epoch: epoch.current,
-          drawn: true,
-          span,
-        };
-        if (relight) arrival = new Map(bundle.routes.map((r) => [r.slug, reduceMotion ? 0 : arrivalOf(r.length)]));
-
-        const a = new Map<string, Attrs>();
-        a.set(portKey(active.roleSlug), {
-          x: String(L.originX - 1.5),
-          y: String(bundle.portTop - 7),
-          height: String(bundle.portBottom - bundle.portTop + 14),
-        });
-        for (const r of bundle.routes) a.set(lineKey(active.roleSlug, r.slug), { d: r.d });
-        attrs = a;
+        const page = routeOnPage(active, L, routing.current, box, col, barTop, scrollTop, { hush, epoch: epoch.current }, span);
+        next = page.next;
+        attrs = page.attrs;
+        if (relight) arrival = new Map(page.routes.map((r) => [r.slug, reduceMotion ? 0 : arrivalOf(r.length)]));
       }
       if (relight && active) lit = new Map(active.connects.map((c) => [c.slug, arrival.get(c.slug) ?? 0]));
 
@@ -234,27 +210,51 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
 
   // Before paint, so a newly lit role never shows a frame of stale lines.
   useLayoutEffect(() => {
-    // When the skill column overflows a short viewport and a lit skill sits
-    // outside the part of it that shows, centre the lit skills before
-    // measuring. If they already show, leave the reader's scroll alone.
+    // When a lit skill sits outside the column's band, centre the lit skills
+    // if they fit it; if not, the edge markers point the way. Never while
+    // the pointer is in the column (Invariant 13): the reader may be reading
+    // it. The browser's own hover state knows, with no event since load.
     const column = columnRef.current;
-    if (active && column && column.scrollHeight > column.clientHeight + 1) {
+    if (active && column && column.scrollHeight > column.clientHeight + 1 && !column.matches(":hover")) {
       const col = column.getBoundingClientRect();
-      const marks = active.connects.flatMap((c) => skillEls.get(c.slug)?.getBoundingClientRect() ?? []);
-      if (marks.length > 0) {
-        const top = Math.min(...marks.map((r) => r.top));
-        const bottom = Math.max(...marks.map((r) => r.bottom));
-        const band = seen(col, column.dataset.moreAbove === "true", column.dataset.moreBelow === "true");
-        if (top < band.top || bottom > band.bottom) {
-          const mid = (top + bottom) / 2 - col.top + column.scrollTop;
-          ownScroll.current = true;
-          requestAnimationFrame(() => requestAnimationFrame(() => (ownScroll.current = false)));
-          column.scrollTo({ top: mid - column.clientHeight / 2 });
-        }
+      const c = column.scrollTop;
+      const ys = active.connects.flatMap((s) => {
+        const r = skillEls.get(s.slug)?.getBoundingClientRect();
+        return r ? [r.top + r.height / 2 - col.top + c] : [];
+      });
+      const band = bandOf(column.clientHeight, c, column.dataset.moreAbove === "true", column.dataset.moreBelow === "true");
+      const top = ys.some((y) => y < band.top || y > band.bottom) ? centreScroll(column.clientHeight, column.scrollHeight, ys) : null;
+      if (top !== null && Math.abs(top - c) > 1) {
+        ownScroll.current = true;
+        requestAnimationFrame(() => requestAnimationFrame(() => (ownScroll.current = false)));
+        column.scrollTo({ top });
       }
     }
     update(true, true);
   }, [active, update, skillEls]);
+
+  /**
+   * An edge marker, activated: scroll the skills beyond it into view. The
+   * reader asked, so this one may move the column under the pointer.
+   * Compositor lines move to the skills first and ride in with them; fade
+   * lines hide for the scroll and draw in on the skills once it settles.
+   */
+  const reveal = useCallback(
+    (edge: Edge) => {
+      const column = columnRef.current;
+      const L = layout.current;
+      if (!column || !L || !active) return;
+      const y = new Map(L.marks.map((m) => [m.slug, m.y]));
+      const group = routing.current[edge].flatMap((s) => y.get(s) ?? []);
+      const top = revealScroll(L.colClient, L.colScroll, L.marks.map((m) => m.y), group, edge);
+      if (mode === "compositor") released.current = true;
+      else if (mode === "fade") quiet.current = true;
+      update(false, false);
+      column.scrollTo({ top, behavior: reduceMotion ? "auto" : "smooth" });
+      settleSoon.current();
+    },
+    [active, mode, reduceMotion, update],
+  );
 
   useEffect(() => () => window.clearTimeout(drawTimer.current), []);
 
@@ -274,7 +274,8 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
     };
     // Insurance for anything that moves the layout without resizing an
     // observed box: one full re-read per gesture, not per frame. In fade
-    // mode the settle is also what brings the lines back.
+    // mode the settle is also what brings the lines back, and for every mode
+    // it is when a line may move between a skill and an edge marker.
     const arm = () => {
       window.clearTimeout(settle);
       settle = window.setTimeout(() => {
@@ -285,6 +286,7 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
         schedule(true);
       }, SCROLL_SETTLE_MS);
     };
+    settleSoon.current = arm;
     const onScroll = (e: Event) => {
       lastScroll.current = performance.now();
       if (mode === "fade" && !quiet.current) {
@@ -296,7 +298,7 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
     };
     // This effect re-runs when the light moves, and its cleanup drops a
     // pending settle; a gesture still in flight needs one again.
-    if (quiet.current || isScrolling()) arm();
+    if (quiet.current || isScrolling() || released.current) arm();
     const onLayout = () => schedule(true);
     window.addEventListener("scroll", onScroll, { passive: true, capture: true });
     window.addEventListener("resize", onLayout);
@@ -309,11 +311,12 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
     return () => {
       cancelAnimationFrame(frame);
       window.clearTimeout(settle);
+      settleSoon.current = () => {};
       window.removeEventListener("scroll", onScroll, { capture: true });
       window.removeEventListener("resize", onLayout);
       ro.disconnect();
     };
   }, [update, mode, isScrolling]);
 
-  return { light, store: store as LineStore, bind, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole };
+  return { light, store: store as LineStore, bind, reveal, isScrolling, containerRef, columnRef, cardRef, barRef, registerSkill, registerRole };
 }
