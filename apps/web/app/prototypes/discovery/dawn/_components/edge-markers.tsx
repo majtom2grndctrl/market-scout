@@ -4,7 +4,7 @@ import { ArrowDown, ArrowUp } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useSyncExternalStore, type MouseEvent } from "react";
 
-import { EDGE_GAP, EDGE_H, type Edge } from "../_lib/edges";
+import { EDGE_GAP, EDGE_H, landingHeight, type Edge } from "../_lib/edges";
 import type { LineMode } from "../_lib/modes";
 import { arrivalOf, drift } from "../_lib/motion";
 import type { LineStore } from "../_lib/store";
@@ -27,21 +27,46 @@ export function EdgeMarkers({ store, mode, onReveal }: { store: LineStore; mode:
   // Arrive with the line: while it draws in, wait for its longest line to land.
   const drawing = set !== null && (mode === "fade" || !set.drawn);
   const delay = (edge: Edge) => (drawing ? Math.max(0, ...lines.filter((l) => l.edge === edge).map((l) => arrivalOf(l.length))) : 0);
-  const count = (edge: Edge) => lines.filter((l) => l.edge === edge).length;
+  const at = (edge: Edge) => lines.filter((l) => l.edge === edge);
 
   return (
     <div className={styles.edges}>
       <AnimatePresence>
         {(["above", "below"] as const).map((edge) => {
-          const n = count(edge);
-          return n > 0 && set ? <Marker key={`${set.role}:${edge}`} edge={edge} count={n} role={set.role} delay={delay(edge)} onReveal={onReveal} /> : null;
+          const here = at(edge);
+          return here.length > 0 && set ? (
+            <Marker
+              key={`${set.role}:${edge}`}
+              edge={edge}
+              count={here.length}
+              bar={landingHeight(here.map((l) => l.width))}
+              role={set.role}
+              delay={delay(edge)}
+              onReveal={onReveal}
+            />
+          ) : null;
         })}
       </AnimatePresence>
     </div>
   );
 }
 
-function Marker({ edge, count, role, delay, onReveal }: { edge: Edge; count: number; role: string; delay: number; onReveal: (edge: Edge) => void }) {
+function Marker({
+  edge,
+  count,
+  bar,
+  role,
+  delay,
+  onReveal,
+}: {
+  edge: Edge;
+  count: number;
+  /** The landing bar's height, so every line arriving lands on it. */
+  bar: number;
+  role: string;
+  delay: number;
+  onReveal: (edge: Edge) => void;
+}) {
   const Arrow = edge === "above" ? ArrowUp : ArrowDown;
   const onClick = (e: MouseEvent<HTMLButtonElement>) => {
     // From the keyboard, focus returns to the lit role once the marker it
@@ -70,7 +95,7 @@ function Marker({ edge, count, role, delay, onReveal }: { edge: Edge; count: num
         <span className="sr-only">Show </span>
         {count} more {edge}
       </span>
-      <span aria-hidden className="ml-0.5 h-2.5 w-[3px] rounded-full bg-(--dawn-ember)" />
+      <span aria-hidden style={{ height: bar }} className="ml-0.5 w-[3px] rounded-full bg-(--dawn-ember) transition-[height] duration-200 ease-out" />
     </motion.button>
   );
 }

@@ -4,16 +4,23 @@ import { motion } from "motion/react";
 import { useRef } from "react";
 
 import type { PersonSkill, Recommendation } from "../../_data/query";
-import { alsoAsksFor, alsoPostedAs, connectsOf, postingsLine, shareLabel } from "../_lib/copy";
+import { alsoAsksFor, alsoPostedAs, askedFor, postingsLine, shareLabel, usesOf, type UsedSkill } from "../_lib/copy";
 import { drift, ENTRANCE, HOVER_DWELL_MS } from "../_lib/motion";
 import styles from "../dawn.module.css";
 import { PinButton } from "./pin-button";
 import { SkillMark } from "./skill-mark";
 import { cn } from "@/lib/utils";
 
-function Chip({ skill, lit }: { skill: PersonSkill; lit: boolean }) {
+/*
+ * A chip carries what its line's weight carries: the share, as a number. The
+ * card is the accessible equivalent of the lines, so the share reads in full
+ * to a screen reader, as how often postings ask (Invariant 15). A stroke
+ * mirroring the line's weight was tried here and read as a minus sign.
+ */
+function Chip({ skill, lit }: { skill: UsedSkill; lit: boolean }) {
   return (
     <li
+      title={`${skill.name}, ${askedFor(skill.share)}`}
       className={cn(
         "inline-flex h-7 items-center gap-1.5 rounded-full border pr-3 pl-2.5 text-sm leading-none whitespace-nowrap transition-[background-color,border-color,color] duration-300 ease-out",
         skill.claimed
@@ -27,12 +34,16 @@ function Chip({ skill, lit }: { skill: PersonSkill; lit: boolean }) {
     >
       <SkillMark claimed={skill.claimed} className={lit ? "text-(--dawn-ember)" : "text-content-muted"} />
       {skill.name}
+      <span aria-hidden className="ml-0.5 font-normal text-content-secondary tabular-nums">
+        {shareLabel(skill.share)}
+      </span>
+      <span className="sr-only">, {askedFor(skill.share)}</span>
     </li>
   );
 }
 
 function DrawsOn({ rec, skills, lit }: { rec: Recommendation; skills: ReadonlyMap<string, PersonSkill>; lit: boolean }) {
-  const { claimed, inherited } = connectsOf(rec, skills);
+  const { claimed, inherited } = usesOf(rec, skills);
   if (claimed.length + inherited.length === 0) {
     return (
       <p className="mt-4 text-sm leading-relaxed text-pretty text-content-muted">
@@ -182,7 +193,7 @@ export function RoleItem({
 
           <p className="mt-4 text-sm text-content-muted tabular-nums">
             {postingsLine(rec)}
-            {rec.closestPast && rec.connects.length > 0 && <> · closest to your {rec.closestPast.titleText} role</>}
+            {rec.closestPast && rec.uses.length > 0 && <> · closest to your {rec.closestPast.titleText} role</>}
           </p>
         </div>
 

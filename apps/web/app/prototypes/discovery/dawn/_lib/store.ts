@@ -17,6 +17,8 @@ export interface Line {
   readonly length: number;
   /** The edge marker it lands on, when its skill is scrolled out of the column. */
   readonly edge: Edge | null;
+  /** Stroke width, from the role's share for the skill (see `weight.ts`). */
+  readonly width: number;
 }
 
 /**
@@ -97,4 +99,4 @@ export const sameLineSet = (a: LineSet | null, b: LineSet | null) =>
     a.edges.above === b.edges.above &&
     a.edges.below === b.edges.below &&
     (a.lines === b.lines ||
-      (a.lines !== null && b.lines !== null && a.lines.length === b.lines.length && a.lines.every((l, i) => l.slug === b.lines?.[i].slug && l.edge === b.lines?.[i]?.edge))));
+      (a.lines !== null && b.lines !== null && a.lines.length === b.lines.length && a.lines.every((l, i) => l.slug === b.lines?.[i].slug && l.edge === b.lines?.[i]?.edge && l.width === b.lines?.[i]?.width))));

@@ -22,7 +22,7 @@ export interface ColumnModel {
 
 export function reachCounts(recs: readonly Recommendation[]): ReadonlyMap<string, number> {
   const reach = new Map<string, number>();
-  for (const r of recs) for (const c of r.connects) reach.set(c.slug, (reach.get(c.slug) ?? 0) + 1);
+  for (const r of recs) for (const u of r.uses) reach.set(u.slug, (reach.get(u.slug) ?? 0) + 1);
   return reach;
 }
 

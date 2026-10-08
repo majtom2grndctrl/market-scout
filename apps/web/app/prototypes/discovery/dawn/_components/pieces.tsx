@@ -9,7 +9,7 @@ import styles from "../dawn.module.css";
 import { PORT_STYLE, ThreadGradient } from "./thread-paint";
 
 const RUNS = ["down", "up"] as const;
-const line = { strokeWidth: 1.5, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+const line = { strokeLinecap: "round", strokeLinejoin: "round" } as const;
 
 /**
  * Compositor lines (see `compose.ts` for the construction). A layer that
@@ -64,7 +64,7 @@ function Bundle({ role, lines, span, bind }: { role: string; lines: readonly Lin
           {span && <ThreadGradient id={`${id}-port`} span={span} shift={span.origin} />}
           <rect ref={bind(pieceKey(role, "", "port"))} width={3} rx={1.5} style={PORT_STYLE} />
           {lines.map((l) => (
-            <path key={l.slug} ref={bind(pieceKey(role, l.slug, "port"))} {...stroke("port")} />
+            <path key={l.slug} ref={bind(pieceKey(role, l.slug, "port"))} {...stroke("port")} strokeWidth={l.width} />
           ))}
         </svg>
       </div>
@@ -79,7 +79,8 @@ function Bundle({ role, lines, span, bind }: { role: string; lines: readonly Lin
 
 /**
  * The skill ends of a set of lines, and their runs: a bar hung from the port
- * end, clipped by a box hung from the skill end. In a layer that follows the
+ * end, clipped by a box hung from the skill end. Each piece takes its line's
+ * width, so a line keeps one weight across the frames it is cut into. In a layer that follows the
  * column's scroll, the unclip layer undoes that scroll; in either, the lift
  * layer replays the port's track, so the bar moves with the port.
  */
@@ -106,7 +107,7 @@ function SkillEnds({
       <svg className="absolute top-0 left-0 overflow-visible" width={1} height={1} fill="none">
         {span && gradient && <ThreadGradient id={gradient} span={span} shift={span.origin} />}
         {lines.map((l) => (
-          <path key={l.slug} ref={bind(pieceKey(role, l.slug, "mark"))} {...stroke} />
+          <path key={l.slug} ref={bind(pieceKey(role, l.slug, "mark"))} {...stroke} strokeWidth={l.width} />
         ))}
       </svg>
       {lines.map((l) =>
@@ -114,7 +115,8 @@ function SkillEnds({
           <div key={`${l.slug}-${dir}`} ref={bind(pieceKey(role, l.slug, `clip-${dir}`))} className="absolute inset-x-0 overflow-clip">
             <div ref={bind(pieceKey(role, l.slug, `unclip-${dir}`), scrolls ? "column" : undefined)} className="absolute left-0">
               <div ref={bind(pieceKey(role, l.slug, `lift-${dir}`), "page")} className="absolute top-0 left-0">
-                <div ref={bind(pieceKey(role, l.slug, `bar-${dir}`))} className="absolute w-[1.5px]" />
+                {/* Width and colour come from compose, with the bar's place. */}
+                <div ref={bind(pieceKey(role, l.slug, `bar-${dir}`))} className="absolute" />
               </div>
             </div>
           </div>

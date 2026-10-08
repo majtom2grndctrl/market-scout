@@ -89,7 +89,7 @@ function Bundle({
           key={l.slug}
           ref={bind(lineKey(role, l.slug))}
           stroke={stroke}
-          strokeWidth={1.5}
+          strokeWidth={l.width}
           strokeLinecap="round"
           strokeLinejoin="round"
           initial={reduce ? false : { pathLength: 0 }}

@@ -12,6 +12,9 @@
 // Data and invariants: `../_data/query.ts` and
 // agent-context/plans/in-progress/discovery-prototypes/index.md.
 //
+// Lines follow `uses`: every skill of the person's a role asks for in enough
+// of its postings. A line's weight steps with that share (see `_lib/weight.ts`).
+//
 // `?lines=compositor|fade|js` picks how the lines behave while the page
 // scrolls (see `_lib/modes.ts`); compositor is the default.
 

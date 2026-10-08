@@ -45,22 +45,24 @@ export function alsoPostedAs(r: Recommendation, limit: number): string[] {
   return out;
 }
 
-export interface SkillSplit {
-  readonly claimed: PersonSkill[];
-  readonly inherited: PersonSkill[];
-}
+/** A person's skill as one role uses it: share is P(skill | role), never the person's fit. */
+export type UsedSkill = PersonSkill & { readonly share: number };
 
-export function splitSkills(skills: readonly PersonSkill[]): SkillSplit {
-  return { claimed: skills.filter((s) => s.claimed), inherited: skills.filter((s) => !s.claimed) };
-}
-
-/** A role's connects, resolved against personSkills so claimed and inherited read apart. */
-export function connectsOf(r: Recommendation, bySlug: ReadonlyMap<string, PersonSkill>): SkillSplit {
-  const resolved = r.connects.flatMap((c) => {
-    const s = bySlug.get(c.slug);
-    return s ? [s] : [];
+/**
+ * The skills a role's lines connect, resolved against personSkills so claimed
+ * and inherited read apart, each in share order as the read gives them.
+ */
+export function usesOf(r: Recommendation, bySlug: ReadonlyMap<string, PersonSkill>): { claimed: UsedSkill[]; inherited: UsedSkill[] } {
+  const resolved = r.uses.flatMap((u): UsedSkill[] => {
+    const s = bySlug.get(u.slug);
+    return s ? [{ ...s, share: u.share }] : [];
   });
-  return splitSkills(resolved);
+  return { claimed: resolved.filter((s) => s.claimed), inherited: resolved.filter((s) => !s.claimed) };
+}
+
+/** A used skill's share, as the card's screen-reader text and hover title read it. */
+export function askedFor(share: number): string {
+  return `asked for in ${shareLabel(share)} of postings`;
 }
 
 /**
@@ -69,7 +71,7 @@ export function connectsOf(r: Recommendation, bySlug: ReadonlyMap<string, Person
  * twice would read as a gap the person has already been shown to cover.
  */
 export function alsoAsksFor(r: Recommendation) {
-  const lit = new Set(r.connects.map((c) => c.slug));
+  const lit = new Set(r.uses.map((u) => u.slug));
   return r.grow.filter((g) => !lit.has(g.slug));
 }
 

@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 
 import type { Recommendation } from "../../_data/query";
 import type { Target } from "./geometry";
+import { widthOf } from "./weight";
 
 /** The app layout's sticky header; a port tucked under it has nothing to draw from. */
 export const HEADER = 56;
@@ -31,7 +32,7 @@ export interface Layout {
   readonly gutterLeft: number;
   /** The headline's middle and its row's extent, in container y. */
   readonly anchor: { readonly mid: number; readonly top: number; readonly bottom: number } | null;
-  /** Each connected skill's marker: x in container space, y in the column's scroll content. */
+  /** Each used skill's marker: x in container space, y in the column's scroll content; width from its share. */
   readonly marks: readonly Target[];
   /** The page's scroll offset when measured, its scroll range, and the viewport (the sticky boxes' scrollport). */
   readonly at: number;
@@ -72,9 +73,9 @@ export function readLayout(
   const anchor = head?.getBoundingClientRect();
   const item = head?.closest("li")?.getBoundingClientRect();
   const scrollTop = column.scrollTop;
-  const marks = (active?.connects ?? []).flatMap((c): Target[] => {
-    const r = skillEls.get(c.slug)?.getBoundingClientRect();
-    return r ? [{ slug: c.slug, x: r.right - box.left - 0.5, y: r.top + r.height / 2 - col.top + scrollTop }] : [];
+  const marks = (active?.uses ?? []).flatMap((u): Target[] => {
+    const r = skillEls.get(u.slug)?.getBoundingClientRect();
+    return r ? [{ slug: u.slug, x: r.right - box.left - 0.5, y: r.top + r.height / 2 - col.top + scrollTop, width: widthOf(u.share) }] : [];
   });
   const root = document.scrollingElement ?? document.documentElement;
   const boxStyle = getComputedStyle(container);

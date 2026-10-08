@@ -13,6 +13,7 @@
 // to it, and the settle re-routes.
 
 import type { Layout } from "./layout";
+import { offsets } from "./weight";
 
 export type Edge = "above" | "below";
 
@@ -23,8 +24,31 @@ export const EDGE_H = 30;
 export const EDGE_LAND = 10.5;
 /** How far into the column each edge marker reaches. A skill marker under it is beyond that edge. */
 const EDGE_BAND = EDGE_GAP + EDGE_H + 4;
-/** The most a group of lines may spread over the marker, so they land on it rather than around it. */
-const EDGE_SPREAD = 16;
+/**
+ * The most a group of lines may spread over the marker, centre to centre, so
+ * they land on it rather than around it: the pill's height less room for the
+ * heaviest line's edges.
+ */
+const EDGE_SPREAD = EDGE_H - 8;
+
+/**
+ * Centre offsets of lines landing on one edge marker, in order, around its
+ * middle. Neighbours keep the bundle's clear gap (see `weight.ts`) until that
+ * would overrun the marker; then the group closes up evenly.
+ */
+export function landing(widths: readonly number[]): number[] {
+  const off = offsets(widths);
+  const span = off.at(-1) ?? 0;
+  const k = span > EDGE_SPREAD ? EDGE_SPREAD / span : 1;
+  return off.map((o) => (o - span / 2) * k);
+}
+
+/** How tall an edge marker's landing bar stands for lines of these widths: their spread, plus the outer lines' edges. */
+export function landingHeight(widths: readonly number[]): number {
+  const at = landing(widths);
+  if (at.length === 0) return 10;
+  return Math.max(10, at[at.length - 1] - at[0] + (widths[0] + widths[widths.length - 1]) / 2 + 4);
+}
 
 /** Which lit skills sit beyond each edge. Everything else lands on its own marker. */
 export interface Routing {
@@ -59,12 +83,13 @@ export interface End {
   /** In the column's scroll content when `edge` is null; in the column's box when it lands on an edge marker. */
   readonly y: number;
   readonly edge: Edge | null;
+  readonly width?: number;
 }
 
 /**
- * Every lit skill's line end. Lines meeting at one edge marker land a few
- * pixels apart, in the order of their skills, so no two share a pixel and
- * none crosses another (see `routeBundle`).
+ * Every lit skill's line end. Lines meeting at one edge marker land a pitch
+ * apart (see `landing`), in the order of their skills, so no two share a
+ * pixel and none crosses another (see `routeBundle`).
  */
 export function endsOf(L: Layout, routing: Routing): End[] {
   const at = new Map<string, Edge>([...routing.above.map((s) => [s, "above"] as const), ...routing.below.map((s) => [s, "below"] as const)]);
@@ -73,13 +98,16 @@ export function endsOf(L: Layout, routing: Routing): End[] {
     const e = at.get(m.slug);
     if (e) groups[e].push(m.slug);
   }
+  const width = new Map(L.marks.map((m) => [m.slug, m.width ?? 1.5]));
+  const lands = {
+    above: landing(groups.above.map((s) => width.get(s) ?? 1.5)),
+    below: landing(groups.below.map((s) => width.get(s) ?? 1.5)),
+  };
   const x = L.gutterLeft - EDGE_LAND;
   return L.marks.map((m): End => {
     const edge = at.get(m.slug) ?? null;
-    if (!edge) return { slug: m.slug, x: m.x, y: m.y, edge };
-    const g = groups[edge];
-    const step = g.length > 1 ? Math.min(6, EDGE_SPREAD / (g.length - 1)) : 0;
-    return { slug: m.slug, x, y: edgeY(L, edge) + (g.indexOf(m.slug) - (g.length - 1) / 2) * step, edge };
+    if (!edge) return { slug: m.slug, x: m.x, y: m.y, edge, width: m.width };
+    return { slug: m.slug, x, y: edgeY(L, edge) + lands[edge][groups[edge].indexOf(m.slug)], edge, width: m.width };
   });
 }
 

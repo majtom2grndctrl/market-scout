@@ -21,7 +21,7 @@ const HIDDEN_MS = 300;
 const roleOf = (key: string) => key.split(/[/#]/)[0];
 
 /**
- * Routes a bundle from the active role to the skills it connects, and keeps
+ * Routes a bundle from the active role to the skills it uses, and keeps
  * it on them through scroll, resize, and font load. `mode` sets what happens
  * while the page scrolls (see `modes.ts`).
  *
@@ -145,7 +145,7 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
       if (active && L.stacked) {
         next = { role: active.roleSlug, lines: null, visible: false, quiet: false, epoch: epoch.current, drawn: true, span: null, edges };
       } else if (active && composite) {
-        const reach = reachOf(L.marks.length);
+        const reach = reachOf(L.marks.map((m) => m.width ?? 1.5));
         if (track.current?.layout !== L || track.current.reach !== reach) {
           const t = trackOf(L, reach);
           track.current = { layout: L, reach, track: t };
@@ -181,7 +181,7 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
         attrs = page.attrs;
         if (relight) arrival = new Map(page.routes.map((r) => [r.slug, reduceMotion ? 0 : arrivalOf(r.length)]));
       }
-      if (relight && active) lit = new Map(active.connects.map((c) => [c.slug, arrival.get(c.slug) ?? 0]));
+      if (relight && active) lit = new Map(active.uses.map((u) => [u.slug, arrival.get(u.slug) ?? 0]));
 
       // Writes. The soft-edge hint is styling, not state worth a render.
       if (column.dataset.moreAbove !== String(moreAbove)) column.dataset.moreAbove = String(moreAbove);
@@ -218,7 +218,7 @@ export function useLines(active: Recommendation | null, reduceMotion: boolean, m
     if (active && column && column.scrollHeight > column.clientHeight + 1 && !column.matches(":hover")) {
       const col = column.getBoundingClientRect();
       const c = column.scrollTop;
-      const ys = active.connects.flatMap((s) => {
+      const ys = active.uses.flatMap((s) => {
         const r = skillEls.get(s.slug)?.getBoundingClientRect();
         return r ? [r.top + r.height / 2 - col.top + c] : [];
       });

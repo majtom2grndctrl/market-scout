@@ -32,13 +32,13 @@ export function routeOnPage(
   // scrolls with the column; one beyond an edge takes it on that edge's
   // marker, which does not.
   const ends = endsOf(L, routing);
-  const targets = ends.map((e): Target => ({ slug: e.slug, x: e.x, y: col.top + e.y - (e.edge ? 0 : scrollTop) - box.top }));
+  const targets = ends.map((e): Target => ({ slug: e.slug, x: e.x, y: col.top + e.y - (e.edge ? 0 : scrollTop) - box.top, width: e.width }));
   const edgeOf = new Map(ends.map((e) => [e.slug, e.edge]));
 
   // The port sits level with the role's headline, and slides along the
   // role's visible edge as it scrolls under the header or the pin bar, so
   // the bundle leaves from what the reader can still see of the role.
-  const reach = reachOf(targets.length);
+  const reach = reachOf(targets.map((t) => t.width ?? 1.5));
   const floor = Math.min(L.viewH, barTop);
   let visible = false;
   let originY = box.top;
@@ -61,7 +61,7 @@ export function routeOnPage(
   return {
     next: {
       role: active.roleSlug,
-      lines: bundle.routes.map((r) => ({ slug: r.slug, length: r.length, edge: edgeOf.get(r.slug) ?? null })),
+      lines: bundle.routes.map((r) => ({ slug: r.slug, length: r.length, edge: edgeOf.get(r.slug) ?? null, width: r.target.width ?? 1.5 })),
       visible,
       quiet: fade.hush,
       epoch: fade.epoch,

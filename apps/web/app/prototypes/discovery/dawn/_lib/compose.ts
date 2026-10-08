@@ -31,12 +31,13 @@
 
 import type { Recommendation } from "../../_data/query";
 import { endsOf, type Routing } from "./edges";
-import { piecesOf, routeBundle, SPACING, type Route, type Target } from "./geometry";
+import { piecesOf, routeBundle, type Route, type Target } from "./geometry";
 import type { Layout } from "./layout";
 import { HEADER } from "./layout";
 import { threadAt, type Span } from "./light";
 import { frameKey, lineKey, pieceKey, portKey, type Attrs, type Line } from "./store";
 import { portTrack, valueAt, type Track } from "./track";
+import { offsets } from "./weight";
 
 export interface Frame {
   readonly lines: readonly Line[];
@@ -45,8 +46,8 @@ export interface Frame {
   readonly attrs: ReadonlyMap<string, Attrs>;
 }
 
-/** Half the port cluster's height, plus room to spare at the band's ends. */
-export const reachOf = (n: number) => ((Math.max(n, 1) - 1) * SPACING) / 2 + 16;
+/** Half the port cluster's height, for lines of these widths, plus room to spare at the band's ends. */
+export const reachOf = (widths: readonly number[]) => (offsets(widths).at(-1) ?? 0) / 2 + 16;
 
 export function trackOf(L: Layout, reach: number): Track | null {
   if (!L.anchor) return null;
@@ -101,7 +102,7 @@ export function composeFrame(
     // Only a shrinking run can outpace corners sized a pass ago; a growing
     // one leaves them small, which reads as a tighter bend, not a fault.
     const closing = last === undefined ? 0 : Math.abs(last) - Math.abs(rise);
-    return { slug: m.slug, x: m.x - L.colLeft, y: rise, slack: closing > 0.01 ? closing * 1.5 + 1 : 0 };
+    return { slug: m.slug, x: m.x - L.colLeft, y: rise, slack: closing > 0.01 ? closing * 1.5 + 1 : 0, width: m.width };
   });
   const bundle = routeBundle({ x: originX, y: 0 }, L.gutterLeft - L.colLeft, targets, { snapLevel: false, lanesForAll: true });
 
@@ -117,13 +118,15 @@ export function composeFrame(
     attrs.set(pieceKey(role, r.slug, "mark"), { d: p.mark, transform: `translate(0 ${Math.round(y * 100) / 100})` });
     const meet = y + p.runTo;
     const tone = threadAt(span, r.lane + L.colLeft);
+    // Every piece of a line takes its one width, so they agree where they meet.
+    const w = r.target.width ?? 1.5;
     for (const down of [true, false]) {
       const dir = down ? "down" : "up";
       const clipTop = down ? meet - big : meet;
       attrs.set(pieceKey(role, r.slug, `clip-${dir}`), { style: `top:${px(clipTop)};height:${px(big)}` });
       attrs.set(pieceKey(role, r.slug, `unclip-${dir}`), { style: `top:${px(-clipTop)}` });
       attrs.set(pieceKey(role, r.slug, `bar-${dir}`), {
-        style: `left:${px(r.lane - 0.75)};top:${px(down ? p.runFrom : p.runFrom - big)};height:${px(big)};background:${tone}`,
+        style: `left:${px(r.lane - w / 2)};top:${px(down ? p.runFrom : p.runFrom - big)};width:${px(w)};height:${px(big)};background:${tone}`,
       });
     }
   }
@@ -139,7 +142,7 @@ export function composeFrame(
   }
 
   return {
-    lines: bundle.routes.map((r) => ({ slug: r.slug, length: r.length, edge: edgeOf.get(r.slug) ?? null })),
+    lines: bundle.routes.map((r) => ({ slug: r.slug, length: r.length, edge: edgeOf.get(r.slug) ?? null, width: r.target.width ?? 1.5 })),
     routes: bundle.routes,
     visible,
     attrs,

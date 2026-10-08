@@ -6,19 +6,21 @@
 // the gutter, up or down the lane, then along to the skill. Three rules keep a
 // bundle legible instead of a smear:
 //
-// - Each line leaves from its own port, SPACING apart, ordered like its
-//   target. No two lines share a pixel. A skill level with the role gets a
-//   straight line, and the other ports pack above and below it.
+// - Each line leaves from its own port, ordered like its target, a pitch
+//   apart that keeps the same clear gap between neighbours whatever their
+//   weights (see `weight.ts`). No two lines share a pixel. A skill level with
+//   the role gets a straight line, and the other ports pack above and below.
 // - Within the lines that turn up (or down), the farthest target turns first,
 //   on the lane nearest the role. That ordering is the one that never crosses:
 //   a nearer line's last leg stays below the farther line's lane.
-// - Ports and lanes share one spacing, so each line's first corner is
+// - Ports and lanes share one set of pitches, so each line's first corner is
 //   concentric with its neighbours': the bundle bends like a ribbon.
 //
 // A route can also be cut into the pieces the compositor moves on its own
 // (see `piecesOf`).
 
-export const SPACING = 6;
+import { offsets } from "./weight";
+
 /** Corner radius for the innermost line, and for every corner at a skill. */
 export const RADIUS = 10;
 /** How far off the role's level a skill can sit and still be reached in a straight line. */
@@ -38,6 +40,8 @@ export interface Target {
    * would overlap it.
    */
   readonly slack?: number;
+  /** Stroke width, so heavier neighbours sit farther apart. Defaults to the lightest step. */
+  readonly width?: number;
 }
 
 export interface RouteOptions {
@@ -85,6 +89,11 @@ export function routeBundle(
 ): Bundle {
   const sorted = [...targets].sort((a, b) => a.y - b.y);
   const n = sorted.length;
+  // Each line's offset from the first port, centre to centre. Lanes reuse
+  // the same offsets, counted from the outside of each turning group, so
+  // the first corners stay concentric whatever the weights.
+  const off = offsets(sorted.map((t) => t.width ?? 1.5));
+  const span = off[n - 1] ?? 0;
   // A skill nearly level with the role runs straight across rather than
   // jogging a few pixels; the cluster anchors on it. Otherwise the cluster
   // centres on the role.
@@ -92,36 +101,33 @@ export function routeBundle(
   if (snapLevel) sorted.forEach((t, k) => {
     if (Math.abs(t.y - origin.y) <= LEVEL && (level < 0 || Math.abs(t.y - origin.y) < Math.abs(sorted[level].y - origin.y))) level = k;
   });
-  const ports =
-    level >= 0
-      ? sorted.map((_, k) => sorted[level].y + (k - level) * SPACING)
-      : sorted.map((_, k) => origin.y + (k - (n - 1) / 2) * SPACING);
+  const ports = level >= 0 ? off.map((o) => sorted[level].y + o - off[level]) : off.map((o) => origin.y + o - span / 2);
   const dir = sorted.map((t, k) => Math.sign(Math.round(t.y - ports[k])) as -1 | 0 | 1);
 
-  // Targets are at least a row apart and ports only SPACING apart, so the
+  // Targets are at least a row apart and ports only a pitch apart, so the
   // lines that turn up form a prefix and the lines that turn down a suffix.
   const up = dir.filter((s) => s < 0).length;
   const down = dir.filter((s) => s > 0).length;
 
   // The lane bundle sits centred in the gutter, never closer to the role than
   // the stub allows.
-  const widest = lanesForAll ? Math.max(n, 1) : Math.max(up, down, 1);
+  const widest = lanesForAll ? span : Math.max(up > 0 ? off[up - 1] : 0, down > 0 ? span - off[n - down] : 0);
   const centre = (gutterLeft + origin.x) / 2;
-  const rightLane = Math.min(centre + ((widest - 1) * SPACING) / 2, origin.x - STUB);
+  const rightLane = Math.min(centre + widest / 2, origin.x - STUB);
 
   const routes = sorted.map((t, k): Route => {
     const p = ports[k];
     const sy = dir[k];
-    // Rank from the outside of the bundle: 0 is the farthest target.
-    const rank = sy > 0 ? n - 1 - k : k;
-    const lane = rightLane - rank * SPACING;
+    // Inset from the outside of the bundle: 0 is the farthest target.
+    const inset = sy > 0 ? span - off[k] : off[k];
+    const lane = rightLane - inset;
     if (sy === 0) {
       return { slug: t.slug, d: `M${origin.x} ${p}H${t.x}`, length: origin.x - t.x, portY: p, lane, dir: sy, r1: 0, r2: 0, target: t };
     }
     const rise = Math.abs(t.y - p);
     const fit = Math.max(0, rise - (t.slack ?? 0));
 
-    let r1 = Math.min(RADIUS + rank * SPACING, origin.x - lane);
+    let r1 = Math.min(RADIUS + inset, origin.x - lane);
     let r2 = Math.min(RADIUS, lane - t.x);
     // A short rise cannot hold both corners at full size; shrink them together.
     if (r1 + r2 > fit) {
