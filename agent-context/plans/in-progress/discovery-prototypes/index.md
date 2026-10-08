@@ -175,3 +175,29 @@ Dawn is the chosen direction. The session's end goal is a problem brief for a pr
 The review's four "unmatched" claimed skills are matched but reached by no listed role. The live profile has no unmatched claims, so that path was checked against injected local data only.
 
 Outstanding manual proof: trackpad momentum in headed Chrome and Safari, especially the snap when the settle moves a line from a clipped skill to the marker; a "below" marker against live data, since reach-first ordering keeps reached skills near the top; a dark-mode type audit.
+
+## Dawn refinement, round 2 (2026-10-07): realistic connections, weighted lines
+
+**Data.** `Recommendation.uses` is new in `_data/query.ts`: every `personSkills` entry the role asks for in at least `USES_FLOOR` (0.1) of its postings, plus everything in `connects`, by share then slug, each with `share` = P(skill | role). It never feeds the ranking. `connects` is unchanged, so the other variants are unaffected. Live yield: one to five connections per role (was one to three); Node.js and REST API Design & Integration now connect to the engineering roles.
+
+**Decisions**
+
+| Decision | Consequence |
+|---|---|
+| **Dawn draws lines from `uses`, not `connects`.** | Skills many roles want connect. Reach counts in the column count `uses`. |
+| **Line weight by share, three steps:** under 0.2, 0.2 to under 0.4, 0.4 and up. | Weight shows how much the role leans on a skill. Three steps keep the lines calm; no continuous scale. |
+| **The role card lists exactly the skills the lines connect**, from `uses`, still split by "you added" and "from past roles". | The card stays the complete, accessible equivalent of the lines (feasibility I6). |
+
+**Invariants added this round**
+
+15. **Share is P(skill | role).** Wherever a share is shown or encoded, it reads as how often the role's postings ask for the skill ("asked for in 43% of postings"), never as the person's gap or fit (Invariant 3).
+16. **A share is evidence, so its encoding is honest.** Heavier always means a larger share. Equal steps get equal weights across every role.
+
+**Track: Dawn round 2.** One agent. Owns `apps/web/app/prototypes/discovery/dawn/**`. Reads `_data/query.ts`, never edits it.
+
+**Acceptance**
+
+- `pnpm typecheck` and `pnpm theme:check` pass from `apps/web/`.
+- `grep -rn "\.connects" app/prototypes/discovery/dawn` returns nothing.
+- No file under `dawn/` over ~400 lines.
+- Rendered at 1440×900 and 1280×680, light, compositor and `?lines=fade`, with screenshots looked at: Forward Deployed Engineer lit shows five lines, with Node.js and REST API Design & Integration among them; Product Engineer shows TypeScript's line visibly heaviest; a lit role with a skill behind an edge marker keeps its weight on the marker's line; lines stay distinct where several run in parallel.

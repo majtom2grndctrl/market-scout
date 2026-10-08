@@ -63,6 +63,14 @@ export interface Recommendation {
   readonly bring: readonly SkillRef[];
   /** This role's top-ten skills that appear in personSkills, claimed or inherited, most distinctive first. Every slug here is in personSkills. */
   readonly connects: readonly SkillRef[];
+  /**
+   * Every personSkills entry this role asks for in at least USES_FLOOR of its
+   * postings, plus everything in `connects`, by share then slug. The floor
+   * lets skills many roles want (Node.js, REST APIs) connect; the signature
+   * keeps a distinctive skill below the floor. Never feeds the ranking.
+   * share is P(skill | role), 0..1.
+   */
+  readonly uses: readonly (SkillRef & { readonly share: number })[];
   /** Up to four of this role's top skills the person has not claimed, most distinctive first (not by share). share is P(skill | role), 0..1. */
   readonly grow: readonly (SkillRef & { readonly share: number })[];
   /** Open, classified postings assigned this role. */
@@ -121,6 +129,10 @@ const MIN_POSTINGS = 6;
 const RECOMMENDATION_LIMIT = 12;
 const SIGNATURE_SIZE = 10;
 const GROW_LIMIT = 4;
+// A role uses a person's skill when at least this share of its postings ask
+// for it. Low enough for skills every engineering role wants, high enough to
+// leave out a skill that appears by chance.
+const USES_FLOOR = 0.1;
 const TITLE_LIMIT = 5;
 // How many of each past role's most distinctive skills the person inherits.
 // Eight keeps a four-role profile near twenty inherited skills.
@@ -140,6 +152,7 @@ interface RankedRow {
   bring: { slug: string; name: string }[];
   grow: { slug: string; name: string; share: number }[];
   connects: { slug: string; name: string }[];
+  uses: { slug: string; name: string; share: number }[];
   inherited: { slug: string; name: string; past_role_ids: string[] }[];
 }
 
@@ -301,6 +314,15 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
              FROM signature sg JOIN skills k ON k.id = sg.skill_id
              WHERE sg.role_id = s.role_id AND sg.skill_id IN (SELECT skill_id FROM person_skill)
            ), '[]') AS connects,
+           coalesce((
+             SELECT json_agg(json_build_object('slug', k.slug, 'name', k.name, 'share', round(rs.share::numeric, 3)::float8)
+                             ORDER BY rs.share DESC, k.slug)
+             FROM role_skill rs JOIN skills k ON k.id = rs.skill_id
+             WHERE rs.role_id = s.role_id
+               AND rs.skill_id IN (SELECT skill_id FROM person_skill)
+               AND (rs.share >= ${USES_FLOOR}
+                    OR rs.skill_id IN (SELECT skill_id FROM signature WHERE role_id = s.role_id))
+           ), '[]') AS uses,
            -- Uncorrelated, so Postgres evaluates it once and repeats it per row.
            (SELECT coalesce(json_agg(json_build_object('slug', k.slug, 'name', k.name, 'past_role_ids', i.past_role_ids)
                                      ORDER BY i.w DESC, k.slug), '[]')
@@ -414,6 +436,7 @@ export async function getDiscoveryData(): Promise<DiscoveryData> {
         closestPast: past?.role ? { titleText: past.titleText, roleName: past.role.name } : null,
         bring: r.bring,
         connects: r.connects,
+        uses: r.uses,
         grow: r.grow.map(({ slug, name, share }) => ({ slug, name, share })),
         openPostings: r.n,
         companies: r.companies,

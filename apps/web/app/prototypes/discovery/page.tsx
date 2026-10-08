@@ -60,6 +60,7 @@ export default async function DiscoveryIndex() {
             <th className="py-2 pr-4 font-normal">Closest past</th>
             <th className="py-2 pr-4 font-normal">Bring</th>
             <th className="py-2 pr-4 font-normal">Connects</th>
+            <th className="py-2 pr-4 font-normal">Uses</th>
             <th className="py-2 pr-4 font-normal">Grow</th>
             <th className="py-2 font-normal text-right">Open</th>
           </tr>
@@ -79,6 +80,7 @@ export default async function DiscoveryIndex() {
               <td className="py-2 pr-4">{r.closestPast?.titleText ?? "—"}</td>
               <td className="py-2 pr-4">{r.bring.map((s) => s.name).join(", ") || "—"}</td>
               <td className="py-2 pr-4">{r.connects.map((s) => s.name).join(", ") || "—"}</td>
+              <td className="py-2 pr-4">{r.uses.map((s) => `${s.name} ${Math.round(s.share * 100)}%`).join(", ") || "—"}</td>
               <td className="py-2 pr-4">{r.grow.map((s) => `${s.name} ${Math.round(s.share * 100)}%`).join(", ")}</td>
               <td className="py-2 text-right tabular-nums">
                 {r.openPostings} / {r.companies}co
